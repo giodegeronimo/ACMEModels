@@ -1,2 +1,2 @@
 # ECE30861 SWE Project
-# Team Members: Eren Ulke, Felix Wu
+# Team Members: Felix Wu, Eren Ulke

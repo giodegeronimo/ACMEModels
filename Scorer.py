@@ -12,7 +12,7 @@ Design goals
 
 Inputs
 ------
-- A Resource (from URL_Fatecher.determineResource) + its metadata + README (best-effort).
+- A Resource (from URL_Fetcher.determineResource) + its metadata + README (best-effort).
 - We primarily score MODELs per the Phase-1 I/O, but code supports other categories too.
 
 Outputs (Table 1 fields)
@@ -39,8 +39,8 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Tuple
 
 # Import your teammate modules
-# NOTE: file name is "URL_Fatecher.py" (with 'a'); import accordingly.
-from URL_Fatecher import (  # type: ignore
+# NOTE: file name is "URL_Fetcher.py" (with 'a'); import accordingly.
+from URL_Fetcher import (  # type: ignore
     Resource,
     ModelResource,
     DatasetResource,
@@ -366,7 +366,7 @@ def score_resource(resource: Resource) -> Dict[str, Any]:
 
 if __name__ == "__main__":  # pragma: no cover
     # Tiny sanity check if you run this file directly.
-    from URL_Fatecher import determineResource  # type: ignore
+    from URL_Fetcher import determineResource  # type: ignore
 
     demo_url = "https://huggingface.co/google/flan-t5-base"
     res = determineResource(demo_url)

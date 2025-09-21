@@ -435,22 +435,22 @@ __all__ = [
 
 # ------------------------- Optional local sanity check ------------------------- #
 
-if __name__ == "__main__":  # pragma: no cover
-    demoUrls = [
-        "https://huggingface.co/google/gemma-3-270m/tree/main",
-        "https://huggingface.co/datasets/xlangai/AgentNet",
-        "https://github.com/SkyworkAI/Matrix-Game",
-        "https://example.com/something-else",
-    ]
-    for u in demoUrls:
-        r = determineResource(u)
-        meta = {}
-        try:
-            meta = r.fetchMetadata()
-        except TypeError:
+#if __name__ == "__main__":  # pragma: no cover
+#    demoUrls = [
+#        "https://huggingface.co/google/gemma-3-270m/tree/main",
+#        "https://huggingface.co/datasets/xlangai/AgentNet",
+#        "https://github.com/SkyworkAI/Matrix-Game",
+#        "https://example.com/something-else",
+#    ]
+#    for u in demoUrls:
+#        r = determineResource(u)
+#        meta = {}
+#        try:
+#            meta = r.fetchMetadata()
+#        except TypeError:
             # Abstract fallback for UNKNOWN
-            pass
-        LOG.info(f"demo -> {r.ref.category} {r.ref.repoId} metaKeys={list(meta.keys()) if meta else []}")
+#            pass
+#        LOG.info(f"demo -> {r.ref.category} {r.ref.repoId} metaKeys={list(meta.keys()) if meta else []}")
 
 
 # ------------------------- End of File ------------------------- #
@@ -458,7 +458,8 @@ if __name__ == "__main__":  # pragma: no cover
 Test case :
 '''
 
-resource = determineResource("https://huggingface.co/google/flan-t5-base")
-meta = resource.fetchMetadata()
-readme = resource.fetchReadme()
-print(meta)
+#resource = determineResource("https://huggingface.co/google/flan-t5-base")
+#meta = resource.fetchMetadata()
+#readme = resource.fetchReadme()
+#print(meta)
+

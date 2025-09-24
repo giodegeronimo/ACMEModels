@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# ACME Trustworthy Model Reuse - Phase 1
+# Linux entrypoint required by the spec:
+#   ./run install      -> install dependencies (userland)
+#   ./run URL_FILE     -> read newline-delimited URLs, emit NDJSON for *MODEL* URLs only to stdout
+#   ./run test         -> run test suite and print "X/Y test cases passed. Z% line coverage achieved."
+#
+# Notes:
+# - This script expects the Python files to be importable (PYTHONPATH=.)
+# - Logging is controlled by $LOG_FILE and $LOG_LEVEL (0 silent, 1 info, 2 debug)
+
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="$here:$PYTHONPATH"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  ./run install
+  ./run /absolute/path/to/urls.txt
+  ./run test
+
+Environment:
+  LOG_LEVEL=0|1|2
+  LOG_FILE=/path/to/log.txt
+  HUGGINGFACE_TOKEN=...   # optional, raises HF API rate limits
+  GITHUB_TOKEN=...        # optional
+  GENAI_ENDPOINT=...      # optional, endpoint for README + metadata LLM analysis (JSON in/out)
+  GENAI_API_KEY=...       # optional, auth for the endpoint above
+USAGE
+}
+
+if [[ $# -lt 1 ]]; then
+  usage
+  exit 1
+fi
+
+cmd="$1"
+
+if [[ "$cmd" == "install" ]]; then
+  # Install minimal dependencies to user site-packages
+  python3 -m pip install --user -q --upgrade pip
+  if [[ -f "$here/requirements.txt" ]]; then
+    python3 -m pip install --user -r "$here/requirements.txt"
+  else
+    python3 -m pip install --user requests pytest pytest-cov jsonschema
+  fi
+  echo "OK"
+  exit 0
+fi
+
+if [[ "$cmd" == "test" ]]; then
+  # Delegate to Tester via our CLI so the printed line is exact.
+  exec python3 "$here/CLI.py" test
+fi
+
+# Otherwise treat $1 as URL_FILE
+url_file="$cmd"
+if [[ ! -f "$url_file" ]]; then
+  echo "[run] ERROR: URL file not found: $url_file" >&2
+  exit 1
+fi
+
+# The spec says this invocation should emit NDJSON for *model URLs only*.
+# We'll run a tiny Python that reuses our modules but filters category==MODEL.
+python3 - "$url_file" <<'PYCODE'
+import sys, io, json, traceback
+from typing import Iterable, Dict, Any
+from URL_Fetcher import parseUrlFile, UrlCategory, determineResource, clearCache
+from Output_Formatter import OutputFormatter
+from Scorer import score_resource
+
+def main(path: str) -> int:
+    fmt = OutputFormatter(fh=sys.stdout, score_keys={
+        "net_score", "ramp_up_time", "bus_factor", "performance_claims", "license",
+        "dataset_and_code_score", "dataset_quality", "code_quality",
+    }, latency_keys={
+        "net_score_latency", "ramp_up_time_latency", "bus_factor_latency",
+        "performance_claims_latency", "license_latency", "size_score_latency",
+        "dataset_and_code_score_latency", "dataset_quality_latency", "code_quality_latency",
+    })
+    exit_code = 0
+    try:
+        refs = parseUrlFile(path)
+        for ref in refs:
+            if ref.category is not UrlCategory.MODEL:
+                continue  # spec: only emit for MODEL URLs
+            try:
+                res = determineResource(ref.url)
+                rec = score_resource(res)
+                fmt.write_line(rec)
+            except KeyboardInterrupt:
+                return 130
+            except Exception as e:
+                # Keep shape
+                fmt.write_line({
+                    "name": ref.name or "",
+                    "category": ref.category.value,
+                    "error": str(e),
+                    "net_score": 0.0,
+                    "net_score_latency": 0,
+                })
+                exit_code = 1
+    finally:
+        try:
+            sys.stdout.flush()
+        except Exception:
+            pass
+        clearCache()
+    return exit_code
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1]))
+PYCODE

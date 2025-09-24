@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# ACME Trustworthy Model Reuse - Phase 1 (Windows Git Bash / Linux friendly)
+# Usage:
+#   ./run2 install
+#   ./run2 /absolute/path/to/urls.txt
+#   ./run2 test
+
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Safe even if PYTHONPATH is unset
+export PYTHONPATH="$here:${PYTHONPATH:-}"
+
+# Pick a Python executable that exists (python3 -> python -> py -3)
+pick_python() {
+  if command -v python3 >/dev/null 2>&1; then
+    echo "python3"
+  elif command -v python >/dev/null 2>&1; then
+    echo "python"
+  elif command -v py >/dev/null 2>&1; then
+    echo "py -3"
+  else
+    echo ""
+  fi
+}
+
+PY_CMD="${PY_CMD:-$(pick_python)}"
+if [[ -z "$PY_CMD" ]]; then
+  echo "[run2] ERROR: Could not find a Python interpreter (tried python3/python/py -3)." >&2
+  exit 1
+fi
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  ./run2 install
+  ./run2 /absolute/path/to/urls.txt
+  ./run2 test
+
+Environment:
+  LOG_LEVEL=0|1|2
+  LOG_FILE=/path/to/log.txt
+  HUGGINGFACE_TOKEN=...   # optional
+  GITHUB_TOKEN=...        # optional
+  GENAI_ENDPOINT=...      # optional, README/metadata analyzer endpoint
+  GENAI_API_KEY=...       # optional
+USAGE
+}
+
+if [[ $# -lt 1 ]]; then
+  usage
+  exit 1
+fi
+
+cmd="$1"
+
+if [[ "$cmd" == "install" ]]; then
+  $PY_CMD -m pip install --user -q --upgrade pip
+  if [[ -f "$here/requirements.txt" ]]; then
+    $PY_CMD -m pip install --user -r "$here/requirements.txt"
+  else
+    $PY_CMD -m pip install --user requests pytest pytest-cov jsonschema
+  fi
+  echo "OK"
+  exit 0
+fi
+
+if [[ "$cmd" == "test" ]]; then
+  exec $PY_CMD "$here/CLI.py" test
+fi
+
+# Otherwise treat $1 as URL or URL_FILE
+# If it's a single URL (starts with http/https), handle directly.
+if [[ "$cmd" =~ ^https?:// ]]; then
+  "$PY_CMD" - "$cmd" <<'PYCODE'
+import sys, json
+from URL_Fetcher import UrlCategory, determineResource, clearCache
+from Output_Formatter import OutputFormatter
+from Scorer import score_resource
+
+def main(single_url: str) -> int:
+    fmt = OutputFormatter(fh=sys.stdout, score_keys={
+        "net_score","ramp_up_time","bus_factor","performance_claims","license",
+        "dataset_and_code_score","dataset_quality","code_quality",
+    }, latency_keys={
+        "net_score_latency","ramp_up_time_latency","bus_factor_latency",
+        "performance_claims_latency","license_latency","size_score_latency",
+        "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
+    })
+    exit_code = 0
+    try:
+        # minimal categorization: reuse determineResource to see if it's a model
+        try:
+            res = determineResource(single_url)
+            # Only emit if this resolves to a model; else be silent (like URLs-file mode)
+            if getattr(res, "category", None) is None:
+                # Fallback: assume MODEL only for huggingface model paths (coarse)
+                pass
+            # rely on Scorer / resource object to carry category when formatted
+            rec = score_resource(res)
+            if rec.get("category") == "MODEL":
+                fmt.write_line(rec)
+        except KeyboardInterrupt:
+            return 130
+        except Exception as e:
+            # keep shape but only emit if it's a model URL guess (heuristic)
+            if "huggingface.co" in single_url and "/datasets/" not in single_url and "/spaces/" not in single_url:
+                print(json.dumps({
+                    "name": single_url.rsplit("/", 1)[-1],
+                    "category": "MODEL",
+                    "error": str(e),
+                    "net_score": 0.0,
+                    "net_score_latency": 0
+                }))
+                exit_code = 1
+    finally:
+        try: sys.stdout.flush()
+        except Exception: pass
+        clearCache()
+    return exit_code
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1]))
+PYCODE
+  exit $?
+fi
+
+# Otherwise treat as a URL file
+url_file="$cmd"
+if [[ ! -f "$url_file" ]]; then
+  echo "[run2] ERROR: URL file not found: $url_file" >&2
+  exit 1
+fi
+
+# Emit NDJSON for MODEL URLs only
+"$PY_CMD" - "$url_file" <<'PYCODE\'
+import sys, json
+from URL_Fetcher import parseUrlFile, UrlCategory, determineResource, clearCache
+from Output_Formatter import OutputFormatter
+from Scorer import score_resource
+
+def main(path: str) -> int:
+    fmt = OutputFormatter(fh=sys.stdout, score_keys={
+        "net_score","ramp_up_time","bus_factor","performance_claims","license",
+        "dataset_and_code_score","dataset_quality","code_quality",
+    }, latency_keys={
+        "net_score_latency","ramp_up_time_latency","bus_factor_latency",
+        "performance_claims_latency","license_latency","size_score_latency",
+        "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
+    })
+    exit_code = 0
+    try:
+        for ref in parseUrlFile(path):
+            if ref.category is not UrlCategory.MODEL:
+                continue
+            try:
+                res = determineResource(ref.url)
+                rec = score_resource(res)
+                fmt.write_line(rec)
+            except KeyboardInterrupt:
+                return 130
+            except Exception as e:
+                fmt.write_line({
+                    "name": ref.name or "",
+                    "category": ref.category.value,
+                    "error": str(e),
+                    "net_score": 0.0,
+                    "net_score_latency": 0,
+                })
+                exit_code = 1
+    finally:
+        try: sys.stdout.flush()
+        except Exception: pass
+        clearCache()
+    return exit_code
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1]))
+PYCODE

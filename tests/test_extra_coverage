@@ -1,0 +1,33 @@
+# Targets leftover paths: caching, no-repoid branches, CLI 'test' subcommand import.
+import sys, types
+import URL_Fetcher as UF
+import CLI as CLI_mod
+
+def test_http_text_and_json_cache(monkeypatch):
+    class _R:
+        def __init__(self, text="", js=None): self.text=text; self._js=js; self.status_code=200
+        def raise_for_status(self): pass
+        def json(self): return self._js
+    calls = {"t":0, "j":0}
+    monkeypatch.setattr(UF, "_session", types.SimpleNamespace(
+        get=lambda url, headers=None, timeout=None: (_:=None,
+            calls.__setitem__("t", calls["t"]+1),
+            _R(text="# R") if "raw" in url else (_:=None, calls.__setitem__("j", calls["j"]+1), _R(js={"ok":True})) )[2]  # compact trick
+    ))
+    UF.clearCache()
+    assert UF._http_get_text("https://raw/x", {}) == "# R"
+    assert UF._http_get_text("https://raw/x", {}) == "# R"          # cached
+    assert UF._http_get_json("https://api/x", {}) == {"ok": True}
+    assert UF._http_get_json("https://api/x", {}) == {"ok": True}   # cached
+    assert calls["t"] == 1 and calls["j"] == 1
+
+def test_no_repoid_guards_model_and_dataset():
+    mref = UF.ResourceRef("https://hf/x", UF.Host.HUGGINGFACE, UF.UrlCategory.MODEL, "o", None, None, "https://hf/x")
+    dref = UF.ResourceRef("https://hf/d", UF.Host.HUGGINGFACE, UF.UrlCategory.DATASET, "o", None, None, "https://hf/d")
+    assert UF.ModelResource(mref).fetchMetadata() == {} and UF.ModelResource(mref).fetchReadme() is None
+    assert UF.DatasetResource(dref).fetchMetadata() == {} and UF.DatasetResource(dref).fetchReadme() is None
+
+def test_cli_test_subcommand_imports_tester(monkeypatch):
+    fake = types.SimpleNamespace(main=lambda _: 0)
+    monkeypatch.setitem(sys.modules, "Tester", fake)
+    assert CLI_mod.main(["test"]) == 0

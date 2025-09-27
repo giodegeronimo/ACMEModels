@@ -22,105 +22,90 @@ Notes:
 from __future__ import annotations
 
 import os
-import re
-import shlex
-import subprocess
 import sys
-from typing import Tuple
+import subprocess
+import xml.etree.ElementTree as ET
+from pathlib import Path
+from typing import Tuple, Dict
 
-# If your package is called something else, change this:
-LIKELY_PACKAGE = os.getenv("TEST_PKG", "trustcli")
+
+def _parse_junit(path: Path) -> Tuple[int, int]:
+    """Return (passed, total) from a pytest JUnit XML file."""
+    if not path.exists():
+        return (0, 0)
+    try:
+        root = ET.parse(path).getroot()
+        # root may be <testsuite> or <testsuites>
+        suites = [root] if root.tag == "testsuite" else list(root)
+        total = failures = errors = 0
+        for s in suites:
+            total += int(s.attrib.get("tests", 0))
+            failures += int(s.attrib.get("failures", 0))
+            errors += int(s.attrib.get("errors", 0))
+        passed = max(0, total - failures - errors)
+        return (passed, total)
+    except Exception:
+        return (0, 0)
 
 
-def _run(cmd: str) -> Tuple[int, str]:
-    """
-    Run a shell command, capture combined stdout/stderr as text.
-    Returns (return_code, output_text).
-    """
-    cp = subprocess.run(
-        shlex.split(cmd),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+def _parse_coverage(path: Path) -> int:
+    """Return rounded line coverage percent (0..100) from coverage.xml."""
+    if not path.exists():
+        return 0
+    try:
+        root = ET.parse(path).getroot()  # <coverage line-rate="0.78" ...>
+        rate = root.attrib.get("line-rate")
+        return round(float(rate) * 100) if rate is not None else 0
+    except Exception:
+        return 0
+
+
+def main(_argv: list[str] | None = None) -> int:
+    repo_root = Path(__file__).resolve().parent
+    tests_dir = repo_root / "tests"
+    artifacts = repo_root / ".test_artifacts"
+    artifacts.mkdir(exist_ok=True)
+
+    junit_xml = artifacts / "junit.xml"
+    cov_xml = artifacts / "coverage.xml"
+
+    # If there is no tests/ folder, print 0/0 and fail gracefully.
+    if not tests_dir.exists():
+        print("0/0 test cases passed. 0% line coverage achieved.")
+        return 1
+
+    # Ensure repo root is on PYTHONPATH so tests can import top-level modules (CLI.py, Scorer.py, etc.)
+    env: Dict[str, str] = dict(os.environ)
+    env["PYTHONPATH"] = (
+        f"{repo_root}{os.pathsep}{env['PYTHONPATH']}" if "PYTHONPATH" in env else str(repo_root)
     )
-    return cp.returncode, cp.stdout
 
-
-def _try_pytest(package: str) -> Tuple[bool, int, int, int, str]:
-    """
-    Attempt pytest with coverage. Returns:
-      (succeeded, passed, total, coverage, raw_output)
-    """
-    cmd = f"pytest -q --disable-warnings --maxfail=1 --cov={package} --cov-report=term-missing --cov-report=xml"
-    rc, out = _run(cmd)
-
-    # Parse "collected N items"
-    m_total = re.search(r"collected\s+(\d+)\s+items", out)
-    total = int(m_total.group(1)) if m_total else 0
-
-    # Parse "== X passed" (pytest formats vary; this is robust enough for common cases)
-    m_passed = re.search(r"==\s*(\d+)\s+passed", out)
-    passed = int(m_passed.group(1)) if m_passed else (0 if rc != 0 else total)
-
-    # Parse coverage "TOTAL ... XX%"
-    m_cov = re.search(r"TOTAL\s+\d+\s+\d+\s+\d+\s+(\d+)%", out)
-    cov = int(m_cov.group(1)) if m_cov else 0
-
-    return (rc == 0), passed, total, cov, out
-
-
-def _try_unittest() -> Tuple[bool, int, int, int, str]:
-    """
-    Fallback: unittest + coverage (if installed).
-    We run two commands so we can measure coverage:
-      1) coverage run -m unittest discover
-      2) coverage report -m  (prints a TOTAL line we can parse)
-    """
-    steps = [
-        "coverage run -m unittest discover",
-        "coverage report -m",
+    # Build pytest command: quiet, stop early on failures, coverage for whole repo, XML reports
+    cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        str(tests_dir),
+        "--maxfail=1",
+        "--disable-warnings",
+        "--cov=.",
+        f"--cov-report=xml:{cov_xml}",
+        "--cov-report=term",
+        f"--junitxml={junit_xml}",
     ]
-    outs = []
-    ok = True
-    for cmd in steps:
-        rc, out = _run(cmd)
-        outs.append(out)
-        if rc != 0:
-            ok = False
 
-    joined = "\n".join(outs)
+    # Run pytest (capture output; we compute from XMLs)
+    proc = subprocess.run(cmd, cwd=repo_root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
-    # Unittest doesn't print "collected N items". We have to approximate.
-    # Try to read lines like "OK" or "Ran N tests in Xs"
-    m_ran = re.search(r"Ran\s+(\d+)\s+tests?", joined)
-    total = int(m_ran.group(1)) if m_ran else 0
-    passed = total if ok else 0
+    passed, total = _parse_junit(junit_xml)
+    cov_pct = _parse_coverage(cov_xml)
 
-    # Parse coverage TOTAL ... XX%
-    m_cov = re.search(r"TOTAL\s+\d+\s+\d+\s+\d+\s+(\d+)%", joined)
-    cov = int(m_cov.group(1)) if m_cov else 0
+    # Print EXACT line for the grader:
+    print(f"{passed}/{total} test cases passed. {cov_pct}% line coverage achieved.")
 
-    return ok, passed, total, cov, joined
-
-
-def main(argv: list[str] | None = None) -> int:
-    """
-    Entry point. Try pytest first, then unittest.
-    Print exactly: "X/Y test cases passed. Z% line coverage achieved."
-    Exit 0 on success, 1 on failure.
-    """
-    pkg = LIKELY_PACKAGE
-
-    ok, passed, total, cov, out = _try_pytest(pkg)
-    if not ok:
-        # Pytest either failed or doesn't exist -> try unittest fallback
-        ok, passed, total, cov, out = _try_unittest()
-
-    # Print the exact single-line summary (the grader may scrape only this)
-    print(f"{passed}/{total} test cases passed. {cov}% line coverage achieved.")
-
-    # Exit code mirrors overall success/failure
-    return 0 if ok else 1
+    # Exit code mirrors pytest (0 on success). If pytest failed but produced XMLs, the line still prints.
+    return 0 if proc.returncode == 0 else 1
 
 
 if __name__ == "__main__":

@@ -322,17 +322,26 @@ _HF_HOSTS = {"huggingface.co"}
 _GH_HOSTS = {"github.com", "www.github.com"}
 
 def _strip_hf(path: str) -> Tuple[UrlCategory, Optional[str], Optional[str]]:
-    # /org/name OR /datasets/org/name
+    # Accept both 1-segment and 2-segment repos
     parts = [seg for seg in path.split("/") if seg]
     if not parts:
         return UrlCategory.UNKNOWN, None, None
+
     if parts[0] == "datasets":
+        # /datasets/<name>  OR  /datasets/<owner>/<name>
+        if len(parts) == 2:
+            return UrlCategory.DATASET, None, parts[1]
         owner = parts[1] if len(parts) > 1 else None
         name = parts[2] if len(parts) > 2 else None
         return UrlCategory.DATASET, owner, name
-    owner = parts[0] if len(parts) > 0 else None
+
+    # model: /<name>  OR  /<owner>/<name>
+    if len(parts) == 1:
+        return UrlCategory.MODEL, None, parts[0]
+    owner = parts[0]
     name = parts[1] if len(parts) > 1 else None
     return UrlCategory.MODEL, owner, name
+
 
 
 def _strip_gh(path: str) -> Tuple[Optional[str], Optional[str]]:
@@ -356,14 +365,24 @@ def classifyUrl(rawUrl: str) -> ResourceRef:
 
     if netloc in _HF_HOSTS:
         category, owner, name = _strip_hf(path)
-        repoId = f"{owner}/{name}" if owner and name else None
-        normalizedUrl = (
-            f"https://huggingface.co/datasets/{repoId}"
-            if category == UrlCategory.DATASET and repoId
-            else (f"https://huggingface.co/{repoId}" if repoId else rawUrl)
-        )
+        # NEW: allow single-segment repoIds
+        if owner and name:
+            repoId = f"{owner}/{name}"
+        elif name:
+            repoId = name
+        else:
+            repoId = None
+
+        if category == UrlCategory.DATASET and repoId:
+            normalizedUrl = f"https://huggingface.co/datasets/{repoId}"
+        elif repoId:
+            normalizedUrl = f"https://huggingface.co/{repoId}"
+        else:
+            normalizedUrl = rawUrl
+
         host = Host.HUGGINGFACE
         return ResourceRef(url, host, category, owner, name, repoId, normalizedUrl)
+
 
     if netloc in _GH_HOSTS:
         owner, name = _strip_gh(path)

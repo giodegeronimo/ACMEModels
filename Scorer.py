@@ -28,8 +28,10 @@ name, category, net_score, net_score_latency,
   - dataset_quality
   - code_quality
 """
-
 from __future__ import annotations
+
+from LLM_Analyzer import analyze_readme_and_metadata
+
 
 import concurrent.futures as cf
 import os
@@ -131,27 +133,36 @@ def _bool_to_score(ok: bool) -> float:
 
 @dataclass(frozen=True)
 class Inputs:
-    """What each metric may need."""
     resource: Resource
     metadata: Dict[str, Any]
     readme: str | None
+    llm: dict | None
 
 
-# Ramp-up time: docs/examples/freshness signals from HF metadata + README presence.
+
 def metric_ramp_up_time(inp: Inputs) -> float:
     md = inp.metadata or {}
-    readme_ok = bool(inp.readme and len(inp.readme) > 200)  # crude, but stable
+    readme_ok = bool(inp.readme and len(inp.readme) > 200)
+
+    # 🔽 NEW: boost if LLM analyzer found usage examples
+    if inp.llm and inp.llm.get("has_examples"):
+        readme_ok = True
+
     likes = md.get("likes") or 0
     file_count = md.get("fileCount") or 0
     freshness_bonus = 0.0
-    # HF 'lastModified' ISO string -> recent => bonus
     lm = md.get("lastModified")
     if isinstance(lm, str) and re.search(r"20\d{2}-\d{2}-\d{2}", lm):
         freshness_bonus = 0.15
 
-    # Weighted blend (keep in [0,1])
-    base = 0.4 * _bool_to_score(readme_ok) + 0.3 * min(1.0, file_count / 10.0) + 0.3 * min(1.0, likes / 50.0)
+    base = (
+        0.4 * _bool_to_score(readme_ok)
+        + 0.3 * min(1.0, file_count / 10.0)
+        + 0.3 * min(1.0, likes / 50.0)
+    )
     return _clamp01(base + freshness_bonus)
+
+
 
 
 # Bus factor: proxy using file_count (more artifacts) and recent activity.
@@ -218,9 +229,19 @@ _CODE_LINK_RE = re.compile(r"https?://(github\.com|gitlab\.com)/", re.IGNORECASE
 
 def metric_dataset_and_code_score(inp: Inputs) -> float:
     text = inp.readme or ""
-    has_dataset = bool(_DATASET_LINK_RE.search(text))
-    has_code = bool(_CODE_LINK_RE.search(text))
-    return _clamp01(0.5 * _bool_to_score(has_dataset) + 0.5 * _bool_to_score(has_code))
+
+    if inp.llm:  # 🔽 NEW: trust LLM output if available
+        has_dataset = bool(inp.llm.get("has_dataset_links", False))
+        has_code = bool(inp.llm.get("has_code_links", False))
+    else:
+        # fallback: simple regex search in README
+        has_dataset = bool(_DATASET_LINK_RE.search(text))
+        has_code = bool(_CODE_LINK_RE.search(text))
+
+    return _clamp01(
+        0.5 * _bool_to_score(has_dataset) + 0.5 * _bool_to_score(has_code)
+    )
+
 
 
 # Dataset quality: look for a "Dataset" heading + minimal bullets/fields.
@@ -311,8 +332,16 @@ def score_resource(resource: Resource) -> Dict[str, Any]:
     except Exception as e:
         LOG.debug(f"fetchReadme error: {e}")
         readme = None
+    # Run optional LLM analysis
+    llm = None
+    try:
+        if analyze_readme_and_metadata is not None:
+            llm = analyze_readme_and_metadata(readme, metadata)
+    except Exception as e:
+        LOG.debug(f"llm analyze failed: {e}")
 
-    inp = Inputs(resource=resource, metadata=metadata, readme=readme)
+
+    inp = Inputs(resource=resource, metadata=metadata, readme=readme, llm=llm)
 
     # Run metrics in parallel
     results: Dict[str, Tuple[float | Dict[str, float], int]] = {}
@@ -358,6 +387,23 @@ def score_resource(resource: Resource) -> Dict[str, Any]:
             net += w * float(record.get(key, 0.0))
     record["net_score"] = _clamp01(net)
     record["net_score_latency"] = max(0, _now_ms() - t0)
+    # --- mark obvious failures so the runner can exit 1 deterministically ---
+       # --- mark obvious failures so the runner can exit 1 deterministically ---
+    try:
+        if record.get("category") == "MODEL":
+            no_meta = (
+                not metadata
+                or (
+                    metadata.get("likes") is None
+                and metadata.get("lastModified") is None
+                and metadata.get("fileCount") is None
+            )
+        )
+        if no_meta and not readme:
+            record.setdefault("error", "metadata_and_readme_missing")
+    except Exception:
+        pass
+
 
     return record
 

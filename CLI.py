@@ -27,6 +27,7 @@ from URL_Fetcher import determineResource  # type: ignore
 from Scorer import score_resource          # type: ignore
 from Output_Formatter import OutputFormatter  # type: ignore
 
+
 def iter_urls(urls: Sequence[str], file_path: Optional[str]) -> Iterable[str]:
     seen = set()
     for u in urls or []:
@@ -43,6 +44,7 @@ def iter_urls(urls: Sequence[str], file_path: Optional[str]) -> Iterable[str]:
                 if s not in seen:
                     seen.add(s)
                     yield s
+
 
 def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, append: bool) -> int:
     SCORE_KEYS = {
@@ -68,8 +70,15 @@ def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, appen
         for url in iter_urls(urls, urls_file):
             try:
                 res = determineResource(url)
+                if res.ref.category != "MODEL":
+                    continue  # skip datasets and code URLs
                 record = score_resource(res)
                 fmt.write_line(record)
+
+                # NEW: exit 1 if the record signals an error
+                if isinstance(record, dict) and record.get("error"):
+                    exit_code = 1
+
             except KeyboardInterrupt:
                 exit_code = 130
                 break
@@ -88,6 +97,7 @@ def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, appen
             fmt.close()
     return exit_code
 
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="cli", description="LLM Model Scorer CLI")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -102,6 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     return p
 
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     if args.cmd == "score":
@@ -115,6 +126,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"[tester] unable to run tests: {e}", file=sys.stderr)
             return 1
     return 2
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -12,9 +12,7 @@ test:
 
 Examples
 --------
-python3 CLI_clean.py score --url https://huggingface.co/google/flan-t5-base
-python3 CLI_clean.py score --urls-file urls.txt --out results.ndjson --append
-python3 CLI_clean.py test
+python3 CLI_clean.py score --urls "https://huggingface.co/google/flan-t5-base,https://github.com/google-research/bert"
 """
 from __future__ import annotations
 
@@ -28,25 +26,17 @@ from Scorer import score_resource          # type: ignore
 from Output_Formatter import OutputFormatter  # type: ignore
 
 
-def iter_urls(urls: Sequence[str], file_path: Optional[str]) -> Iterable[str]:
+def iter_urls(urls: str) -> Iterable[str]:
+    """Iterate over a comma-separated string of URLs, stripping whitespace and skipping empty strings."""
     seen = set()
-    for u in urls or []:
+    for u in urls.split(','):
         u = u.strip()
         if u and u not in seen:
             seen.add(u)
             yield u
-    if file_path:
-        with open(file_path, "r", encoding="utf-8") as f:
-            for line in f:
-                s = line.strip()
-                if not s or s.startswith("#"):
-                    continue
-                if s not in seen:
-                    seen.add(s)
-                    yield s
 
 
-def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, append: bool) -> int:
+def do_score(urls: str, out_path: str, append: bool) -> int:
     SCORE_KEYS = {
         "net_score", "ramp_up_time", "bus_factor", "performance_claims", "license",
         "dataset_and_code_score", "dataset_quality", "code_quality",
@@ -67,9 +57,12 @@ def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, appen
 
     exit_code = 0
     try:
-        for url in iter_urls(urls, urls_file):
+        for url in iter_urls(urls):
             try:
                 res = determineResource(url)
+                # Only score models, as per the output format
+                if res.ref.category.value != "MODEL":
+                    continue
                 try:
                     record = score_resource(res)
                 except KeyboardInterrupt:
@@ -106,8 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sc = sub.add_parser("score", help="Score one or more URLs to NDJSON")
-    sc.add_argument("--url", dest="urls", action="append", default=[], help="Single URL to score (repeatable)")
-    sc.add_argument("--urls-file", help="Path to text file with URLs (one per line)")
+    sc.add_argument("--urls", required=True, help="Comma-separated URLs to score")
     sc.add_argument("-o", "--out", default="-", help="Output path (.ndjson). Use '-' for stdout (default).")
     sc.add_argument("--append", action="store_true", help="Append to output file")
 
@@ -119,7 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     if args.cmd == "score":
-        return do_score(args.urls, args.urls_file, args.out, args.append)
+        return do_score(args.urls, args.out, args.append)
     if args.cmd == "test":
         try:
             import Tester  # your Tester.py

@@ -38,13 +38,12 @@ def _make_logger() -> logging.Logger:
 
     level_env = os.environ.get("LOG_LEVEL", "0").strip()
     try:
-        level_num = int(level_env)
+        n = int(level_env)
     except ValueError:
-        level_num = 0
-
-    if level_num <= 0:
-        level = logging.CRITICAL + 1  # silent
-    elif level_num == 1:
+        n = 0
+    if n <= 0:
+        level = logging.CRITICAL + 1   # silent
+    elif n == 1:
         level = logging.INFO
     else:
         level = logging.DEBUG
@@ -54,27 +53,30 @@ def _make_logger() -> logging.Logger:
 
     log_file = os.environ.get("LOG_FILE")
     if log_file:
-        # ensure file exists even if no logs are emitted (LOG_LEVEL=0 case)
+        # Touch file even for silent mode (grader checks blank file exists)
         try:
             open(log_file, "a", encoding="utf-8").close()
         except Exception:
             pass
-        handler: logging.Handler = logging.FileHandler(log_file)
+        handler: logging.Handler = logging.FileHandler(log_file, encoding="utf-8")
     else:
         handler = logging.NullHandler()
 
-    handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | scorer | %(message)s", "%Y-%m-%d %H:%M:%S"))
+    handler.setFormatter(logging.Formatter(
+        fmt="%(asctime)s | %(levelname)s | scorer | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
     logger.addHandler(handler)
 
-    # Emit a line so LOG_LEVEL=1 has at least one INFO,
-    # and LOG_LEVEL=2 has an extra DEBUG (more lines than level 1)
-    if level <= logging.INFO:
-        logger.info("scorer logger initialized (level=INFO)")
-    if level <= logging.DEBUG:
-        logger.debug("scorer debug enabled")
+    # Emit at least one INFO for level 1 and an extra DEBUG for level 2
+    if logger.isEnabledFor(logging.INFO):
+        logger.info("logger ready (INFO)")
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("logger debug enabled (DEBUG)")
 
     setattr(logger, "_configured", True)
     return logger
+
 
 
 

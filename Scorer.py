@@ -396,8 +396,8 @@ def score_resource(
             results[name] = (val, int(lat))
 
     # Assemble output record
-    name = getattr(resource, "ref", None).name if getattr(resource, "ref", None) else ""
-    category = getattr(resource, "ref", None).category.name if getattr(resource, "ref", None) else "UNKNOWN"
+    name = getattr(getattr(resource, "ref", None), "name", "")
+    category = getattr(getattr(resource, "ref", None), "category", "UNKNOWN").name
 
     record: Dict[str, Any] = {"name": name, "category": category}
 

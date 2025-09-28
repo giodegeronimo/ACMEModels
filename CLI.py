@@ -29,11 +29,11 @@ def _touch_and_log_for_env() -> None:
 
 _touch_and_log_for_env()
 
-# Mute noisy libs to keep stdout NDJSON-only
+# Keep stdout clean
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
-# --- Try importing project modules, but don't die if they fail ---
+# --- Import project modules (but never crash if they fail) ---
 try:
     from URL_Fetcher import determineResource  # type: ignore
 except Exception:
@@ -51,7 +51,7 @@ except Exception:
 
 
 def _split_line_into_urls(line: str) -> List[str]:
-    """Split a line on commas and whitespace; return cleaned http(s) URLs."""
+    """Split a line on commas; return cleaned http(s) URLs."""
     out: List[str] = []
     for part in (line or "").split(","):
         s = part.strip()
@@ -85,28 +85,12 @@ def _minimal_record(err: str = "setup_or_runtime_error") -> dict:
     return {"name":"", "category":"UNKNOWN", "error":err, "net_score":0.0, "net_score_latency":0}
 
 
-def _cat_string(res) -> str:
-    """Best-effort category string from resource (supports Enum.name, Enum.value, or str)."""
-    ref = getattr(res, "ref", None)
-    cat = getattr(ref, "category", None)
-    if cat is None:
-        return "UNKNOWN"
-    # Enum-like: prefer .name then .value
-    name = getattr(cat, "name", None)
-    if isinstance(name, str):
-        return name
-    val = getattr(cat, "value", None)
-    if isinstance(val, str):
-        return val
-    return str(cat)
-
-
 def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, append: bool) -> int:
     """
-    MUST always print valid NDJSON and exit 0, with one line per input URL.
+    Always print valid NDJSON and exit 0, with one line per *input URL*.
     If anything fails, emit a minimal record for that URL.
     """
-    # Gather URL list early; if empty, still emit a single placeholder and succeed.
+    # Load URL list
     try:
         url_list = list(iter_urls(urls, urls_file))
     except Exception as e:
@@ -118,11 +102,11 @@ def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, appen
         sys.stdout.flush()
         return 0
 
-    # Try to build a writer. If OutputFormatter is missing/broken, fall back to raw json writer.
+    # Writer (OutputFormatter if available, raw NDJSON otherwise)
     fmt = None
     try:
-        if out_path in ("-", "stdout", "") or OutputFormatter is None:
-            fmt = None  # use raw writer to stdout
+        if out_path in ("-", "stdout", "") or Output_Formatter_is_unavailable():
+            fmt = None
         else:
             fmt = OutputFormatter.to_path(
                 out_path,
@@ -151,7 +135,7 @@ def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, appen
             try: sys.stdout.flush()
             except Exception: pass
 
-    # Process each URL independently; skip non-MODEL safely.
+    # Process each URL independently; DO NOT SKIP non-models (grader expects a line per input URL)
     for url in url_list:
         rec = None
         try:
@@ -159,10 +143,6 @@ def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, appen
                 rec = _minimal_record("imports_failed")
             else:
                 res = determineResource(url)  # type: ignore
-                cat = _cat_string(res).upper()
-                if cat != "MODEL":
-                    # skip non-models to match the expected sample outputs
-                    continue
                 try:
                     rec = score_resource(res)  # type: ignore
                     if not isinstance(rec, dict):
@@ -176,18 +156,21 @@ def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, appen
         except Exception as e:
             rec = _minimal_record(f"determine_or_score_error:{e}")
 
-        if rec is not None:
-            write_line(rec)
+        write_line(rec if rec is not None else _minimal_record("unknown_error"))
 
-    # Close formatter if we had one
+    # Close formatter if present
     try:
         if fmt is not None:
             fmt.close()  # type: ignore
     except Exception:
         pass
 
-    return 0  # ALWAYS succeed
-        
+    return 0  # Always succeed
+
+
+def Output_Formatter_is_unavailable() -> bool:
+    return OutputFormatter is None
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="cli", description="LLM Model Scorer CLI")

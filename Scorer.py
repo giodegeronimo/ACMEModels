@@ -473,6 +473,9 @@ def score_resource(
     except Exception:
         pass
 
+    for k, v in record.items():
+        if isinstance(v, float) and not k.endswith("_latency"):
+            record[k] = _clamp01(v)
     return record
 
 

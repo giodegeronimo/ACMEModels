@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, sys, os, json
+import argparse, sys, os, json, re
 from typing import Iterable, Optional, Sequence, List, Callable
 
 # --- Handle LOG_FILE / LOG_LEVEL immediately (so grader's env tests pass even if imports fail) ---
@@ -51,9 +51,11 @@ except Exception:
 
 
 def _split_line_into_urls(line: str) -> List[str]:
-    """Split a line on commas; return cleaned http(s) URLs."""
+    """Split a line on commas or spaces; return cleaned http(s) URLs."""
     out: List[str] = []
-    for part in (line or "").split(","):
+    # Split by comma or whitespace, and filter out empty strings
+    parts = [p for p in re.split(r'[,\s]+', line) if p]
+    for part in parts:
         s = part.strip()
         if s and s.lower().startswith(("http://", "https://")):
             out.append(s)
@@ -104,66 +106,66 @@ def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, appen
 
     # Writer (OutputFormatter if available, raw NDJSON otherwise)
     fmt = None
-    try:
-        if out_path in ("-", "stdout", "") or Output_Formatter_is_unavailable():
+    if OutputFormatter:  # Check if OutputFormatter was imported
+        try:
+            if out_path not in ("-", "stdout", ""):
+                fmt = OutputFormatter.to_path(
+                    out_path,
+                    score_keys={
+                        "net_score","ramp_up_time","bus_factor","performance_claims","license",
+                        "dataset_and_code_score","dataset_quality","code_quality",
+                    },
+                    latency_keys={
+                        "net_score_latency","ramp_up_time_latency","bus_factor_latency",
+                        "performance_claims_latency","license_latency","size_score_latency",
+                        "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
+                    },
+                    append=append
+                )
+        except Exception:
             fmt = None
-        else:
-            fmt = OutputFormatter.to_path(
-                out_path,
-                score_keys={
-                    "net_score","ramp_up_time","bus_factor","performance_claims","license",
-                    "dataset_and_code_score","dataset_quality","code_quality",
-                },
-                latency_keys={
-                    "net_score_latency","ramp_up_time_latency","bus_factor_latency",
-                    "performance_claims_latency","license_latency","size_score_latency",
-                    "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
-                },
-                append=append
-            )  # type: ignore
 
-        def write_line(obj: dict) -> None:
-            if fmt is None:
-                sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
-                try: sys.stdout.flush()
-                except Exception: pass
-            else:
-                fmt.write_line(obj)  # type: ignore
-    except Exception:
-        def write_line(obj: dict) -> None:
+    def write_line(obj: dict) -> None:
+        if fmt is None:
             sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
-            try: sys.stdout.flush()
-            except Exception: pass
+            try:
+                sys.stdout.flush()
+            except Exception:
+                pass
+        else:
+            fmt.write_line(obj)
 
-    # Process each URL independently; DO NOT SKIP non-models (grader expects a line per input URL)
+    # Process each URL independently
     for url in url_list:
         rec = None
         try:
             if determineResource is None or score_resource is None:
                 rec = _minimal_record("imports_failed")
             else:
-                res = determineResource(url)  # type: ignore
+                res = determineResource(url)
                 try:
-                    rec = score_resource(res)  # type: ignore
+                    rec = score_resource(res)
                     if not isinstance(rec, dict):
                         rec = _minimal_record("bad_record")
                 except KeyboardInterrupt:
                     rec = _minimal_record("keyboard_interrupt")
-                    write_line(rec)
+                    if rec.get("category") == "MODEL":
+                        write_line(rec)
                     break
                 except Exception as e:
                     rec = _minimal_record(str(e))
         except Exception as e:
             rec = _minimal_record(f"determine_or_score_error:{e}")
 
-        write_line(rec if rec is not None else _minimal_record("unknown_error"))
+        if rec and rec.get("category") == "MODEL":
+            write_line(rec)
 
     # Close formatter if present
-    try:
-        if fmt is not None:
-            fmt.close()  # type: ignore
-    except Exception:
-        pass
+    if fmt:
+        try:
+            fmt.close()
+        except Exception:
+            pass
 
     return 0  # Always succeed
 

@@ -201,11 +201,10 @@ class NoopResource(Resource):
 
 class ModelResource(Resource):
     def fetchMetadata(self) -> Dict[str, Any]:
-        # Hugging Face models API
         headers = {"Accept": "application/json"}
         hfToken = os.environ.get("HUGGINGFACE_TOKEN")
         if hfToken:
-            headers["Authorization"] = f"Bearer {hfToken}"
+            headers["Authorization"] = f"Bearer {hfToken}"  # optional
 
         if not self.ref.repoId:
             LOG.info("Missing repoId for HF model")
@@ -213,14 +212,18 @@ class ModelResource(Resource):
 
         apiUrl = f"https://huggingface.co/api/models/{self.ref.repoId}"
         data = _http_get_json(apiUrl, headers)
-        meta = {}
+        meta: Dict[str, Any] = {}
         if data:
+            card = data.get("cardData") or {}
+            siblings = data.get("siblings") or []
             meta = {
                 "downloads": data.get("downloads"),
                 "likes": data.get("likes"),
                 "lastModified": data.get("lastModified"),
                 "sha": data.get("sha"),
-                "fileCount": len(data.get("siblings") or []),
+                "fileCount": len(siblings),
+                # 🔑 Add license from API or cardData so metric_license() can score 1.0
+                "license": data.get("license") or card.get("license") or card.get("licenses"),
             }
         return meta
 
@@ -232,8 +235,16 @@ class ModelResource(Resource):
 
         if not self.ref.repoId:
             return None
-        readmeUrl = f"https://huggingface.co/{self.ref.repoId}/raw/main/README.md"
-        return _http_get_text(readmeUrl, headers)
+        # Try both resolve/raw paths (some repos prefer one)
+        for u in (
+            f"https://huggingface.co/{self.ref.repoId}/resolve/main/README.md?download=1",
+            f"https://huggingface.co/{self.ref.repoId}/raw/main/README.md",
+        ):
+            txt = _http_get_text(u, headers)
+            if txt and txt.strip() and "DOCTYPE html" not in txt[:200]:
+                return txt
+        return None
+
 
 
 class DatasetResource(Resource):

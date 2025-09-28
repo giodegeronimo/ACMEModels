@@ -7,7 +7,7 @@ export PYTHONPATH="$here:${PYTHONPATH:-}"
 pick_python() {
   command -v python3 >/dev/null 2>&1 && { echo python3; return; }
   command -v python  >/dev/null 2>&1 && { echo python; return; }
-  command -v py >/dev/null 2>&1 && { echo "py -3"; return; }   # harmless on Linux, fixes Windows tests locally
+  command -v py >/dev/null 2>&1 && { echo "py -3"; return; }   # harmless on Linux; helps on Windows locally
   echo ""
 }
 PY_CMD="${PY_CMD:-$(pick_python)}"
@@ -38,5 +38,5 @@ if [[ -f "$cmd" ]]; then
   exec $PY_CMD "$here/CLI.py" score --urls-file "$cmd" -o -
 fi
 
-# Single URL mode (grader may also try this)
+# Single URL mode
 exec $PY_CMD "$here/CLI.py" score --url "$cmd" -o -

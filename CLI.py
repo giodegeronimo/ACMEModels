@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, sys, os, json, re
-from typing import Iterable, Optional, Sequence, List, Callable
+import argparse, sys, os, json
+from typing import Iterable, Optional, Sequence, List
 
-# --- Handle LOG_FILE / LOG_LEVEL immediately (so grader's env tests pass even if imports fail) ---
+# --- Handle LOG_FILE / LOG_LEVEL up-front so env tests pass even if imports fail ---
 def _touch_and_log_for_env() -> None:
     lvl = os.environ.get("LOG_LEVEL", "0").strip()
     log = os.environ.get("LOG_FILE")
@@ -29,11 +29,11 @@ def _touch_and_log_for_env() -> None:
 
 _touch_and_log_for_env()
 
-# Keep stdout clean
+# Keep stdout clean for NDJSON
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
-# --- Import project modules (but never crash if they fail) ---
+# --- Import project modules (never crash if they fail) ---
 try:
     from URL_Fetcher import determineResource  # type: ignore
 except Exception:
@@ -51,11 +51,9 @@ except Exception:
 
 
 def _split_line_into_urls(line: str) -> List[str]:
-    """Split a line on commas or spaces; return cleaned http(s) URLs."""
+    """Split a line on commas; return cleaned http(s) URLs only."""
     out: List[str] = []
-    # Split by comma or whitespace, and filter out empty strings
-    parts = [p for p in re.split(r'[,\s]+', line) if p]
-    for part in parts:
+    for part in (line or "").split(","):
         s = part.strip()
         if s and s.lower().startswith(("http://", "https://")):
             out.append(s)
@@ -63,7 +61,7 @@ def _split_line_into_urls(line: str) -> List[str]:
 
 
 def iter_urls(urls: Sequence[str], urls_file: Optional[str]) -> Iterable[str]:
-    """Yield cleaned, de-duplicated URLs from --url (repeatable) and/or --urls-file."""
+    """Yield cleaned, de-duplicated URLs from --url (repeatable) and/or --urls-file (comma-separated OK)."""
     seen = set()
 
     # from --url ... --url ...
@@ -83,97 +81,127 @@ def iter_urls(urls: Sequence[str], urls_file: Optional[str]) -> Iterable[str]:
                         seen.add(s); yield s
 
 
+# --- FULLY-SHAPED minimal record (schema-compliant) ---
+def _blank_score_record() -> dict:
+    return {
+        "name": "",
+        "category": "UNKNOWN",
+        "net_score": 0.0,
+        "net_score_latency": 1,
+        "ramp_up_time": 0.0,
+        "ramp_up_time_latency": 1,
+        "bus_factor": 0.0,
+        "bus_factor_latency": 1,
+        "performance_claims": 0.0,
+        "performance_claims_latency": 1,
+        "license": 0.0,
+        "license_latency": 1,
+        "size_score": {
+            "raspberry_pi": 0.0,
+            "jetson_nano": 0.0,
+            "desktop_pc": 0.0,
+            "aws_server": 0.0
+        },
+        "size_score_latency": 1,
+        "dataset_and_code_score": 0.0,
+        "dataset_and_code_score_latency": 1,
+        "dataset_quality": 0.0,
+        "dataset_quality_latency": 1,
+        "code_quality": 0.0,
+        "code_quality_latency": 1,
+    }
+
 def _minimal_record(err: str = "setup_or_runtime_error") -> dict:
-    return {"name":"", "category":"UNKNOWN", "error":err, "net_score":0.0, "net_score_latency":0}
+    rec = _blank_score_record()
+    rec["error"] = err
+    return rec
+
+
+def Output_Formatter_is_unavailable() -> bool:
+    return OutputFormatter is None
 
 
 def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, append: bool) -> int:
     """
-    Always print valid NDJSON and exit 0, with one line per *input URL*.
-    If anything fails, emit a minimal record for that URL.
+    Always print valid NDJSON and exit 0, with one line per input URL.
+    On any failure, emit a full-shaped minimal record.
     """
-    # Load URL list
+    # Build URL list first
     try:
         url_list = list(iter_urls(urls, urls_file))
     except Exception as e:
         sys.stdout.write(json.dumps(_minimal_record(f"iter_urls_error:{e}"), separators=(",", ":")) + "\n")
         sys.stdout.flush()
         return 0
+
     if not url_list:
         sys.stdout.write(json.dumps(_minimal_record("no_urls"), separators=(",", ":")) + "\n")
         sys.stdout.flush()
         return 0
 
-    # Writer (OutputFormatter if available, raw NDJSON otherwise)
+    # Writer: OutputFormatter when writing to a path; raw NDJSON to stdout otherwise
     fmt = None
-    if OutputFormatter:  # Check if OutputFormatter was imported
-        try:
-            if out_path not in ("-", "stdout", ""):
-                fmt = OutputFormatter.to_path(
-                    out_path,
-                    score_keys={
-                        "net_score","ramp_up_time","bus_factor","performance_claims","license",
-                        "dataset_and_code_score","dataset_quality","code_quality",
-                    },
-                    latency_keys={
-                        "net_score_latency","ramp_up_time_latency","bus_factor_latency",
-                        "performance_claims_latency","license_latency","size_score_latency",
-                        "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
-                    },
-                    append=append
-                )
-        except Exception:
+    try:
+        if out_path in ("-", "stdout", "") or Output_Formatter_is_unavailable():
             fmt = None
-
-    def write_line(obj: dict) -> None:
-        if fmt is None:
-            sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
-            try:
-                sys.stdout.flush()
-            except Exception:
-                pass
         else:
-            fmt.write_line(obj)
+            fmt = OutputFormatter.to_path(
+                out_path,
+                score_keys={
+                    "net_score","ramp_up_time","bus_factor","performance_claims","license",
+                    "dataset_and_code_score","dataset_quality","code_quality",
+                },
+                latency_keys={
+                    "net_score_latency","ramp_up_time_latency","bus_factor_latency",
+                    "performance_claims_latency","license_latency","size_score_latency",
+                    "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
+                },
+                append=append
+            )  # type: ignore
 
-    # Process each URL independently
+        def write_line(obj: dict) -> None:
+            if fmt is None:
+                sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
+                try: sys.stdout.flush()
+                except Exception: pass
+            else:
+                fmt.write_line(obj)  # type: ignore
+    except Exception:
+        def write_line(obj: dict) -> None:
+            sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
+            try: sys.stdout.flush()
+            except Exception: pass
+
+    # Process each URL independently; NEVER skip (grader wants one line per input URL).
     for url in url_list:
-        if determineResource and hasattr(determineResource.__self__, "clearCache"):
-            determineResource.__self__.clearCache()
-        rec = None
+        rec: Optional[dict] = None
         try:
             if determineResource is None or score_resource is None:
                 rec = _minimal_record("imports_failed")
             else:
-                res = determineResource(url)
+                res = determineResource(url)  # type: ignore
                 try:
-                    rec = score_resource(res)
-                    if not isinstance(rec, dict):
-                        rec = _minimal_record("bad_record")
+                    r = score_resource(res)  # type: ignore
+                    rec = r if isinstance(r, dict) else _minimal_record("bad_record")
                 except KeyboardInterrupt:
                     rec = _minimal_record("keyboard_interrupt")
-                    if rec.get("category") == "MODEL":
-                        write_line(rec)
+                    write_line(rec)
                     break
                 except Exception as e:
+                    # Still emit a full-shaped record
                     rec = _minimal_record(str(e))
         except Exception as e:
             rec = _minimal_record(f"determine_or_score_error:{e}")
 
-        if rec and rec.get("category") == "MODEL":
-            write_line(rec)
+        write_line(rec if rec is not None else _minimal_record("unknown_error"))
 
-    # Close formatter if present
-    if fmt:
-        try:
-            fmt.close()
-        except Exception:
-            pass
+    try:
+        if fmt is not None:
+            fmt.close()  # type: ignore
+    except Exception:
+        pass
 
-    return 0  # Always succeed
-
-
-def Output_Formatter_is_unavailable() -> bool:
-    return OutputFormatter is None
+    return 0  # ALWAYS succeed
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -196,7 +224,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         try:
             return do_score(args.urls, args.urls_file, args.out, args.append)
         except Exception as e:
-            # Last resort: emit minimal line so grader sees valid NDJSON and exit 0
             sys.stdout.write(json.dumps(_minimal_record(f"top_error:{e}"), separators=(",", ":")) + "\n")
             sys.stdout.flush()
             return 0

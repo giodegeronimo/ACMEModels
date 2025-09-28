@@ -1,12 +1,40 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="0.278" timestamp="2025-09-27T14:08:42.946666-04:00" hostname="DESKTOP-ROUJ7SR"><testcase classname="tests.test_cli" name="test_iter_urls_merge_dedup" time="0.003" /><testcase classname="tests.test_cli" name="test_do_score_stdout_success" time="0.002"><failure message="assert 1 == 0">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x0000023BE458DE10&gt;
-capsys = &lt;_pytest.capture.CaptureFixture object at 0x0000023BE458C050&gt;
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="0.425" timestamp="2025-09-28T12:40:26.790661-04:00" hostname="Hussein"><testcase classname="tests.test_cli" name="test_iter_urls_merge_dedup" time="0.013" /><testcase classname="tests.test_cli" name="test_do_score_stdout_success" time="0.001"><failure message="NameError: name 'Output_Formatter' is not defined">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x0000020268BF3EE0&gt;
+capsys = &lt;_pytest.capture.CaptureFixture object at 0x0000020268BF28F0&gt;
 
     def test_do_score_stdout_success(monkeypatch, capsys):
         monkeypatch.setattr(CLI_mod, "determineResource", lambda url: types.SimpleNamespace(url=url))
         monkeypatch.setattr(CLI_mod, "score_resource",
                             lambda res: {"name":"n","category":"CODE","net_score":0.5,"net_score_latency":2})
-        rc = CLI_mod.do_score(["https://ok"], None, "-", append=False)
-&gt;       assert rc == 0
-E       assert 1 == 0
+&gt;       rc = CLI_mod.do_score(["https://ok"], None, "-", append=False)
 
-tests\test_cli.py:19: AssertionError</failure></testcase></testsuite></testsuites>
+tests\test_cli.py:18: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+urls = ['https://ok'], urls_file = None, out_path = '-', append = False
+
+    def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, append: bool) -&gt; int:
+        """
+        MUST always print valid NDJSON to stdout (at least one line) and exit 0,
+        even if something fails internally. The grader validates the JSON separately.
+        """
+        # If core imports failed, emit one minimal line and succeed
+        if determineResource is None or score_resource is None:
+            _write_minimal_ndjson_line()
+            return 0
+    
+        SCORE_KEYS = {
+            "net_score","ramp_up_time","bus_factor","performance_claims","license",
+            "dataset_and_code_score","dataset_quality","code_quality",
+        }
+        LATENCY_KEYS = {
+            "net_score_latency","ramp_up_time_latency","bus_factor_latency",
+            "performance_claims_latency","license_latency","size_score_latency",
+            "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
+        }
+    
+        # Choose destination
+        if out_path in ("-", "stdout", ""):
+&gt;           fmt = Output_Formatter(fh=sys.stdout, score_keys=SCORE_KEYS, latency_keys=LATENCY_KEYS)  # type: ignore
+E           NameError: name 'Output_Formatter' is not defined
+
+CLI.py:101: NameError</failure></testcase></testsuite></testsuites>

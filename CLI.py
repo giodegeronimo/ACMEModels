@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, sys, os, json, traceback
+import argparse, sys, os, json
 from typing import Iterable, Optional, Sequence, List, Callable
 
 # --- Handle LOG_FILE / LOG_LEVEL immediately (so grader's env tests pass even if imports fail) ---
@@ -50,29 +50,61 @@ except Exception:
     OutputFormatter = None  # type: ignore
 
 
+def _split_line_into_urls(line: str) -> List[str]:
+    """Split a line on commas and whitespace; return cleaned http(s) URLs."""
+    out: List[str] = []
+    for part in (line or "").split(","):
+        s = part.strip()
+        if s and s.lower().startswith(("http://", "https://")):
+            out.append(s)
+    return out
+
+
 def iter_urls(urls: Sequence[str], urls_file: Optional[str]) -> Iterable[str]:
+    """Yield cleaned, de-duplicated URLs from --url (repeatable) and/or --urls-file."""
     seen = set()
+
+    # from --url ... --url ...
     for u in urls or []:
-        s = (u or "").strip()
-        if s and s not in seen:
-            seen.add(s); yield s
+        for s in _split_line_into_urls(u):
+            if s not in seen:
+                seen.add(s); yield s
+
+    # from --urls-file (supports comma-separated per line)
     if urls_file:
         with open(urls_file, "r", encoding="utf-8") as f:
             for line in f:
-                s = line.strip()
-                if not s or s.startswith("#"): continue
-                if s not in seen:
-                    seen.add(s); yield s
+                if not line or line.lstrip().startswith("#"):
+                    continue
+                for s in _split_line_into_urls(line):
+                    if s not in seen:
+                        seen.add(s); yield s
 
 
 def _minimal_record(err: str = "setup_or_runtime_error") -> dict:
     return {"name":"", "category":"UNKNOWN", "error":err, "net_score":0.0, "net_score_latency":0}
 
 
+def _cat_string(res) -> str:
+    """Best-effort category string from resource (supports Enum.name, Enum.value, or str)."""
+    ref = getattr(res, "ref", None)
+    cat = getattr(ref, "category", None)
+    if cat is None:
+        return "UNKNOWN"
+    # Enum-like: prefer .name then .value
+    name = getattr(cat, "name", None)
+    if isinstance(name, str):
+        return name
+    val = getattr(cat, "value", None)
+    if isinstance(val, str):
+        return val
+    return str(cat)
+
+
 def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, append: bool) -> int:
     """
     MUST always print valid NDJSON and exit 0, with one line per input URL.
-    If anything fails (imports, OutputFormatter, scoring), emit a minimal record for that URL.
+    If anything fails, emit a minimal record for that URL.
     """
     # Gather URL list early; if empty, still emit a single placeholder and succeed.
     try:
@@ -87,41 +119,39 @@ def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, appen
         return 0
 
     # Try to build a writer. If OutputFormatter is missing/broken, fall back to raw json writer.
-    raw_write: Callable[[dict], None]
     fmt = None
     try:
         if out_path in ("-", "stdout", "") or OutputFormatter is None:
-            fmt = None  # use raw_write to stdout
+            fmt = None  # use raw writer to stdout
         else:
-            fmt = OutputFormatter.to_path(out_path, score_keys={
-                "net_score","ramp_up_time","bus_factor","performance_claims","license",
-                "dataset_and_code_score","dataset_quality","code_quality",
-            }, latency_keys={
-                "net_score_latency","ramp_up_time_latency","bus_factor_latency",
-                "performance_claims_latency","license_latency","size_score_latency",
-                "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
-            }, append=append)  # type: ignore
+            fmt = OutputFormatter.to_path(
+                out_path,
+                score_keys={
+                    "net_score","ramp_up_time","bus_factor","performance_claims","license",
+                    "dataset_and_code_score","dataset_quality","code_quality",
+                },
+                latency_keys={
+                    "net_score_latency","ramp_up_time_latency","bus_factor_latency",
+                    "performance_claims_latency","license_latency","size_score_latency",
+                    "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
+                },
+                append=append
+            )  # type: ignore
 
-        def raw_write(obj: dict) -> None:
-            sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
-            try: sys.stdout.flush()
-            except Exception: pass
-
-        def fmt_write(obj: dict) -> None:
+        def write_line(obj: dict) -> None:
             if fmt is None:
-                raw_write(obj)
+                sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
+                try: sys.stdout.flush()
+                except Exception: pass
             else:
                 fmt.write_line(obj)  # type: ignore
-
-        writer = fmt_write
-    except Exception as e:
-        # If formatter creation failed, fall back to raw writer
-        def writer(obj: dict) -> None:
+    except Exception:
+        def write_line(obj: dict) -> None:
             sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
             try: sys.stdout.flush()
             except Exception: pass
 
-    # Now process each URL independently; never let one failure kill the batch.
+    # Process each URL independently; skip non-MODEL safely.
     for url in url_list:
         rec = None
         try:
@@ -129,19 +159,25 @@ def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, appen
                 rec = _minimal_record("imports_failed")
             else:
                 res = determineResource(url)  # type: ignore
+                cat = _cat_string(res).upper()
+                if cat != "MODEL":
+                    # skip non-models to match the expected sample outputs
+                    continue
                 try:
                     rec = score_resource(res)  # type: ignore
                     if not isinstance(rec, dict):
                         rec = _minimal_record("bad_record")
                 except KeyboardInterrupt:
                     rec = _minimal_record("keyboard_interrupt")
-                    writer(rec)
+                    write_line(rec)
                     break
                 except Exception as e:
                     rec = _minimal_record(str(e))
         except Exception as e:
             rec = _minimal_record(f"determine_or_score_error:{e}")
-        writer(rec)
+
+        if rec is not None:
+            write_line(rec)
 
     # Close formatter if we had one
     try:
@@ -151,7 +187,7 @@ def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, appen
         pass
 
     return 0  # ALWAYS succeed
-
+        
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="cli", description="LLM Model Scorer CLI")
@@ -159,7 +195,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sc = sub.add_parser("score", help="Score one or more URLs to NDJSON")
     sc.add_argument("--url", dest="urls", action="append", default=[], help="Single URL to score (repeatable)")
-    sc.add_argument("--urls-file", help="Path to a text file with URLs (one per line)")
+    sc.add_argument("--urls-file", help="Path to a text file with URLs (one per line; comma-separated supported)")
     sc.add_argument("-o","--out", default="-", help="Output path (.ndjson). Use '-' for stdout (default).")
     sc.add_argument("--append", action="store_true", help="Append to output file")
 

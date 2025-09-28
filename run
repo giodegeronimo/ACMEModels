@@ -13,31 +13,31 @@ pick_python() {
 PY_CMD="${PY_CMD:-$(pick_python)}"
 [[ -z "$PY_CMD" ]] && { echo "[run] ERROR: no Python interpreter found." >&2; exit 1; }
 
-cmd="${1:-}"; [[ -z "$cmd" ]] && { echo "Usage: ./run install|test|/abs/urls.txt|https://url" >&2; exit 1; }
+cmd="${1:-}";
+[[ -z "$cmd" ]] && { echo "Usage: ./run install|test|\"https://url1,https://url2,...\"" >&2; exit 1; }
 
-if [[ "$cmd" == "install" ]]; then
+if [[ "$cmd" == "install" ]];
+then
   # grader expects this to succeed and exit 0
   $PY_CMD -m pip install -q --upgrade pip
-  if [[ -f "$here/requirements.txt" ]]; then
+  if [[ -f "$here/requirements.txt" ]];
+  then
     $PY_CMD -m pip install -r "$here/requirements.txt"
   else
     $PY_CMD -m pip install requests pytest pytest-cov jsonschema
   fi
   # Touch log file if requested (even when LOG_LEVEL=0)
-  if [[ -n "${LOG_FILE:-}" ]]; then : > "$LOG_FILE" || true; fi
+  if [[ -n "${LOG_FILE:-}" ]];
+  then : > "$LOG_FILE" || true; fi
   echo "OK"
   exit 0
 fi
 
-if [[ "$cmd" == "test" ]]; then
+if [[ "$cmd" == "test" ]];
+then
   # Grader calls this and expects 0 plus a summary line
   exec $PY_CMD "$here/CLI.py" test
 fi
 
-if [[ -f "$cmd" ]]; then
-  # URL file mode: must emit valid NDJSON to stdout
-  exec $PY_CMD "$here/CLI.py" score --urls-file "$cmd" -o -
-fi
-
-# Single URL mode
-exec $PY_CMD "$here/CLI.py" score --url "$cmd" -o -
+# Assume the command is a URL or a comma-separated list of URLs
+exec $PY_CMD "$here/CLI.py" score --urls "$cmd" -o -

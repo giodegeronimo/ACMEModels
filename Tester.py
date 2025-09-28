@@ -91,7 +91,7 @@ def main(_argv: list[str] | None = None) -> int:
         "--disable-warnings",
         "--cov=.",
         f"--cov-report=xml:{cov_xml}",
-        "--cov-report=term",
+        "--cov-report=term-missing",
         f"--junitxml={junit_xml}",
     ]
 

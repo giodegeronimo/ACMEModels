@@ -137,6 +137,8 @@ def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, appen
 
     # Process each URL independently
     for url in url_list:
+        if determineResource and hasattr(determineResource.__self__, "clearCache"):
+            determineResource.__self__.clearCache()
         rec = None
         try:
             if determineResource is None or score_resource is None:

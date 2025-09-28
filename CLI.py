@@ -49,30 +49,43 @@ try:
 except Exception:
     OutputFormatter = None  # type: ignore
 
+def _minimal_record(err: str = "setup_or_runtime_error") -> dict:
+    return {
+        "name": "",
+        "category": "UNKNOWN",
+        "error": err,
+        "net_score": 0.0,
+        "net_score_latency": 0,
+    }
+
+def _split_line_into_tokens(line: str) -> List[str]:
+    """Split a line on commas/whitespace and keep any non-empty token (not just http URLs)."""
+    return [p.strip() for p in re.split(r'[,\s]+', line) if p.strip()]
 
 def _split_line_into_urls(line: str) -> List[str]:
-    """Split a line on commas or spaces; return cleaned http(s) URLs."""
+    parts = [p for p in re.split(r"[,\s]+", line) if p]
     out: List[str] = []
-    # Split by comma or whitespace, and filter out empty strings
-    parts = [p for p in re.split(r'[,\s]+', line) if p]
-    for part in parts:
-        s = part.strip()
+    for p in parts:
+        s = p.strip()
         if s and s.lower().startswith(("http://", "https://")):
             out.append(s)
     return out
 
-
 def iter_urls(urls: Sequence[str], urls_file: Optional[str]) -> Iterable[str]:
-    """Yield cleaned, de-duplicated URLs from --url (repeatable) and/or --urls-file."""
+    """Yield de-duplicated input tokens.
+    - --url values: accept raw tokens (don't require http/https)
+    - --urls-file: split each line by commas/whitespace and keep only http(s) URLs
+    """
     seen = set()
 
     # from --url ... --url ...
     for u in urls or []:
-        for s in _split_line_into_urls(u):
-            if s not in seen:
-                seen.add(s); yield s
+        s = (u or "").strip()
+        if s and s not in seen:
+            seen.add(s)
+            yield s
 
-    # from --urls-file (supports comma-separated per line)
+    # from --urls-file (supports comma-separated per line; only http(s) kept)
     if urls_file:
         with open(urls_file, "r", encoding="utf-8") as f:
             for line in f:
@@ -80,35 +93,33 @@ def iter_urls(urls: Sequence[str], urls_file: Optional[str]) -> Iterable[str]:
                     continue
                 for s in _split_line_into_urls(line):
                     if s not in seen:
-                        seen.add(s); yield s
-
-
-def _minimal_record(err: str = "setup_or_runtime_error") -> dict:
-    return {"name":"", "category":"UNKNOWN", "error":err, "net_score":0.0, "net_score_latency":0}
+                        seen.add(s)
+                        yield s
 
 
 def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, append: bool) -> int:
     """
-    Always print valid NDJSON and exit 0, with one line per *input URL*.
-    If anything fails, emit a minimal record for that URL.
+    Print one NDJSON line per input token.
+    Return 0 if all ok, 1 if any exception, 130 on KeyboardInterrupt.
     """
-    # Load URL list
+    # Build list
     try:
         url_list = list(iter_urls(urls, urls_file))
     except Exception as e:
         sys.stdout.write(json.dumps(_minimal_record(f"iter_urls_error:{e}"), separators=(",", ":")) + "\n")
         sys.stdout.flush()
-        return 0
+        return 1
     if not url_list:
         sys.stdout.write(json.dumps(_minimal_record("no_urls"), separators=(",", ":")) + "\n")
         sys.stdout.flush()
-        return 0
+        return 1
 
-    # Writer (OutputFormatter if available, raw NDJSON otherwise)
+    # Writers
     fmt = None
-    if OutputFormatter:  # Check if OutputFormatter was imported
-        try:
-            if out_path not in ("-", "stdout", ""):
+    fh = None
+    if out_path not in ("-", "stdout", ""):
+        if OutputFormatter:
+            try:
                 fmt = OutputFormatter.to_path(
                     out_path,
                     score_keys={
@@ -122,54 +133,59 @@ def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, appen
                     },
                     append=append
                 )
-        except Exception:
-            fmt = None
+            except Exception:
+                fmt = None
+        if fmt is None:
+            try:
+                fh = open(out_path, "a" if append else "w", encoding="utf-8", newline="\n")
+            except Exception:
+                fh = None  # will fall back to stdout
 
     def write_line(obj: dict) -> None:
-        if fmt is None:
-            sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
-            try:
-                sys.stdout.flush()
-            except Exception:
-                pass
-        else:
+        line = json.dumps(obj, separators=(",", ":")) + "\n"
+        if fmt is not None:
             fmt.write_line(obj)
+        elif fh is not None:
+            fh.write(line); fh.flush()
+        else:
+            sys.stdout.write(line)
+            try: sys.stdout.flush()
+            except Exception: pass
 
-    # Process each URL independently
-    for url in url_list:
-        if determineResource and hasattr(determineResource.__self__, "clearCache"):
-            determineResource.__self__.clearCache()
-        rec = None
+    exit_code = 0
+    for token in url_list:
         try:
             if determineResource is None or score_resource is None:
-                rec = _minimal_record("imports_failed")
+                write_line(_minimal_record("imports_failed"))
+                exit_code = 1
+                continue
+            res = determineResource(token)
+            rec = score_resource(res)
+            if not isinstance(rec, dict):
+                write_line(_minimal_record("bad_record"))
+                exit_code = 1
             else:
-                res = determineResource(url)
-                try:
-                    rec = score_resource(res)
-                    if not isinstance(rec, dict):
-                        rec = _minimal_record("bad_record")
-                except KeyboardInterrupt:
-                    rec = _minimal_record("keyboard_interrupt")
-                    if rec.get("category") == "MODEL":
-                        write_line(rec)
-                    break
-                except Exception as e:
-                    rec = _minimal_record(str(e))
+                write_line(rec)
+        except KeyboardInterrupt:
+    # Do NOT emit a line for the interrupted URL; stop after prior results only.
+            if fmt:
+                try: fmt.close()
+                except Exception: pass
+            if fh:
+                try: fh.close()
+                except Exception: pass
+            return 130
         except Exception as e:
-            rec = _minimal_record(f"determine_or_score_error:{e}")
+            write_line(_minimal_record(str(e)))
+            exit_code = 1
 
-        if rec and rec.get("category") == "MODEL":
-            write_line(rec)
-
-    # Close formatter if present
     if fmt:
-        try:
-            fmt.close()
-        except Exception:
-            pass
-
-    return 0  # Always succeed
+        try: fmt.close()
+        except Exception: pass
+    if fh:
+        try: fh.close()
+        except Exception: pass
+    return exit_code
 
 
 def Output_Formatter_is_unavailable() -> bool:
@@ -203,10 +219,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.cmd == "test":
         try:
             import Tester  # type: ignore
-            rc = Tester.main(None)  # type: ignore[attr-defined]
-            if rc == 0:
-                print("20/20 test cases passed. 80% line coverage achieved.", flush=True)
-            return 0
+            return Tester.main(None)  # type: ignore[attr-defined]
         except SystemExit as e:
             return int(getattr(e, "code", 1) or 0)
         except Exception as e:

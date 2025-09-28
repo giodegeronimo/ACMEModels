@@ -50,3 +50,11 @@ def test_do_score_keyboard_interrupt(monkeypatch, capsys):
     assert rc == 130  # interrupted
     # exactly one line printed
     assert len(capsys.readouterr().out.strip().splitlines()) == 1
+
+
+def test_split_line_into_urls_mixed_delims_and_garbage():
+    import CLI as CLI_mod
+    line = " https://a,noturl, https://b   https://c, http://d "
+    assert CLI_mod._split_line_into_urls(line) == [
+        "https://a", "https://b", "https://c", "http://d"
+    ]

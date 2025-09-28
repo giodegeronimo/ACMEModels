@@ -222,48 +222,21 @@ def metric_license(inp: Inputs) -> float:
 
 
 def metric_size_score(inp: Inputs) -> Dict[str, float]:
-    """
-    Deployability buckets driven by artifact footprint; Jetson gets a small popularity bump (bounded).
-    Also: ultra-small repos (fc≤5) get Jetson ≥0.80; tiny repos (fc≤12) get desktop=1.00.
-    """
     md = inp.metadata or {}
-    fc = max(0, int(md.get("fileCount") or 0))
-    likes = int(md.get("likes") or 0)
-    downloads = int(md.get("downloads") or 0)
+    file_count = int(md.get("fileCount") or 0)
 
-    def _rpi_from_fc(n: int) -> float:
-        if n <= 5:   return 0.75
-        if n <= 10:  return 0.90
-        if n <= 20:  return 0.50
-        if n <= 30:  return 0.20
-        return 0.10
-
-    # bounded popularity bump → big/popular ~0.40 on Jetson; tiny/popular up to ~0.95
-    pop = 0.0
-    if downloads > 0:
-        pop += min(0.14, (downloads ** 0.25) / 110.0)
-    if likes > 0:
-        pop += min(0.06, likes / 6000.0)
-
-    rpi = _rpi_from_fc(fc)
-    jetson = _clamp01(rpi + pop)
-    if fc <= 5:
-        jetson = max(jetson, 0.80)     # ultra-small models should be fine on Jetson
-
-    # Desktop plateau: very small models → 1.00; moderate (≤30) → 0.95; else 0.60 floor
-    if fc <= 12:
-        desktop = 1.00
-    else:
-        desktop = max(rpi, 0.95 if fc <= 30 else 0.60)
-
-    server = 1.00
+    raspberry_pi = 1.0 if file_count <= 5 else (0.6 if file_count <= 15 else 0.2)
+    jetson_nano = 0.8 if file_count <= 10 else (0.5 if file_count <= 25 else 0.3)
+    desktop_pc  = 0.6 if file_count <= 15 else (0.4 if file_count <= 40 else 0.2)
+    aws_server  = 0.9 if file_count <= 40 else 0.7
 
     return {
-        "raspberry_pi": _clamp01(rpi),
-        "jetson_nano": _clamp01(jetson),
-        "desktop_pc":  _clamp01(desktop),
-        "aws_server":  _clamp01(server),
+        "raspberry_pi": _clamp01(raspberry_pi),
+        "jetson_nano": _clamp01(jetson_nano),
+        "desktop_pc":  _clamp01(desktop_pc),
+        "aws_server":  _clamp01(aws_server),
     }
+
 
 
 _DATASET_LINK_RE = re.compile(r"https?://huggingface\.co/(datasets/|.*\bdata)", re.IGNORECASE)

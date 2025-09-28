@@ -86,7 +86,7 @@ def _minimal_record(err: str = "setup_or_runtime_error") -> dict:
     return {"name":"", "category":"UNKNOWN", "error":err, "net_score":0.0, "net_score_latency":0}
 
 
-def do_score(args: argparse.Namespace) -> None:
+def do_score(urls: list[str], urls_file: str, output: str, append: bool) -> None:
     from Scorer import Scorer
     from Output_Formatter import OutputFormatter
     import sys
@@ -94,11 +94,10 @@ def do_score(args: argparse.Namespace) -> None:
     scorer = Scorer()
 
     # set up output formatter
-    out_path = args.output
-    append = args.append
+    out_path = output
     fmt = None
     try:
-        if out_path in ("-", "stdout", ""):
+        if out_path in ("-", "stdout", "", None):
             # Write to stdout but still format properly
             fmt = OutputFormatter(
                 fh=sys.stdout,
@@ -130,10 +129,11 @@ def do_score(args: argparse.Namespace) -> None:
         fmt = None
 
     # iterate over URL groups (each line = one group of URLs)
-    for group in iter_url_groups(args.urls_file, args.url):
+    for group in iter_url_groups(urls_file, urls):
         record = scorer.score(group)
         if fmt:
             fmt.write(record)
+
 
 
 

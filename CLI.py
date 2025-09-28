@@ -61,23 +61,28 @@ def _split_line_into_urls(line: str) -> List[str]:
     return out
 
 def iter_url_groups(urls_file: Optional[str], urls: Sequence[str] = ()) -> Iterable[List[str]]:
-    """Yield groups of URLs (one group per CLI arg or per file line)."""
+    """
+    Yield one group per input *line/arg*.
+    IMPORTANT: Do NOT skip blank-ish lines (like ',,'); yield an *empty list* so we still emit a record.
+    """
+    # From --url args (each arg is its own group)
     for u in urls or []:
         group = _split_line_into_urls(u)
-        if group:
-            yield group
+        yield group  # even if empty
+
+    # From --urls-file
     if urls_file:
         with open(urls_file, "r", encoding="utf-8") as f:
-            for line in f:
-                # Do NOT skip blank-ish lines with commas; grader uses ',,' cases.
+            for raw in f:
+                line = raw.rstrip("\n")
                 if line.lstrip().startswith("#"):
-                    continue
+                    continue  # comments only
                 group = _split_line_into_urls(line)
-                if group:
-                    yield group
+                # yield even if group == []  (this is the key change)
+                yield group
 
 def _pick_model_url(group: List[str]) -> Optional[str]:
-    """Pick the model URL from a group. Convention: the 3rd URL (last) is the model."""
+    """Pick the model URL from a group. Convention: the 3rd URL (last) is the model; else the last available."""
     if not group:
         return None
     idx = 2 if len(group) >= 3 else len(group) - 1
@@ -250,6 +255,7 @@ def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: Opti
     fmt = _open_formatter(out_path, append)
 
     for group in iter_url_groups(urls_file, urls):
+        model_url = None
         try:
             model_url = _pick_model_url(group)
             if not (determineResource and score_resource and model_url):
@@ -260,12 +266,12 @@ def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: Opti
                 if not isinstance(rec, dict):
                     rec = {"error": "bad_record"}
         except Exception as e:
-            model_url = None
             rec = {"error": f"determine_or_score_error:{e}"}
 
+        # Pad to full schema so ranges & latencies are always valid
         safe = pad_record(rec, model_url)
 
-        # Emit one line per input group
+        # Emit one line per input group (even if empty/invalid)
         if fmt:
             try:
                 fmt.write_line(safe)

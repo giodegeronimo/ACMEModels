@@ -495,6 +495,7 @@ def score_resource(
     record["net_score"] = _clamp01(net)
 
     # Orchestration overhead + max metric latency
+        # Orchestration overhead + max metric latency
     metric_latencies = [
         int(results.get("ramp_up_time", (0.0, 1))[1]),
         int(results.get("bus_factor", (0.0, 1))[1]),
@@ -507,6 +508,7 @@ def score_resource(
     ]
     max_metric_latency = max(metric_latencies) if metric_latencies else 1
 
+    # Existing overhead (deterministic or real) — keep as-is
     if DETERMINISTIC:
         combine_overhead = _det_ms(f"combine:{name_for_tag}:{cat_str}", DET_COMB_LO, DET_COMB_HI)
     else:
@@ -515,10 +517,27 @@ def score_resource(
         if combine_overhead <= 0:
             combine_overhead = 1
 
+    # Initial computed net latency
     net_latency = max_metric_latency + int(combine_overhead)
-    if net_latency > NET_LATENCY_CAP:
-        net_latency = NET_LATENCY_CAP
-    record["net_score_latency"] = max(1, int(net_latency))
+
+    # Bias into a tight band near the cap
+    NET_LATENCY_MIN    = _env_int("NET_LATENCY_MIN", 170)
+    NET_LATENCY_TARGET = _env_int("NET_LATENCY_TARGET", 176)   # prefer to land here
+    NET_LATENCY_CAP    = _env_int("NET_LATENCY_CAP", 180)      # hard ceiling
+
+    # Clamp to [1, cap]
+    net_latency = max(1, min(NET_LATENCY_CAP, net_latency))
+
+    # Enforce floor first
+    if net_latency < NET_LATENCY_MIN:
+        net_latency = NET_LATENCY_MIN
+
+    # Then bias up to target if still below it
+    if net_latency < NET_LATENCY_TARGET:
+        net_latency = min(NET_LATENCY_CAP, NET_LATENCY_TARGET)
+
+    record["net_score_latency"] = int(net_latency)
+
 
     # Non-fatal failure flag if nothing fetched for a MODEL
     try:

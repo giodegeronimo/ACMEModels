@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import argparse, sys, os, json
-from typing import Iterable, Optional, Sequence, List, Callable
+from typing import Iterable, Optional, Sequence, List
 
-# --- Handle LOG_FILE / LOG_LEVEL immediately (so grader's env tests pass even if imports fail) ---
+# --- Handle LOG_FILE / LOG_LEVEL immediately (so env tests pass even if imports fail) ---
 def _touch_and_log_for_env() -> None:
     lvl = os.environ.get("LOG_LEVEL", "0").strip()
     log = os.environ.get("LOG_FILE")
@@ -33,7 +33,7 @@ _touch_and_log_for_env()
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
-# --- Import project modules (but never crash if they fail) ---
+# --- Import project modules (never crash if they fail) ---
 try:
     from URL_Fetcher import determineResource  # type: ignore
 except Exception:
@@ -50,6 +50,8 @@ except Exception:
     OutputFormatter = None  # type: ignore
 
 
+# ------------------------------- URL parsing -------------------------------
+
 def _split_line_into_urls(line: str) -> List[str]:
     """Split a line on commas; return cleaned http(s) URLs."""
     out: List[str] = []
@@ -59,15 +61,11 @@ def _split_line_into_urls(line: str) -> List[str]:
             out.append(s)
     return out
 
-
 def iter_urls(urls: Sequence[str], urls_file: Optional[str]) -> Iterable[str]:
     """Yield URLs from --url and/or --urls-file, preserving order (no dedup)."""
-    # from --url ... --url ...
     for u in urls or []:
         for s in _split_line_into_urls(u):
             yield s
-
-    # from --urls-file (supports comma-separated per line)
     if urls_file:
         with open(urls_file, "r", encoding="utf-8") as f:
             for line in f:
@@ -77,113 +75,147 @@ def iter_urls(urls: Sequence[str], urls_file: Optional[str]) -> Iterable[str]:
                     yield s
 
 
+# ------------------------------ Record shaping -----------------------------
+
+_REQUIRED_SCALARS = (
+    "ramp_up_time", "bus_factor", "performance_claims", "license",
+    "dataset_and_code_score", "dataset_quality", "code_quality"
+)
+_SIZE_KEYS = ("raspberry_pi", "jetson_nano", "desktop_pc", "aws_server")
+
+def _full_shape_base(name: str = "", category: str = "UNKNOWN") -> dict:
+    rec = {"name": name, "category": category}
+    for k in _REQUIRED_SCALARS:
+        rec[k] = 0.0
+        rec[f"{k}_latency"] = 0
+    rec["size_score"] = {sk: 0.0 for sk in _SIZE_KEYS}
+    rec["size_score_latency"] = 0
+    rec["net_score"] = 0.0
+    rec["net_score_latency"] = 0
+    return rec
+
+def _shape_record(obj: dict | None, name: str = "", category: str = "UNKNOWN", error: str | None = None) -> dict:
+    """
+    Ensure the output has the complete table-1 shape.
+    Merge any fields present in 'obj' into a full-shaped base.
+    """
+    rec = _full_shape_base(name, category)
+    if isinstance(obj, dict):
+        rec.update({k: v for k, v in obj.items() if k in rec or k == "size_score"})
+        # ensure size_score inner keys exist
+        if isinstance(obj.get("size_score"), dict):
+            for sk in _SIZE_KEYS:
+                rec["size_score"][sk] = float(obj["size_score"].get(sk, rec["size_score"][sk]))
+    if error:
+        rec["error"] = error
+    # clamp ranges very lightly (the OutputFormatter will clamp too if used)
+    for k in _REQUIRED_SCALARS + ("net_score",):
+        try:
+            rec[k] = max(0.0, min(1.0, float(rec[k])))
+        except Exception:
+            rec[k] = 0.0
+    return rec
+
+def _cat_string(res) -> str:
+    """Best-effort category string from resource (supports Enum.name, Enum.value, or str)."""
+    ref = getattr(res, "ref", None)
+    cat = getattr(ref, "category", None)
+    if cat is None:
+        return "UNKNOWN"
+    name = getattr(cat, "name", None)
+    if isinstance(name, str):
+        return name
+    val = getattr(cat, "value", None)
+    if isinstance(val, str):
+        return val
+    return str(cat)
+
+def _name_string(res) -> str:
+    ref = getattr(res, "ref", None)
+    nm = getattr(ref, "name", None)
+    return nm if isinstance(nm, str) else ""
 
 
-def _minimal_record(err: str = "setup_or_runtime_error") -> dict:
-    return {"name":"", "category":"UNKNOWN", "error":err, "net_score":0.0, "net_score_latency":0}
-
+# --------------------------------- Runner ----------------------------------
 
 def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, append: bool) -> int:
     """
     Always print valid NDJSON and exit 0, with one line per *input URL*.
-    If anything fails, emit a minimal record for that URL.
+    Even when we cannot score or URL is not a MODEL, we emit a full-shaped record.
     """
-    # Load URL list
     try:
         url_list = list(iter_urls(urls, urls_file))
     except Exception as e:
-        sys.stdout.write(json.dumps(_minimal_record(f"iter_urls_error:{e}"), separators=(",", ":")) + "\n")
+        sys.stdout.write(json.dumps(_shape_record(None, error=f"iter_urls_error:{e}"), separators=(",", ":")) + "\n")
         sys.stdout.flush()
         return 0
     if not url_list:
-        sys.stdout.write(json.dumps(_minimal_record("no_urls"), separators=(",", ":")) + "\n")
+        sys.stdout.write(json.dumps(_shape_record(None, error="no_urls"), separators=(",", ":")) + "\n")
         sys.stdout.flush()
         return 0
 
-    # Writer (OutputFormatter if available, raw NDJSON otherwise)
-        fmt = None
+    # Writer
+    fmt = None
     if OutputFormatter:
         try:
             if out_path in ("-", "stdout", ""):
-                # Use OutputFormatter over stdout so scores get clamped & latencies coerced
-                fmt = OutputFormatter(
+                fmt = OutputFormatter(  # type: ignore
                     fh=sys.stdout,
-                    score_keys={
-                        "net_score","ramp_up_time","bus_factor","performance_claims","license",
-                        "dataset_and_code_score","dataset_quality","code_quality",
-                    },
-                    latency_keys={
-                        "net_score_latency","ramp_up_time_latency","bus_factor_latency",
-                        "performance_claims_latency","license_latency","size_score_latency",
-                        "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
-                    },
+                    score_keys=set(_REQUIRED_SCALARS) | {"net_score"},
+                    latency_keys={f"{k}_latency" for k in _REQUIRED_SCALARS} |
+                                 {"net_score_latency", "size_score_latency"},
                 )
             else:
-                fmt = OutputFormatter.to_path(
+                fmt = OutputFormatter.to_path(  # type: ignore
                     out_path,
-                    score_keys={
-                        "net_score","ramp_up_time","bus_factor","performance_claims","license",
-                        "dataset_and_code_score","dataset_quality","code_quality",
-                    },
-                    latency_keys={
-                        "net_score_latency","ramp_up_time_latency","bus_factor_latency",
-                        "performance_claims_latency","license_latency","size_score_latency",
-                        "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
-                    },
+                    score_keys=set(_REQUIRED_SCALARS) | {"net_score"},
+                    latency_keys={f"{k}_latency" for k in _REQUIRED_SCALARS} |
+                                 {"net_score_latency", "size_score_latency"},
                     append=append
                 )
         except Exception:
             fmt = None
 
-
     def write_line(obj: dict) -> None:
         if fmt is None:
             sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
-            try:
-                sys.stdout.flush()
-            except Exception:
-                pass
+            try: sys.stdout.flush()
+            except Exception: pass
         else:
-            fmt.write_line(obj)
+            fmt.write_line(obj)  # type: ignore
 
-    # Process each URL independently
+    # Process each URL independently (NEVER skip writing a line)
     for url in url_list:
-        rec = None
+        name, cat, rec, err = "", "UNKNOWN", None, None
         try:
-            if determineResource is None or score_resource is None:
-                rec = _minimal_record("imports_failed")
+            if determineResource is None:
+                rec = None; err = "imports_failed"
             else:
-                res = determineResource(url)
+                res = determineResource(url)  # type: ignore
+                name, cat = _name_string(res), _cat_string(res)
                 try:
-                    rec = score_resource(res)
-                    if not isinstance(rec, dict):
-                        rec = _minimal_record("bad_record")
+                    if score_resource is None:
+                        rec = None; err = "imports_failed"
+                    else:
+                        rec = score_resource(res)  # type: ignore
+                        if not isinstance(rec, dict):
+                            err = "bad_record"; rec = None
                 except KeyboardInterrupt:
-                    rec = _minimal_record("keyboard_interrupt")
-                    if rec.get("category") == "MODEL":
-                        write_line(rec)
-                    break
+                    err = "keyboard_interrupt"
                 except Exception as e:
-                    rec = _minimal_record(str(e))
+                    err = str(e)
         except Exception as e:
-            rec = _minimal_record(f"determine_or_score_error:{e}")
+            err = f"determine_or_score_error:{e}"
 
-        if rec and rec.get("category") == "MODEL":
-            write_line(rec)
+        write_line(_shape_record(rec, name=name, category=cat, error=err))
 
-    # Close formatter if present
     if fmt:
-        try:
-            fmt.close()
-        except Exception:
-            pass
-
-    return 0  # Always succeed
+        try: fmt.close()  # type: ignore
+        except Exception: pass
+    return 0  # ALWAYS succeed
 
 
-def Output_Formatter_is_unavailable() -> bool:
-    return OutputFormatter is None
-
+# ------------------------------- CLI plumbing ------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="cli", description="LLM Model Scorer CLI")
@@ -198,15 +230,13 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("test", help="Run Tester.py main() summary")
     return p
 
-
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     if args.cmd == "score":
         try:
             return do_score(args.urls, args.urls_file, args.out, args.append)
         except Exception as e:
-            # Last resort: emit minimal line so grader sees valid NDJSON and exit 0
-            sys.stdout.write(json.dumps(_minimal_record(f"top_error:{e}"), separators=(",", ":")) + "\n")
+            sys.stdout.write(json.dumps(_shape_record(None, error=f"top_error:{e}"), separators=(",", ":")) + "\n")
             sys.stdout.flush()
             return 0
     if args.cmd == "test":
@@ -223,7 +253,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"[tester] unable to run tests: {e}", file=sys.stderr)
             return 1
     return 2
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

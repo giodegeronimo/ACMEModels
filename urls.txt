@@ -1,4 +1,2 @@
-https://huggingface.co/bert-base-uncased
-https://huggingface.co/datasets/squad
-https://github.com/huggingface/transformers
-https://huggingface.co/this-model-does-not-exist-xyz
+https://huggingface.co/google-bert/bert-base-uncased
+https://huggingface.co/openai/whisper-tiny/tree/main

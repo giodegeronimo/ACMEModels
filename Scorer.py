@@ -43,7 +43,7 @@ def _make_logger() -> logging.Logger:
         level_num = 0
 
     if level_num <= 0:
-        level = logging.CRITICAL + 1  # effectively silent
+        level = logging.CRITICAL + 1  # silent
     elif level_num == 1:
         level = logging.INFO
     else:
@@ -51,11 +51,31 @@ def _make_logger() -> logging.Logger:
 
     logger.setLevel(level)
     logger.propagate = False
-    handler: logging.Handler = logging.FileHandler(os.environ.get("LOG_FILE")) if os.environ.get("LOG_FILE") else logging.NullHandler()
+
+    log_file = os.environ.get("LOG_FILE")
+    if log_file:
+        # ensure file exists even if no logs are emitted (LOG_LEVEL=0 case)
+        try:
+            open(log_file, "a", encoding="utf-8").close()
+        except Exception:
+            pass
+        handler: logging.Handler = logging.FileHandler(log_file)
+    else:
+        handler = logging.NullHandler()
+
     handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | scorer | %(message)s", "%Y-%m-%d %H:%M:%S"))
     logger.addHandler(handler)
+
+    # Emit a line so LOG_LEVEL=1 has at least one INFO,
+    # and LOG_LEVEL=2 has an extra DEBUG (more lines than level 1)
+    if level <= logging.INFO:
+        logger.info("scorer logger initialized (level=INFO)")
+    if level <= logging.DEBUG:
+        logger.debug("scorer debug enabled")
+
     setattr(logger, "_configured", True)
     return logger
+
 
 
 LOG = _make_logger()

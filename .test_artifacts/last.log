@@ -1,0 +1,193 @@
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-6.2.5, py-1.10.0, pluggy-0.13.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/shay/a/eulke/ECE30861
+plugins: colcon-core-0.20.0, cov-3.0.0
+collecting ... collected 31 items
+
+tests/test_cli.py::test_iter_urls_merge_dedup PASSED                     [  3%]
+tests/test_cli.py::test_do_score_stdout_success PASSED                   [  6%]
+tests/test_cli.py::test_do_score_file_and_append PASSED                  [  9%]
+tests/test_cli.py::test_do_score_handles_exception FAILED                [ 12%]
+
+=================================== FAILURES ===================================
+_______________________ test_do_score_handles_exception ________________________
+
+urls = ['https://bad'], urls_file = None, out_path = '-', append = False
+
+    def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, append: bool) -> int:
+        """
+        Print one NDJSON line per input token.
+        Return 0 if all ok, 1 if any exception, 130 on KeyboardInterrupt.
+        """
+        # Build list
+        try:
+            url_list = list(iter_urls(urls, urls_file))
+        except Exception as e:
+            sys.stdout.write(json.dumps(_minimal_record(f"iter_urls_error:{e}"), separators=(",", ":")) + "\n")
+            sys.stdout.flush()
+            return 1
+        if not url_list:
+            sys.stdout.write(json.dumps(_minimal_record("no_urls"), separators=(",", ":")) + "\n")
+            sys.stdout.flush()
+            return 1
+    
+        # Writers
+        fmt = None
+        fh = None
+        if out_path not in ("-", "stdout", ""):
+            if OutputFormatter:
+                try:
+                    fmt = OutputFormatter.to_path(
+                        out_path,
+                        score_keys={
+                            "net_score","ramp_up_time","bus_factor","performance_claims","license",
+                            "dataset_and_code_score","dataset_quality","code_quality",
+                        },
+                        latency_keys={
+                            "net_score_latency","ramp_up_time_latency","bus_factor_latency",
+                            "performance_claims_latency","license_latency","size_score_latency",
+                            "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
+                        },
+                        append=append
+                    )
+                except Exception:
+                    fmt = None
+            if fmt is None:
+                try:
+                    fh = open(out_path, "a" if append else "w", encoding="utf-8", newline="\n")
+                except Exception:
+                    fh = None  # will fall back to stdout
+    
+        def write_line(obj: dict) -> None:
+            line = json.dumps(obj, separators=(",", ":")) + "\n"
+            if fmt is not None:
+                fmt.write_line(obj)
+            elif fh is not None:
+                fh.write(line); fh.flush()
+            else:
+                sys.stdout.write(line)
+                try: sys.stdout.flush()
+                except Exception: pass
+    
+        exit_code = 0
+        for token in url_list:
+            try:
+                if determineResource is None or score_resource is None:
+                    write_line(_minimal_record("imports_failed"))
+                    exit_code = 1
+                    continue
+>               res = determineResource(token)
+
+CLI.py:136: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+url = 'https://bad'
+
+>   def boom(url): raise RuntimeError("bad")
+E   RuntimeError: bad
+
+tests/test_cli.py:33: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fd4cc1e6320>
+capsys = <_pytest.capture.CaptureFixture object at 0x7fd4cc1e50f0>
+
+    def test_do_score_handles_exception(monkeypatch, capsys):
+        def boom(url): raise RuntimeError("bad")
+        monkeypatch.setattr(CLI_mod, "determineResource", boom)
+>       rc = CLI_mod.do_score(["https://bad"], None, "-", append=False)
+
+tests/test_cli.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+urls = ['https://bad'], urls_file = None, out_path = '-', append = False
+
+    def do_score(urls: Sequence[str], urls_file: Optional[str], out_path: str, append: bool) -> int:
+        """
+        Print one NDJSON line per input token.
+        Return 0 if all ok, 1 if any exception, 130 on KeyboardInterrupt.
+        """
+        # Build list
+        try:
+            url_list = list(iter_urls(urls, urls_file))
+        except Exception as e:
+            sys.stdout.write(json.dumps(_minimal_record(f"iter_urls_error:{e}"), separators=(",", ":")) + "\n")
+            sys.stdout.flush()
+            return 1
+        if not url_list:
+            sys.stdout.write(json.dumps(_minimal_record("no_urls"), separators=(",", ":")) + "\n")
+            sys.stdout.flush()
+            return 1
+    
+        # Writers
+        fmt = None
+        fh = None
+        if out_path not in ("-", "stdout", ""):
+            if OutputFormatter:
+                try:
+                    fmt = OutputFormatter.to_path(
+                        out_path,
+                        score_keys={
+                            "net_score","ramp_up_time","bus_factor","performance_claims","license",
+                            "dataset_and_code_score","dataset_quality","code_quality",
+                        },
+                        latency_keys={
+                            "net_score_latency","ramp_up_time_latency","bus_factor_latency",
+                            "performance_claims_latency","license_latency","size_score_latency",
+                            "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
+                        },
+                        append=append
+                    )
+                except Exception:
+                    fmt = None
+            if fmt is None:
+                try:
+                    fh = open(out_path, "a" if append else "w", encoding="utf-8", newline="\n")
+                except Exception:
+                    fh = None  # will fall back to stdout
+    
+        def write_line(obj: dict) -> None:
+            line = json.dumps(obj, separators=(",", ":")) + "\n"
+            if fmt is not None:
+                fmt.write_line(obj)
+            elif fh is not None:
+                fh.write(line); fh.flush()
+            else:
+                sys.stdout.write(line)
+                try: sys.stdout.flush()
+                except Exception: pass
+    
+        exit_code = 0
+        for token in url_list:
+            try:
+                if determineResource is None or score_resource is None:
+                    write_line(_minimal_record("imports_failed"))
+                    exit_code = 1
+                    continue
+                res = determineResource(token)
+                rec = score_resource(res)
+                if not isinstance(rec, dict):
+                    write_line(_minimal_record("bad_record"))
+                    exit_code = 1
+                else:
+                    write_line(rec)
+            except KeyboardInterrupt:
+                write_line(_minimal_record("keyboard_interrupt"))
+                if fmt:
+                    try: fmt.close()
+                    except Exception: pass
+                if fh:
+                    try: fh.close()
+                    except Exception: pass
+                return 130
+            except Exception as e:
+>               write_line(_minimal_record(str(e)))
+E               NameError: name '_minimal_record' is not defined
+
+CLI.py:153: NameError
+=========================== short test summary info ============================
+FAILED tests/test_cli.py::test_do_score_handles_exception - NameError: name '...
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+========================= 1 failed, 3 passed in 0.12s ==========================

@@ -105,3 +105,27 @@ def test_score_resource_licenses_section_true_false(monkeypatch):
     monkeypatch.setattr(S, "hasLicenseSection", lambda _t: True)
     out1 = S.score_resource(Res())
     assert out0["license"] in (0.0, 1.0) and out1["license"] == 1.0
+
+
+def test_model_missing_meta_and_readme_sets_error():
+    import Scorer as S
+    class Cat:  # tiny shim for .name
+        def __init__(self, name): self.name = name
+    class Ref:
+        def __init__(self): self.name = "m"; self.category = Cat("MODEL")
+    class Res:
+        def __init__(self): self.ref = Ref()
+        def fetchMetadata(self): return {}
+        def fetchReadme(self):   return None
+    out = S.score_resource(Res())
+    assert out["category"] == "MODEL" and out.get("error") == "metadata_and_readme_missing"
+
+def test_code_quality_floor_for_small_repo_without_code_links():
+    import Scorer as S
+    inp = S.Inputs(
+        resource=None,
+        metadata={"fileCount": 5, "likes": 12},  # 5..25 likes + some README triggers 0.10 floor
+        readme=("readme " * 10),                 # >50 chars
+        llm={"has_code_links": False},
+    )
+    assert S.metric_code_quality(inp) == 0.10

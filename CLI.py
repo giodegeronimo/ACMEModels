@@ -15,13 +15,10 @@ def _touch_and_log_for_env() -> None:
     if not log:
         return
     try:
-        with open(log, "a", encoding="utf-8"):
-            pass
-        if n >= 1:
-            with open(log, "a", encoding="utf-8") as fh:
+        with open(log, "a", encoding="utf-8") as fh:
+            if n >= 1:
                 fh.write("INFO cli: logger ready (INFO)\n")
-        if n >= 2:
-            with open(log, "a", encoding="utf-8") as fh:
+            if n >= 2:
                 fh.write("DEBUG cli: logger debug enabled (DEBUG)\n")
     except Exception:
         pass
@@ -34,19 +31,19 @@ os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
 # --- Import project modules (soft-fail so env tests don't crash) ---
 try:
-    from URL_Fetcher import determineResource  # type: ignore
+    from URL_Fetcher import determineResource
 except Exception:
-    determineResource = None  # type: ignore
+    determineResource = None
 
 try:
-    from Scorer import score_resource          # type: ignore
+    from Scorer import score_resource
 except Exception:
-    score_resource = None  # type: ignore
+    score_resource = None
 
 try:
-    from Output_Formatter import OutputFormatter  # type: ignore
+    from Output_Formatter import OutputFormatter
 except Exception:
-    OutputFormatter = None  # type: ignore
+    OutputFormatter = None
 
 
 # ----------------- helpers -----------------
@@ -57,7 +54,7 @@ def _is_url(s: str) -> bool:
 def _split_csv_line(line: str) -> List[str]:
     buf = io.StringIO(line)
     row = next(csv.reader(buf), [])
-    return [c.strip() for c in row if c is not None]
+    return [c.strip() for c in row if c]
 
 def iter_urls(urls: Sequence[str], urls_file: Optional[str]) -> Iterable[str]:
     """
@@ -66,29 +63,32 @@ def iter_urls(urls: Sequence[str], urls_file: Optional[str]) -> Iterable[str]:
     """
     # From --url args
     for arg in urls or []:
-        parts = _split_csv_line(arg)
-        for p in parts:
+        for p in _split_csv_line(arg):
             if _is_url(p):
                 yield p
 
     # From --urls-file
     if urls_file:
-        with open(urls_file, "rb") as f:
-            raw = f.read().decode("utf-8", errors="replace")
-        raw = raw.replace("\r\n", "\n").replace("\r", "\n")
-        for raw_line in raw.split("\n"):
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            for p in _split_csv_line(line):
-                if _is_url(p):
-                    yield p
+        try:
+            with open(urls_file, "rb") as f:
+                raw = f.read().decode("utf-8", errors="replace")
+            raw = raw.replace("\r\n", "\n").replace("\r", "\n")
+            for raw_line in raw.split("\n"):
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                for p in _split_csv_line(line):
+                    if _is_url(p):
+                        yield p
+        except IOError as e:
+            print(json.dumps(_minimal_record(f"error_reading_urls_file:{e}")), file=sys.stderr)
 
-def _minimal_record(err: str = "setup_or_runtime_error") -> dict:
+
+def _minimal_record(err: str = "setup_or_runtime_error", url: str = "") -> dict:
     # emergency-shaped record so the grader's NDJSON parser never explodes
     return {
-        "name": "",
-        "category": "MODEL",                # keep schema stable even on error
+        "name": url,
+        "category": "UNKNOWN",
         "error": err,
         "ramp_up_time": 0.0, "ramp_up_time_latency": 1,
         "bus_factor": 0.0, "bus_factor_latency": 1,
@@ -111,29 +111,21 @@ def _open_formatter(out_path: Optional[str], append: bool=False):
         if out_path in ("-", "stdout", "", None):
             return OutputFormatter(
                 fh=sys.stdout,
-                score_keys={
-                    "net_score","ramp_up_time","bus_factor","performance_claims","license",
-                    "dataset_and_code_score","dataset_quality","code_quality",
-                },
-                latency_keys={
-                    "net_score_latency","ramp_up_time_latency","bus_factor_latency",
-                    "performance_claims_latency","license_latency","size_score_latency",
-                    "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
-                },
+                score_keys={"net_score","ramp_up_time","bus_factor","performance_claims","license",
+                              "dataset_and_code_score","dataset_quality","code_quality"},
+                latency_keys={"net_score_latency","ramp_up_time_latency","bus_factor_latency",
+                                "performance_claims_latency","license_latency","size_score_latency",
+                                "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency"},
             )
         else:
             return OutputFormatter.to_path(
                 out_path,
-                score_keys={
-                    "net_score","ramp_up_time","bus_factor","performance_claims","license",
-                    "dataset_and_code_score","dataset_quality","code_quality",
-                },
-                latency_keys={
-                    "net_score_latency","ramp_up_time_latency","bus_factor_latency",
-                    "performance_claims_latency","license_latency","size_score_latency",
-                    "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
-                },
                 append=append,
+                score_keys={"net_score","ramp_up_time","bus_factor","performance_claims","license",
+                              "dataset_and_code_score","dataset_quality","code_quality"},
+                latency_keys={"net_score_latency","ramp_up_time_latency","bus_factor_latency",
+                                "performance_claims_latency","license_latency","size_score_latency",
+                                "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency"},
             )
     except Exception:
         return None
@@ -141,17 +133,17 @@ def _open_formatter(out_path: Optional[str], append: bool=False):
 
 # ----------------- primary implementation -----------------
 def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str, append: bool) -> int:
-    # Gather URL tokens early
     try:
         url_list = list(iter_urls(urls, urls_file))
     except Exception as e:
-        print(json.dumps(_minimal_record(f"iter_urls_error:{e}"), separators=(",", ":")))
-        return 0
+        print(json.dumps(_minimal_record(f"iter_urls_error:{e}")), file=sys.stderr)
+        return 1
     if not url_list:
-        print(json.dumps(_minimal_record("no_urls"), separators=(",", ":")))
-        return 0
+        print(json.dumps(_minimal_record("no_urls")), file=sys.stderr)
+        return 1
 
     fmt = _open_formatter(out_path, append)
+    exit_code = 0
 
     def write_line(obj: dict) -> None:
         if fmt is None:
@@ -159,63 +151,38 @@ def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str,
         else:
             fmt.write_line(obj)
 
-   # ... keep the top of your CLI.py exactly as-is ...
-
     for url in url_list:
         try:
             if determineResource is None or score_resource is None:
-                write_line(_minimal_record("imports_failed"))
+                write_line(_minimal_record("imports_failed", url))
+                exit_code = 1
                 continue
 
             res = determineResource(url)
-
-            # >>> Only output MODEL records (grader expects only models)
-            cat = getattr(getattr(res, "ref", None), "category", None)
-            cat_name = getattr(cat, "name", getattr(cat, "value", str(cat))).upper() if cat else "UNKNOWN"
-            if cat_name != "MODEL":
-                continue
-
             rec = score_resource(res)
+
             if not isinstance(rec, dict):
-                write_line(_minimal_record("bad_record"))
+                write_line(_minimal_record("bad_record", url))
+                exit_code = 1
                 continue
-
-            # Normalize category to plain string
-            c = rec.get("category")
-            if hasattr(c, "name"):
-                rec["category"] = c.name
-            elif hasattr(c, "value"):
-                rec["category"] = c.value
-            else:
-                rec["category"] = str(c or "UNKNOWN")
-
-            if rec.get("name") is None:
-                rec["name"] = ""
-
-            # Ensure every latency is a positive int (belt & suspenders)
-            for lk in ("net_score_latency","ramp_up_time_latency","bus_factor_latency",
-                       "performance_claims_latency","license_latency","size_score_latency",
-                       "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency"):
-                v = rec.get(lk, 1)
-                rec[lk] = 1 if not isinstance(v, int) or v <= 0 else v
 
             write_line(rec)
 
         except KeyboardInterrupt:
-            write_line(_minimal_record("keyboard_interrupt"))
+            write_line(_minimal_record("keyboard_interrupt", url))
+            exit_code = 130
             break
         except Exception as e:
-            write_line(_minimal_record(str(e)))
+            write_line(_minimal_record(str(e), url))
+            exit_code = 1
 
-
-    try:
-        if fmt is not None:
+    if fmt:
+        try:
             fmt.close()
-    except Exception:
-        pass
+        except Exception:
+            pass
 
-    return 0
-
+    return exit_code
 
 # ----------------- PUBLIC API expected by some graders -----------------
 def do_score(urls_file: str) -> int:
@@ -241,16 +208,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     if args.cmd == "score":
-        try:
-            return _do_score_impl(args.urls_file, args.urls, args.out, args.append)
-        except Exception as e:
-            sys.stdout.write(json.dumps(_minimal_record(f"top_error:{e}"), separators=(",", ":")) + "\n")
-            sys.stdout.flush()
-            return 0
+        return _do_score_impl(args.urls_file, args.urls, args.out, args.append)
     if args.cmd == "test":
         try:
-            import Tester  # type: ignore
-            rc = Tester.main(None)  # type: ignore[attr-defined]
+            import Tester
+            rc = Tester.main(None)
             if rc == 0:
                 print("20/20 test cases passed. 80% line coverage achieved.", flush=True)
             return 0

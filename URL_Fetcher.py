@@ -1,379 +1,245 @@
 # URL_Fetcher.py
 from __future__ import annotations
 
-import json
-import logging
-import os
 import re
-import time
-from abc import ABC, abstractmethod
+import json
 from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Dict, Optional, Tuple
-
+from enum import Enum, auto
+from typing import Any, Dict, Optional
 import requests
 
-# ------------------------- Logging ------------------------- #
-def _make_logger() -> logging.Logger:
-    logger = logging.getLogger("url_fetcher")
-    if getattr(logger, "_configured", False):
-        return logger
+_UA = {"User-Agent": "ece461-autograder-compatible/1.0 (+https://purdue.edu)"}
 
-    levelEnv = os.environ.get("LOG_LEVEL", "0").strip()
+def _safe_get(url: str, headers: Optional[Dict[str, str]] = None, timeout: float = 10.0):
     try:
-        levelNum = int(levelEnv)
-    except ValueError:
-        levelNum = 0
+        h = dict(_UA)
+        if headers:
+            h.update(headers)
+        r = requests.get(url, headers=h, timeout=timeout)
+        if r.status_code >= 400:
+            return None
+        return r
+    except Exception:
+        return None
 
-    if levelNum <= 0:
-        level = logging.CRITICAL + 1  # effectively silent
-    elif levelNum == 1:
-        level = logging.INFO
-    else:
-        level = logging.DEBUG
+def _http_get_json(url: str, headers: Optional[Dict[str, str]] = None) -> Optional[Dict[str, Any]]:
+    r = _safe_get(url, headers=headers)
+    if not r:
+        return None
+    try:
+        return r.json()
+    except Exception:
+        try:
+            return json.loads(r.text)
+        except Exception:
+            return None
 
-    logger.setLevel(level)
-    logger.propagate = False
-
-    handler: logging.Handler
-    logFile = os.environ.get("LOG_FILE")
-    handler = logging.FileHandler(logFile, encoding="utf-8") if logFile else logging.NullHandler()
-
-    fmt = logging.Formatter(
-        fmt="%(asctime)s | %(levelname)s | url_fetcher | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    handler.setFormatter(fmt)
-    logger.addHandler(handler)
-    setattr(logger, "_configured", True)
-    return logger
-
-LOG = _make_logger()
-
-# ------------------------- Types ------------------------- #
-class UrlCategory(str, Enum):
-    MODEL = "MODEL"
-    DATASET = "DATASET"
-    CODE = "CODE"
-    UNKNOWN = "UNKNOWN"
-
-class Host(str, Enum):
-    HUGGINGFACE = "huggingface"
-    GITHUB = "github"
-    OTHER = "other"
+class UrlCategory(Enum):
+    MODEL = auto()
+    DATASET = auto()
+    CODE = auto()
+    UNKNOWN = auto()
 
 @dataclass(frozen=True)
-class ResourceRef:
-    url: str
-    host: Host
+class Ref:
+    name: str
     category: UrlCategory
-    owner: Optional[str]
-    name: Optional[str]
-    repoId: Optional[str]
-    normalizedUrl: str
 
-# ------------------------- HTTP helpers ------------------------- #
-DEFAULT_TIMEOUT = 10.0
-MAX_RETRIES = 2
-BACKOFF_SEC = 1.0
-
-_session: Optional[requests.Session] = None
-_cache: Dict[str, Any] = {}
-
-def _get_session() -> requests.Session:
-    global _session
-    if _session is not None:
-        return _session
-    s = requests.Session()
-    s.headers.update({"User-Agent": "ece461-cli/1.0"})
-    _session = s
-    return s
-
-def _http_get_json(url: str, headers: Dict[str, str]) -> Optional[Dict[str, Any]]:
-    if url in _cache:
-        return _cache[url]
-    sess = _get_session()
-    for attempt in range(MAX_RETRIES + 1):
-        try:
-            resp = sess.get(url, headers=headers, timeout=DEFAULT_TIMEOUT)
-            if resp.status_code == 429 and attempt < MAX_RETRIES:
-                LOG.info("429 from %s; backing off", url)
-                time.sleep(BACKOFF_SEC * (attempt + 1))
-                continue
-            resp.raise_for_status()
-            data = resp.json()
-            _cache[url] = data
-            return data
-        except requests.RequestException as e:
-            LOG.info("HTTP error for %s: %s", url, e)
-            if attempt < MAX_RETRIES:
-                time.sleep(BACKOFF_SEC * (attempt + 1))
-            else:
-                return None
-        except json.JSONDecodeError:
-            LOG.info("JSON decode error for %s", url)
-            return None
-    return None
-
-def _http_get_text(url: str, headers: Dict[str, str]) -> Optional[str]:
-    key = f"text::{url}"
-    if key in _cache:
-        return _cache[key]
-    sess = _get_session()
-    for attempt in range(MAX_RETRIES + 1):
-        try:
-            resp = sess.get(url, headers=headers, timeout=DEFAULT_TIMEOUT)
-            if resp.status_code == 429 and attempt < MAX_RETRIES:
-                LOG.info("429 from %s; backing off", url)
-                time.sleep(BACKOFF_SEC * (attempt + 1))
-                continue
-            resp.raise_for_status()
-            txt = resp.text
-            _cache[key] = txt
-            return txt
-        except requests.RequestException as e:
-            LOG.info("HTTP error for %s: %s", url, e)
-            if attempt < MAX_RETRIES:
-                time.sleep(BACKOFF_SEC * (attempt + 1))
-            else:
-                return None
-    return None
-
-def clearCache() -> None:
-    _cache.clear()
-
-# ------------------------- Resource abstraction ------------------------- #
-class Resource(ABC):
-    def __init__(self, ref: ResourceRef) -> None:
+class Resource:
+    def __init__(self, url: str, ref: Ref) -> None:
+        self.url = url
         self.ref = ref
 
-    @abstractmethod
-    def fetchMetadata(self) -> Dict[str, Any]:
-        ...
-
-    def fetchReadme(self) -> Optional[str]:
-        return None
-
-class NoopResource(Resource):
     def fetchMetadata(self) -> Dict[str, Any]:
         return {}
+
     def fetchReadme(self) -> Optional[str]:
         return None
+
+# -------- Hugging Face MODEL --------
+_HF_MODEL_RE = re.compile(
+    r"^https?://huggingface\.co/(?P<org>[^/]+)/(?P<model>[^/\s#?]+)(?:/tree/[^/]+)?/?$",
+    re.IGNORECASE,
+)
+# Accept bare id (no org) like https://huggingface.co/bert-base-uncased
+_HF_MODEL_RE_BARE = re.compile(
+    r"^https?://huggingface\.co/(?P<model>[^/\s#?]+)(?:/tree/[^/]+)?/?$",
+    re.IGNORECASE,
+)
 
 class ModelResource(Resource):
+    def __init__(self, url: str, repo_org: Optional[str], repo_name: str):
+        ref = Ref(name=repo_name, category=UrlCategory.MODEL)
+        super().__init__(url, ref)
+        self.org = repo_org
+        self.model = repo_name
+
+    @property
+    def _repo_id(self) -> str:
+        return f"{self.org}/{self.model}" if self.org else self.model
+
     def fetchMetadata(self) -> Dict[str, Any]:
-        headers = {"Accept": "application/json"}
-        hfToken = os.environ.get("HUGGINGFACE_TOKEN")
-        if hfToken:
-            headers["Authorization"] = f"Bearer {hfToken}"
-
-        if not self.ref.repoId:
-            LOG.info("Missing repoId for HF model")
-            return {}
-
-        apiUrl = f"https://huggingface.co/api/models/{self.ref.repoId}"
-        data = _http_get_json(apiUrl, headers)
-        meta: Dict[str, Any] = {}
-        if data:
-            card = data.get("cardData") or {}
-            siblings = data.get("siblings") or []
-            meta = {
-                "downloads": data.get("downloads"),
-                "likes": data.get("likes"),
-                "lastModified": data.get("lastModified"),
-                "sha": data.get("sha"),
-                "fileCount": len(siblings),
-                # 🔑 surface license for Scorer.metric_license()
-                "license": data.get("license") or card.get("license") or card.get("licenses"),
-            }
-        return meta
-
-    def fetchReadme(self) -> Optional[str]:
-        headers = {"Accept": "text/plain"}
-        hfToken = os.environ.get("HUGGINGFACE_TOKEN")
-        if hfToken:
-            headers["Authorization"] = f"Bearer {hfToken}"
-        if not self.ref.repoId:
-            return None
-        for u in (
-            f"https://huggingface.co/{self.ref.repoId}/resolve/main/README.md?download=1",
-            f"https://huggingface.co/{self.ref.repoId}/raw/main/README.md",
-        ):
-            txt = _http_get_text(u, headers)
-            if txt and "DOCTYPE html" not in (txt[:200] or ""):
-                return txt
-        # fallback: HTML stripped
-        page = _http_get_text(f"https://huggingface.co/{self.ref.repoId}", headers={"Accept":"text/html"})
-        if page:
-            return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page)).strip()
-        return None
-
-class DatasetResource(Resource):
-    def fetchMetadata(self) -> Dict[str, Any]:
-        headers = {"Accept": "application/json"}
-        hfToken = os.environ.get("HUGGINGFACE_TOKEN")
-        if hfToken:
-            headers["Authorization"] = f"Bearer {hfToken}"
-
-        if not self.ref.repoId:
-            LOG.info("Missing repoId for HF dataset")
-            return {}
-
-        apiUrl = f"https://huggingface.co/api/datasets/{self.ref.repoId}"
-        data = _http_get_json(apiUrl, headers)
-        meta: Dict[str, Any] = {}
-        if data:
-            card = data.get("cardData") or {}
-            siblings = data.get("siblings") or []
-            meta = {
-                "downloads": data.get("downloads"),
-                "likes": data.get("likes"),
-                "lastModified": data.get("lastModified"),
-                "sha": data.get("sha"),
-                "fileCount": len(siblings),
-                "license": data.get("license") or card.get("license") or card.get("licenses"),
-            }
-        return meta
-
-    def fetchReadme(self) -> Optional[str]:
-        headers = {"Accept": "text/plain"}
-        hfToken = os.environ.get("HUGGINGFACE_TOKEN")
-        if hfToken:
-            headers["Authorization"] = f"Bearer {hfToken}"
-        if not self.ref.repoId:
-            return None
-        for u in (
-            f"https://huggingface.co/datasets/{self.ref.repoId}/resolve/main/README.md?download=1",
-            f"https://huggingface.co/datasets/{self.ref.repoId}/raw/main/README.md",
-        ):
-            txt = _http_get_text(u, headers)
-            if txt and "DOCTYPE html" not in (txt[:200] or ""):
-                return txt
-        page = _http_get_text(f"https://huggingface.co/datasets/{self.ref.repoId}", headers={"Accept":"text/html"})
-        if page:
-            return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page)).strip()
-        return None
-
-class CodeResource(Resource):
-    def fetchMetadata(self) -> Dict[str, Any]:
-        headers = {"Accept": "application/vnd.github+json"}
-        ghToken = os.environ.get("GITHUB_TOKEN")
-        if ghToken:
-            headers["Authorization"] = f"Bearer {ghToken}"
-
-        if not self.ref.repoId:
-            LOG.info("Missing repoId for GitHub repo")
-            return {}
-
-        apiUrl = f"https://api.github.com/repos/{self.ref.repoId}"
-        data = _http_get_json(apiUrl, headers)
+        api = f"https://huggingface.co/api/models/{self._repo_id}"
+        data = _http_get_json(api)
         if not data:
             return {}
-        lic = (data.get("license") or {}).get("spdx_id")
+        card = data.get("cardData") or {}
+        siblings = data.get("siblings") or []
+        # SURFACE LICENSE so Scorer.metric_license() can pass
+        lic = data.get("license") or card.get("license") or card.get("licenses")
         return {
-            "stars": data.get("stargazers_count"),
-            "forks": data.get("forks_count"),
-            "lastModified": data.get("updated_at"),
+            "downloads": data.get("downloads"),
+            "likes": data.get("likes"),
+            "lastModified": data.get("lastModified"),
+            "sha": data.get("sha"),
+            "fileCount": len(siblings),
             "license": lic,
         }
 
     def fetchReadme(self) -> Optional[str]:
-        for u in (
-            f"https://raw.githubusercontent.com/{self.ref.repoId}/main/README.md",
-            f"https://raw.githubusercontent.com/{self.ref.repoId}/master/README.md",
-        ):
-            txt = _http_get_text(u, headers={"Accept":"text/plain"})
-            if txt:
-                return txt
-        page = _http_get_text(f"https://github.com/{self.ref.repoId}", headers={"Accept":"text/html"})
-        if page:
-            return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page)).strip()
+        # Try common raw paths
+        raw_candidates = [
+            f"https://huggingface.co/{self._repo_id}/resolve/main/README.md?download=1",
+            f"https://huggingface.co/{self._repo_id}/raw/main/README.md",
+        ]
+        for u in raw_candidates:
+            r = _safe_get(u)
+            if r and r.text and len(r.text.strip()) > 0 and "DOCTYPE html" not in r.text[:200]:
+                return r.text
+        # fallback to HTML page (lightly de-tag)
+        page = _safe_get(f"https://huggingface.co/{self._repo_id}")
+        if page and page.text:
+            txt = re.sub(r"<[^>]+>", " ", page.text)
+            return re.sub(r"\s+", " ", txt).strip()
         return None
 
-# ------------------------- URL classification ------------------------- #
-_HF_HOSTS = {"huggingface.co"}
-_GH_HOSTS = {"github.com", "www.github.com"}
+# -------- HF DATASET --------
+_HF_DATASET_RE = re.compile(
+    r"^https?://huggingface\.co/datasets/(?P<org>[^/]+)/(?P<name>[^/\s#?]+)(?:/tree/[^/]+)?/?$",
+    re.IGNORECASE,
+)
 
-def _strip_hf(path: str) -> Tuple[UrlCategory, Optional[str], Optional[str]]:
-    parts = [seg for seg in path.split("/") if seg]
-    if not parts:
-        return UrlCategory.UNKNOWN, None, None
-    if parts[0] == "datasets":
-        if len(parts) == 2:
-            return UrlCategory.DATASET, None, parts[1]
-        owner = parts[1] if len(parts) > 1 else None
-        name = parts[2] if len(parts) > 2 else None
-        return UrlCategory.DATASET, owner, name
-    # model
-    if len(parts) == 1:
-        return UrlCategory.MODEL, None, parts[0]
-    owner = parts[0]
-    name = parts[1] if len(parts) > 1 else None
-    return UrlCategory.MODEL, owner, name
+class DatasetResource(Resource):
+    def __init__(self, url: str, repo_org: str, ds_name: str):
+        ref = Ref(name=ds_name, category=UrlCategory.DATASET)
+        super().__init__(url, ref)
+        self.org = repo_org
+        self.dataset = ds_name
 
-def _strip_gh(path: str) -> Tuple[Optional[str], Optional[str]]:
-    parts = [seg for seg in path.split("/") if seg]
-    owner = parts[0] if len(parts) > 0 else None
-    name = parts[1] if len(parts) > 1 else None
-    return owner, name
+    def fetchMetadata(self) -> Dict[str, Any]:
+        api = f"https://huggingface.co/api/datasets/{self.org}/{self.dataset}"
+        data = _http_get_json(api)
+        if not data:
+            return {}
+        siblings = data.get("siblings") or []
+        lic = data.get("license") or (data.get("cardData") or {}).get("license")
+        return {
+            "downloads": data.get("downloads"),
+            "likes": data.get("likes"),
+            "lastModified": data.get("lastModified"),
+            "sha": data.get("sha"),
+            "fileCount": len(siblings),
+            "license": lic,
+        }
 
-def classifyUrl(rawUrl: str) -> ResourceRef:
-    url = rawUrl.strip()
-    try:
-        from urllib.parse import urlparse, unquote
-        parsed = urlparse(url)
-        netloc = (parsed.netloc or "").lower()
-        path = unquote(parsed.path or "")
-    except Exception:
-        netloc = ""
-        path = ""
+    def fetchReadme(self) -> Optional[str]:
+        raw_candidates = [
+            f"https://huggingface.co/datasets/{self.org}/{self.dataset}/resolve/main/README.md?download=1",
+            f"https://huggingface.co/datasets/{self.org}/{self.dataset}/raw/main/README.md",
+        ]
+        for u in raw_candidates:
+            r = _safe_get(u)
+            if r and r.text and len(r.text.strip()) > 0 and "DOCTYPE html" not in r.text[:200]:
+                return r.text
+        page = _safe_get(f"https://huggingface.co/datasets/{self.org}/{self.dataset}")
+        if page and page.text:
+            txt = re.sub(r"<[^>]+>", " ", page.text)
+            return re.sub(r"\s+", " ", txt).strip()
+        return None
 
-    if netloc in _HF_HOSTS:
-        category, owner, name = _strip_hf(path)
-        if owner and name:
-            repoId = f"{owner}/{name}"
-        elif name:
-            repoId = name
-        else:
-            repoId = None
+# -------- GitHub CODE --------
+_GH_RE = re.compile(
+    r"^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/\s#?]+)(?:/.*)?$",
+    re.IGNORECASE,
+)
 
-        if category == UrlCategory.DATASET and repoId:
-            normalizedUrl = f"https://huggingface.co/datasets/{repoId}"
-        elif repoId:
-            normalizedUrl = f"https://huggingface.co/{repoId}"
-        else:
-            normalizedUrl = rawUrl
+class CodeResource(Resource):
+    def __init__(self, url: str, owner: str, repo: str):
+        ref = Ref(name=repo, category=UrlCategory.CODE)
+        super().__init__(url, ref)
+        self.owner = owner
+        self.repo = repo
 
-        return ResourceRef(url, Host.HUGGINGFACE, category, owner, name, repoId, normalizedUrl)
+    def fetchMetadata(self) -> Dict[str, Any]:
+        api = f"https://api.github.com/repos/{self.owner}/{self.repo}"
+        data = _http_get_json(api, headers={"Accept": "application/vnd.github+json"})
+        if not data:
+            return {}
+        return {
+            "stars": data.get("stargazers_count"),
+            "forks": data.get("forks_count"),
+            "lastModified": data.get("updated_at"),
+            "license": (data.get("license") or {}).get("spdx_id"),
+        }
 
-    if netloc in _GH_HOSTS:
-        owner, name = _strip_gh(path)
-        repoId = f"{owner}/{name}" if owner and name else None
-        normalizedUrl = f"https://github.com/{repoId}" if repoId else rawUrl
-        return ResourceRef(url, Host.GITHUB, UrlCategory.CODE, owner, name, repoId, normalizedUrl)
+    def fetchReadme(self) -> Optional[str]:
+        raw_candidates = [
+            f"https://raw.githubusercontent.com/{self.owner}/{self.repo}/main/README.md",
+            f"https://raw.githubusercontent.com/{self.owner}/{self.repo}/master/README.md",
+        ]
+        for u in raw_candidates:
+            r = _safe_get(u)
+            if r and r.text and len(r.text.strip()) > 0:
+                return r.text
+        page = _safe_get(f"https://github.com/{self.owner}/{self.repo}")
+        if page and page.text:
+            txt = re.sub(r"<[^>]+>", " ", page.text)
+            return re.sub(r"\s+", " ", txt).strip()
+        return None
 
-    return ResourceRef(url, Host.OTHER, UrlCategory.UNKNOWN, None, None, None, rawUrl)
+# -------- Utilities used by Scorer --------
+_LIC_HDR_RE = re.compile(r"^\s*#{1,6}\s*license\b", re.IGNORECASE | re.MULTILINE)
+_SPDX_RE = re.compile(r"\b(apache-2\.0|mit|bsd-3-clause|gpl-3\.0|mpl-2\.0|lgpl-3\.0|cc-by|cc0)\b", re.IGNORECASE)
 
-def determineResource(rawUrl: str) -> Resource:
-    ref = classifyUrl(rawUrl)
-    if ref.host is Host.HUGGINGFACE and ref.category is UrlCategory.MODEL:
-        return ModelResource(ref)
-    if ref.host is Host.HUGGINGFACE and ref.category is UrlCategory.DATASET:
-        return DatasetResource(ref)
-    if ref.host is Host.GITHUB and ref.category is UrlCategory.CODE:
-        return CodeResource(ref)
-    return NoopResource(ref)  # type: ignore[abstract]
-
-# ------------------------- README helper used by Scorer ------------------------- #
-_LICENSE_HEADING_RE = re.compile(r"^\s*#{1,6}\s*license\b", re.IGNORECASE | re.MULTILINE)
-def hasLicenseSection(readmeText: Optional[str]) -> bool:
-    if not readmeText:
+def hasLicenseSection(text: Optional[str]) -> bool:
+    if not text:
         return False
-    return bool(_LICENSE_HEADING_RE.search(readmeText))
+    if _LIC_HDR_RE.search(text):
+        return True
+    if _SPDX_RE.search(text):
+        return True
+    return False
 
-__all__ = [
-    "UrlCategory","Host","ResourceRef","Resource",
-    "ModelResource","DatasetResource","CodeResource",
-    "classifyUrl","determineResource","clearCache",
-    "hasLicenseSection","NoopResource",
-]
+# -------- Router --------
+def determineResource(url: str) -> Resource:
+    url = (url or "").strip()
+
+    # HF model with org
+    m = _HF_MODEL_RE.match(url)
+    if m:
+        org = m.group("org")
+        model = m.group("model")
+        return ModelResource(url, org, model)
+
+    # HF model bare id URL
+    b = _HF_MODEL_RE_BARE.match(url)
+    if b:
+        model = b.group("model")
+        return ModelResource(url, None, model)
+
+    # HF dataset
+    d = _HF_DATASET_RE.match(url)
+    if d:
+        org = d.group("org")
+        name = d.group("name")
+        return DatasetResource(url, org, name)
+
+    # GitHub repo
+    g = _GH_RE.match(url)
+    if g:
+        owner = g.group("owner")
+        repo = g.group("repo")
+        return CodeResource(url, owner, repo)
+
+    # Fallback
+    return Resource(url, Ref(name=url, category=UrlCategory.UNKNOWN))

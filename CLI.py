@@ -59,21 +59,38 @@ def _split_csv_line(line: str) -> List[str]:
     row = next(csv.reader(buf), [])
     return [c.strip() for c in row if c is not None]
 
-def iter_urls(urls: Sequence[str], urls_file: Optional[str]) -> Iterable[str]:
+def _hf_url_from_id_or_url(token: str) -> Optional[str]:
     """
-    Yield each http(s) URL token found either from --url (each arg is a CSV line)
-    or from --urls-file (one CSV line per file line). Skips empty tokens.
+    Accept either a bare HF model id (e.g. 'bert-base-uncased') or a URL.
+    If it's an id, turn it into https://huggingface.co/<id>.
     """
-    # From --url args
+    t = (token or "").strip()
+    if not t:
+        return None
+    if _is_url(t):
+        return t
+    # Assume it's an HF model id
+    return f"https://huggingface.co/{t}"
+
+def iter_model_urls(urls_file: Optional[str], urls: Sequence[str]) -> Iterable[str]:
+    """
+    Yield exactly one MODEL candidate per input line/arg, using the 3rd CSV
+    field when present; otherwise the last field. Convert bare ids to HF URLs.
+    Skip blanks and comments. We *do not* emit code/dataset rows here: the
+    scoring step will confirm it's truly a model.
+    """
+    # From --url args (each arg is a CSV line)
     for arg in urls or []:
         parts = _split_csv_line(arg)
-        for p in parts:
-            if _is_url(p):
-                yield p
+        if not parts:
+            continue
+        tok = parts[2] if len(parts) >= 3 else parts[-1]
+        url = _hf_url_from_id_or_url(tok)
+        if url:
+            yield url
 
     # From --urls-file
     if urls_file:
-        # Normalize newlines for Windows/Git compatibility
         with open(urls_file, "rb") as f:
             raw = f.read().decode("utf-8", errors="replace")
         raw = raw.replace("\r\n", "\n").replace("\r", "\n")
@@ -81,9 +98,13 @@ def iter_urls(urls: Sequence[str], urls_file: Optional[str]) -> Iterable[str]:
             line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue
-            for p in _split_csv_line(line):
-                if _is_url(p):
-                    yield p
+            parts = _split_csv_line(line)
+            if not parts:
+                continue
+            tok = parts[2] if len(parts) >= 3 else parts[-1]
+            url = _hf_url_from_id_or_url(tok)
+            if url:
+                yield url
 
 def _minimal_record(err: str = "setup_or_runtime_error") -> dict:
     return {
@@ -141,13 +162,13 @@ def _open_formatter(out_path: Optional[str], append: bool=False):
 
 # ----------------- primary implementation -----------------
 def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str, append: bool) -> int:
-    # Gather URL tokens early
+    # Gather one candidate per line
     try:
-        url_list = list(iter_urls(urls, urls_file))
+        candidates = list(iter_model_urls(urls_file, urls))
     except Exception as e:
         print(json.dumps(_minimal_record(f"iter_urls_error:{e}"), separators=(",", ":")))
         return 0
-    if not url_list:
+    if not candidates:
         print(json.dumps(_minimal_record("no_urls"), separators=(",", ":")))
         return 0
 
@@ -159,29 +180,34 @@ def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str,
         else:
             fmt.write_line(obj)
 
-    for url in url_list:
+    for url in candidates:
         try:
             if determineResource is None or score_resource is None:
                 write_line(_minimal_record("imports_failed"))
                 continue
 
             res = determineResource(url)
-            rec = score_resource(res)
 
+            # IMPORTANT: skip anything that's not a MODEL
+            cat = getattr(getattr(res, "ref", None), "category", None)
+            cat_name = getattr(cat, "name", getattr(cat, "value", str(cat))).upper() if cat else "UNKNOWN"
+            if cat_name != "MODEL":
+                continue
+
+            rec = score_resource(res)
             if not isinstance(rec, dict):
                 write_line(_minimal_record("bad_record"))
                 continue
 
             # Normalize category to a simple string
-            cat = rec.get("category")
-            if hasattr(cat, "name"):
-                rec["category"] = cat.name
-            elif hasattr(cat, "value"):
-                rec["category"] = cat.value
+            cat_out = rec.get("category")
+            if hasattr(cat_out, "name"):
+                rec["category"] = cat_out.name
+            elif hasattr(cat_out, "value"):
+                rec["category"] = cat_out.value
             else:
-                rec["category"] = str(cat or "UNKNOWN")
+                rec["category"] = "MODEL"
 
-            # Name should be a plain string
             if rec.get("name") is None:
                 rec["name"] = ""
 

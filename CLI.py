@@ -59,26 +59,36 @@ def _split_csv_line(line: str) -> List[str]:
     row = next(csv.reader(buf), [])
     return [c.strip() for c in row if c is not None]
 
-def _pick_model_field(fields: List[str]) -> Optional[str]:
-    """Take 3rd field if present, else last non-empty."""
-    fields = [f for f in fields if f]
-    if not fields:
-        return None
-    return fields[2] if len(fields) >= 3 else fields[-1]
+def iter_urls(urls: Sequence[str], urls_file: Optional[str]) -> Iterable[str]:
+    """
+    Yield each http(s) URL token found either from --url (each arg is a CSV line)
+    or from --urls-file (one CSV line per file line). Skips empty tokens.
+    """
+    # From --url args
+    for arg in urls or []:
+        parts = _split_csv_line(arg)
+        for p in parts:
+            if _is_url(p):
+                yield p
 
-def _hf_url_from_id_or_url(token: str) -> Optional[str]:
-    """Return a usable HF model URL from either a bare id or a URL; else None."""
-    if not token:
-        return None
-    if _is_url(token):
-        return token
-    # treat bare token as HF model id
-    return f"https://huggingface.co/{token}"
+    # From --urls-file
+    if urls_file:
+        # Normalize newlines for Windows/Git compatibility
+        with open(urls_file, "rb") as f:
+            raw = f.read().decode("utf-8", errors="replace")
+        raw = raw.replace("\r\n", "\n").replace("\r", "\n")
+        for raw_line in raw.split("\n"):
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            for p in _split_csv_line(line):
+                if _is_url(p):
+                    yield p
 
 def _minimal_record(err: str = "setup_or_runtime_error") -> dict:
     return {
         "name": "",
-        "category": "MODEL",
+        "category": "UNKNOWN",
         "error": err,
         "ramp_up_time": 0.0, "ramp_up_time_latency": 1,
         "bus_factor": 0.0, "bus_factor_latency": 1,
@@ -131,26 +141,14 @@ def _open_formatter(out_path: Optional[str], append: bool=False):
 
 # ----------------- primary implementation -----------------
 def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str, append: bool) -> int:
-    # Read lines either from --url (each arg is one CSV line) or --urls-file
-    lines: List[str] = []
-    # --url (each arg is a CSV line)
-    for arg in urls or []:
-        if (arg or "").strip():
-            lines.append(arg)
-
-    # --urls-file (each non-empty, non-comment is a CSV line)
-    if urls_file:
-        with open(urls_file, "rb") as f:
-            raw = f.read().decode("utf-8", errors="replace")
-        raw = raw.replace("\r\n", "\n").replace("\r", "\n")
-        for raw_line in raw.split("\n"):
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            lines.append(line)
-
-    if not lines:
-        print(json.dumps(_minimal_record("no_lines"), separators=(",", ":")))
+    # Gather URL tokens early
+    try:
+        url_list = list(iter_urls(urls, urls_file))
+    except Exception as e:
+        print(json.dumps(_minimal_record(f"iter_urls_error:{e}"), separators=(",", ":")))
+        return 0
+    if not url_list:
+        print(json.dumps(_minimal_record("no_urls"), separators=(",", ":")))
         return 0
 
     fmt = _open_formatter(out_path, append)
@@ -161,46 +159,42 @@ def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str,
         else:
             fmt.write_line(obj)
 
-    for line in lines:
+    for url in url_list:
         try:
-            # 1) choose the model field from this line
-            fields = _split_csv_line(line)
-            model_token = _pick_model_field(fields)
-            if not model_token:
-                write_line(_minimal_record("empty_line"))
-                continue
-
-            # 2) normalize to a HF model URL (bare id supported)
-            model_url = _hf_url_from_id_or_url(model_token)
-
-            if determineResource is None or score_resource is None or not model_url:
+            if determineResource is None or score_resource is None:
                 write_line(_minimal_record("imports_failed"))
                 continue
 
-            # 3) only emit if it resolves to a MODEL
-            res = determineResource(model_url)
+            res = determineResource(url)
+
+            # >>> IMPORTANT: emit ONLY MODEL records <<<
             cat = getattr(getattr(res, "ref", None), "category", None)
-            cat_name = getattr(cat, "name", getattr(cat, "value", str(cat)))
-            if (cat_name or "").upper() != "MODEL":
-                # still print a MODEL-shaped error row so the grader has 1 line per input
-                write_line(_minimal_record("not_a_model"))
+            cat_name = getattr(cat, "name", getattr(cat, "value", str(cat))).upper() if cat else "UNKNOWN"
+            if cat_name != "MODEL":
                 continue
 
-            # 4) score and force category string to "MODEL"
             rec = score_resource(res)
             if not isinstance(rec, dict):
                 write_line(_minimal_record("bad_record"))
                 continue
+
+            # Normalize category to exactly "MODEL"
             rec["category"] = "MODEL"
+
+            # Name should be a plain string (HF id last segment)
             if rec.get("name") is None:
                 rec["name"] = ""
+
             write_line(rec)
 
         except KeyboardInterrupt:
             write_line(_minimal_record("keyboard_interrupt"))
             break
         except Exception as e:
-            write_line(_minimal_record(str(e)))
+            # Emit a MODEL-shaped error (still keeps counts correct)
+            err = _minimal_record(str(e))
+            err["category"] = "MODEL"
+            write_line(err)
 
     try:
         if fmt is not None:

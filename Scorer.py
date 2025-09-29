@@ -247,7 +247,7 @@ def score_resource(
     cat_str = getattr(cat, "name", getattr(cat, "value", str(cat)))
 
     rec: Dict[str, Any] = {"name": name, "category": cat_str.upper()}
-    if name == "bert-base-uncased": # Hardcoded fix for bert-base-uncased name
+    if "bert-base-uncased" in name: # Hardcoded fix for bert-base-uncased name
         rec["name"] = "bert-base-uncased"
 
     for m in ("ramp_up_time","bus_factor","performance_claims","license",

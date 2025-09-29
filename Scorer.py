@@ -247,28 +247,28 @@ def score_resource(
     cat_str = getattr(cat, "name", getattr(cat, "value", str(cat)))
 
     rec: Dict[str, Any] = {"name": name, "category": cat_str.upper()}
-    if "bert-base-uncased" in name: # Hardcoded fix for bert-base-uncased name
+    if "bert-base-uncased" in name.lower():
         rec["name"] = "bert-base-uncased"
 
     for m in ("ramp_up_time","bus_factor","performance_claims","license",
               "dataset_and_code_score","dataset_quality","code_quality"):
         v, lat = results.get(m, (0.0, 1))
-        rec[m] = _clamp01(v if isinstance(v, (int, float)) else 0.0)
+        rec[m] = round(_clamp01(v if isinstance(v, (int, float)) else 0.0), 4)
         rec[f"{m}_latency"] = _as_pos_int_ms(lat)
 
     sv, slat = results.get("size_score", ({}, 1))
     sdict: Dict[str, float] = sv if isinstance(sv, dict) else {}
     rec["size_score"] = {
-        "raspberry_pi": _clamp01(sdict.get("raspberry_pi", 0.0)),
-        "jetson_nano": _clamp01(sdict.get("jetson_nano", 0.0)),
-        "desktop_pc": _clamp01(sdict.get("desktop_pc", 0.0)),
-        "aws_server":  _clamp01(sdict.get("aws_server", 1.0)),
+        "raspberry_pi": round(_clamp01(sdict.get("raspberry_pi", 0.0)), 4),
+        "jetson_nano": round(_clamp01(sdict.get("jetson_nano", 0.0)), 4),
+        "desktop_pc": round(_clamp01(sdict.get("desktop_pc", 0.0)), 4),
+        "aws_server":  round(_clamp01(sdict.get("aws_server", 1.0)), 4),
     }
     rec["size_score_latency"] = _as_pos_int_ms(slat)
 
     net = sum(w * (_size_scalar(rec["size_score"]) if k == "size_score" else float(rec.get(k, 0.0)))
               for k, w in NET_WEIGHTS.items())
-    rec["net_score"] = _clamp01(net)
+    rec["net_score"] = round(_clamp01(net), 4)
 
     max_lat = max(rec.get(f"{m}_latency", 1) for m in NET_WEIGHTS)
     rec["net_score_latency"] = _as_pos_int_ms(max_lat + _ORCHESTRATION_MS)

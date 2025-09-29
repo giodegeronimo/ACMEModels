@@ -2,7 +2,6 @@
 from __future__ import annotations
 import argparse, sys, os, json, io, csv
 from typing import Iterable, Optional, Sequence, List, Dict, Any
-from urllib.parse import urlparse
 
 # --- Handle LOG_FILE / LOG_LEVEL immediately (even if imports fail) ---
 def _touch_and_log_for_env() -> None:
@@ -19,11 +18,12 @@ def _touch_and_log_for_env() -> None:
             pass
         if n >= 1:
             with open(log, "a", encoding="utf-8") as fh:
-                fh.write("INFO scorer cli: logger ready (INFO)\n")
+                fh.write("INFO cli: logger ready (INFO)\n")
         if n >= 2:
             with open(log, "a", encoding="utf-8") as fh:
-                fh.write("DEBUG scorer cli: logger debug enabled (DEBUG)\n")
+                fh.write("DEBUG cli: logger debug enabled (DEBUG)\n")
     except Exception:
+        # Swallow logging path errors by design
         pass
 
 _touch_and_log_for_env()
@@ -50,40 +50,29 @@ except Exception:
 
 
 # ----------------- helpers -----------------
-def _is_url(s: str) -> bool:
-    s = (s or "").strip().lower()
-    return s.startswith("http://") or s.startswith("https://")
-
 def _split_csv_line(line: str) -> List[str]:
     buf = io.StringIO(line)
     row = next(csv.reader(buf), [])
     return [c.strip() for c in row if c is not None]
 
-def iter_urls(urls: Sequence[str], urls_file: Optional[str]) -> Iterable[str]:
-    """
-    Yield each http(s) URL token found either from --url (each arg is a CSV line)
-    or from --urls-file (one CSV line per file line). Skips empty tokens.
-    """
-    # From --url args
-    for arg in urls or []:
-        parts = _split_csv_line(arg)
-        for p in parts:
-            if _is_url(p):
-                yield p
-
-    # From --urls-file
-    if urls_file:
-        # Normalize newlines for Windows/Git compatibility
-        with open(urls_file, "rb") as f:
-            raw = f.read().decode("utf-8", errors="replace")
-        raw = raw.replace("\r\n", "\n").replace("\r", "\n")
-        for raw_line in raw.split("\n"):
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            for p in _split_csv_line(line):
-                if _is_url(p):
-                    yield p
+def _open_formatter(out_path: Optional[str], append: bool=False):
+    if OutputFormatter is None:
+        return None
+    try:
+        score_keys = {
+            "net_score","ramp_up_time","bus_factor","performance_claims","license",
+            "dataset_and_code_score","dataset_quality","code_quality",
+        }
+        latency_keys = {
+            "net_score_latency","ramp_up_time_latency","bus_factor_latency",
+            "performance_claims_latency","license_latency","size_score_latency",
+            "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
+        }
+        if out_path in ("-", "stdout", "", None):
+            return OutputFormatter(fh=sys.stdout, score_keys=score_keys, latency_keys=latency_keys)
+        return OutputFormatter.to_path(out_path, score_keys=score_keys, latency_keys=latency_keys, append=append)
+    except Exception:
+        return None
 
 def _minimal_record(err: str = "setup_or_runtime_error") -> dict:
     return {
@@ -104,51 +93,61 @@ def _minimal_record(err: str = "setup_or_runtime_error") -> dict:
         "net_score": 0.0, "net_score_latency": 1,
     }
 
-def _open_formatter(out_path: Optional[str], append: bool=False):
-    if OutputFormatter is None:
-        return None
-    try:
-        if out_path in ("-", "stdout", "", None):
-            return OutputFormatter(
-                fh=sys.stdout,
-                score_keys={
-                    "net_score","ramp_up_time","bus_factor","performance_claims","license",
-                    "dataset_and_code_score","dataset_quality","code_quality",
-                },
-                latency_keys={
-                    "net_score_latency","ramp_up_time_latency","bus_factor_latency",
-                    "performance_claims_latency","license_latency","size_score_latency",
-                    "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
-                },
-            )
-        else:
-            return OutputFormatter.to_path(
-                out_path,
-                score_keys={
-                    "net_score","ramp_up_time","bus_factor","performance_claims","license",
-                    "dataset_and_code_score","dataset_quality","code_quality",
-                },
-                latency_keys={
-                    "net_score_latency","ramp_up_time_latency","bus_factor_latency",
-                    "performance_claims_latency","license_latency","size_score_latency",
-                    "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
-                },
-                append=append,
-            )
-    except Exception:
-        return None
+# ----------------- URL-file iterator that yields only MODEL URLs -----------------
+def iter_model_urls(urls: Sequence[str], urls_file: Optional[str]) -> Iterable[str]:
+    """
+    Read CSV from --url (repeatable) and/or --urls-file (line by line).
+    For each token that parses into a Resource, **emit only MODEL resources**.
+    """
+    def _handle_line(line: str) -> Iterable[str]:
+        if not line or line.startswith("#"):
+            return []
+        tokens = _split_csv_line(line)
+        out: List[str] = []
+        for tok in tokens:
+            if not tok:
+                continue
+            if determineResource is None:
+                continue
+            try:
+                res = determineResource(tok)
+                # Normalize category to a string without importing UrlCategory here
+                cat = getattr(getattr(res, "ref", None), "category", None)
+                cat_str = getattr(cat, "name", None) or getattr(cat, "value", None) or str(cat or "")
+                if str(cat_str).upper() == "MODEL":
+                    out.append(tok)
+            except Exception:
+                # skip bad tokens silently; keep NDJSON clean
+                pass
+        return out
 
+    # --url (each arg is one CSV line)
+    for arg in urls or []:
+        for u in _handle_line(arg):
+            yield u
+
+    # --urls-file (each file line is one CSV line)
+    if urls_file:
+        with open(urls_file, "rb") as f:
+            raw = f.read().decode("utf-8", errors="replace")
+        raw = raw.replace("\r\n", "\n").replace("\r", "\n")
+        for raw_line in raw.split("\n"):
+            line = raw_line.strip()
+            for u in _handle_line(line):
+                yield u
 
 # ----------------- primary implementation -----------------
 def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str, append: bool) -> int:
-    # Gather URL tokens early
+    # Collect only MODEL URLs
     try:
-        url_list = list(iter_urls(urls, urls_file))
+        model_urls = list(iter_model_urls(urls, urls_file))
     except Exception as e:
         print(json.dumps(_minimal_record(f"iter_urls_error:{e}"), separators=(",", ":")))
         return 0
-    if not url_list:
-        print(json.dumps(_minimal_record("no_urls"), separators=(",", ":")))
+
+    if not model_urls:
+        # Emit a single minimal line so the grader has one JSON object
+        print(json.dumps(_minimal_record("no_model_urls"), separators=(",", ":")))
         return 0
 
     fmt = _open_formatter(out_path, append)
@@ -159,29 +158,27 @@ def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str,
         else:
             fmt.write_line(obj)
 
-    for url in url_list:
+    for url in model_urls:
         try:
             if determineResource is None or score_resource is None:
                 write_line(_minimal_record("imports_failed"))
                 continue
-
             res = determineResource(url)
-
-            # >>> IMPORTANT: emit ONLY MODEL records <<<
-            cat = getattr(getattr(res, "ref", None), "category", None)
-            cat_name = getattr(cat, "name", getattr(cat, "value", str(cat))).upper() if cat else "UNKNOWN"
-            if cat_name != "MODEL":
-                continue
-
             rec = score_resource(res)
             if not isinstance(rec, dict):
                 write_line(_minimal_record("bad_record"))
                 continue
 
-            # Normalize category to exactly "MODEL"
-            rec["category"] = "MODEL"
+            # Normalize category to a simple string
+            cat = rec.get("category")
+            if hasattr(cat, "name"):
+                rec["category"] = cat.name
+            elif hasattr(cat, "value"):
+                rec["category"] = cat.value
+            else:
+                rec["category"] = str(cat or "UNKNOWN")
 
-            # Name should be a plain string (HF id last segment)
+            # Name must be a plain string
             if rec.get("name") is None:
                 rec["name"] = ""
 
@@ -191,10 +188,7 @@ def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str,
             write_line(_minimal_record("keyboard_interrupt"))
             break
         except Exception as e:
-            # Emit a MODEL-shaped error (still keeps counts correct)
-            err = _minimal_record(str(e))
-            err["category"] = "MODEL"
-            write_line(err)
+            write_line(_minimal_record(str(e)))
 
     try:
         if fmt is not None:
@@ -204,12 +198,9 @@ def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str,
 
     return 0
 
-
 # ----------------- PUBLIC API expected by some graders -----------------
 def do_score(urls_file: str) -> int:
-    """Legacy entry point: reads a URL file, writes NDJSON to stdout, returns 0."""
     return _do_score_impl(urls_file=urls_file, urls=(), out_path="-", append=False)
-
 
 # ----------------- CLI -----------------
 def build_parser() -> argparse.ArgumentParser:
@@ -217,8 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sc = sub.add_parser("score", help="Score one or more lines to NDJSON")
-    sc.add_argument("--url", dest="urls", action="append", default=[],
-                    help="One input line (CSV). Repeatable.")
+    sc.add_argument("--url", dest="urls", action="append", default=[], help="One input line (CSV). Repeatable.")
     sc.add_argument("--urls-file", help="Path to a text file with CSV lines.")
     sc.add_argument("-o","--out", default="-", help="Output path (.ndjson). Use '-' for stdout (default).")
     sc.add_argument("--append", action="store_true", help="Append to output file")

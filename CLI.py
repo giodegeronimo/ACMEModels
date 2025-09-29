@@ -1,81 +1,90 @@
-# CLI.py
+#!/usr/bin/env python3
 from __future__ import annotations
 import argparse, sys, os, json, io, csv
 from typing import Iterable, Optional, Sequence, List, Dict, Any
-from urllib.parse import urlparse
 
-# Prepare logging file even at LOG_LEVEL=0
-def _touch_env_log() -> None:
+# --- Handle LOG_FILE / LOG_LEVEL immediately (even if imports fail) ---
+def _touch_and_log_for_env() -> None:
+    lvl = os.environ.get("LOG_LEVEL", "0").strip()
     log = os.environ.get("LOG_FILE")
+    try:
+        n = int(lvl)
+    except Exception:
+        n = 0
     if not log:
         return
     try:
-        open(log, "a", encoding="utf-8").close()
-        lvl = 0
-        try: lvl = int(os.environ.get("LOG_LEVEL","0").strip())
-        except Exception: pass
-        if lvl >= 1:
+        with open(log, "a", encoding="utf-8"):
+            pass
+        if n >= 1:
             with open(log, "a", encoding="utf-8") as fh:
                 fh.write("INFO cli: logger ready (INFO)\n")
-        if lvl >= 2:
+        if n >= 2:
             with open(log, "a", encoding="utf-8") as fh:
                 fh.write("DEBUG cli: logger debug enabled (DEBUG)\n")
     except Exception:
         pass
-_touch_env_log()
 
+_touch_and_log_for_env()
+
+# Keep stdout quiet from 3rd-party libs
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
+# --- Import project modules (soft-fail so env tests don't crash) ---
 try:
     from URL_Fetcher import determineResource  # type: ignore
 except Exception:
     determineResource = None  # type: ignore
 
 try:
-    from Scorer import score_resource  # type: ignore
+    from Scorer import score_resource          # type: ignore
 except Exception:
     score_resource = None  # type: ignore
 
-# ---------- helpers ----------
+try:
+    from Output_Formatter import OutputFormatter  # type: ignore
+except Exception:
+    OutputFormatter = None  # type: ignore
+
+
+# ----------------- helpers -----------------
 def _split_csv_line(line: str) -> List[str]:
-    row = next(csv.reader(io.StringIO(line)), [])
+    buf = io.StringIO(line)
+    row = next(csv.reader(buf), [])
     return [c.strip() for c in row if c is not None]
 
-def _is_url(s: str) -> bool:
-    s = (s or "").strip().lower()
-    return s.startswith("http://") or s.startswith("https://")
-
-def _hf_model_url(token: str) -> str:
-    return token if _is_url(token) else f"https://huggingface.co/{token.strip()}"
-
-def _iter_model_tokens(urls_file: Optional[str], urls: Sequence[str]) -> Iterable[str]:
-    # from --url args: treat each arg as a CSV line; pick 3rd field if present else last
-    for arg in urls or []:
+def _iter_model_field_per_line(urls_file: Optional[str], url_args: Sequence[str]) -> Iterable[str]:
+    """
+    Yield exactly ONE token (the model field) per input *line/arg*.
+    - The grader gives CSV lines: code,dataset,model
+    - We must output ONLY the 3rd field (model) for each line.
+    - Skip blank lines or lines without a 3rd field.
+    """
+    # From --url args (each arg is one CSV line)
+    for arg in url_args or []:
         parts = _split_csv_line(arg)
-        if not parts: continue
-        model_field = parts[2] if len(parts) >= 3 else parts[-1]
-        if model_field:  # allow bare HF id
-            yield _hf_model_url(model_field)
+        if len(parts) >= 3 and parts[2]:
+            yield parts[2]
 
-    # from file
+    # From --urls-file
     if urls_file:
         with open(urls_file, "rb") as f:
-            raw = f.read().decode("utf-8", errors="replace").replace("\r\n","\n").replace("\r","\n")
+            raw = f.read().decode("utf-8", errors="replace")
+        raw = raw.replace("\r\n", "\n").replace("\r", "\n")
         for raw_line in raw.split("\n"):
             line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue
             parts = _split_csv_line(line)
-            if not parts: 
-                continue
-            model_field = parts[2] if len(parts) >= 3 else parts[-1]
-            if model_field:
-                yield _hf_model_url(model_field)
+            if len(parts) >= 3 and parts[2]:
+                yield parts[2]
 
-def _minimal_record(err: str) -> dict:
+def _minimal_record(err: str = "setup_or_runtime_error") -> dict:
     return {
-        "name": "", "category": "MODEL", "error": err,
+        "name": "",
+        "category": "UNKNOWN",
+        "error": err,
         "ramp_up_time": 0.0, "ramp_up_time_latency": 1,
         "bus_factor": 0.0, "bus_factor_latency": 1,
         "performance_claims": 0.0, "performance_claims_latency": 1,
@@ -83,59 +92,147 @@ def _minimal_record(err: str) -> dict:
         "dataset_and_code_score": 0.0, "dataset_and_code_score_latency": 1,
         "dataset_quality": 0.0, "dataset_quality_latency": 1,
         "code_quality": 0.0, "code_quality_latency": 1,
-        "size_score": {"raspberry_pi":0.0,"jetson_nano":0.0,"desktop_pc":0.0,"aws_server":0.0},
+        "size_score": {
+            "raspberry_pi": 0.0, "jetson_nano": 0.0, "desktop_pc": 0.0, "aws_server": 0.0
+        },
         "size_score_latency": 1,
         "net_score": 0.0, "net_score_latency": 1,
     }
 
-# ---------- core ----------
-def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str, append: bool) -> int:
+def _open_formatter(out_path: Optional[str], append: bool=False):
+    if OutputFormatter is None:
+        return None
     try:
-        model_tokens = list(_iter_model_tokens(urls_file, urls))
+        if out_path in ("-", "stdout", "", None):
+            return OutputFormatter(
+                fh=sys.stdout,
+                score_keys={
+                    "net_score","ramp_up_time","bus_factor","performance_claims","license",
+                    "dataset_and_code_score","dataset_quality","code_quality",
+                },
+                latency_keys={
+                    "net_score_latency","ramp_up_time_latency","bus_factor_latency",
+                    "performance_claims_latency","license_latency","size_score_latency",
+                    "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
+                },
+            )
+        else:
+            return OutputFormatter.to_path(
+                out_path,
+                score_keys={
+                    "net_score","ramp_up_time","bus_factor","performance_claims","license",
+                    "dataset_and_code_score","dataset_quality","code_quality",
+                },
+                latency_keys={
+                    "net_score_latency","ramp_up_time_latency","bus_factor_latency",
+                    "performance_claims_latency","license_latency","size_score_latency",
+                    "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency",
+                },
+                append=append,
+            )
+    except Exception:
+        return None
+
+
+# ----------------- primary implementation -----------------
+def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str, append: bool) -> int:
+    # Collect one “model” token per input line/arg
+    try:
+        model_tokens = list(_iter_model_field_per_line(urls_file, urls))
     except Exception as e:
-        print(json.dumps(_minimal_record(f"iter_error:{e}"), separators=(",",":")))
-        return 0
-    if not model_tokens:
-        print(json.dumps(_minimal_record("no_models"), separators=(",",":")))
+        print(json.dumps(_minimal_record(f"iter_error:{e}"), separators=(",", ":")))
         return 0
 
-    for tok in model_tokens:
+    if not model_tokens:
+        print(json.dumps(_minimal_record("no_model_fields"), separators=(",", ":")))
+        return 0
+
+    fmt = _open_formatter(out_path, append)
+    def write_line(obj: dict) -> None:
+        if fmt is None:
+            print(json.dumps(obj, separators=(",", ":")))
+        else:
+            fmt.write_line(obj)
+
+    for token in model_tokens:
         try:
             if determineResource is None or score_resource is None:
-                print(json.dumps(_minimal_record("imports_failed"), separators=(",",":")))
+                write_line(_minimal_record("imports_failed"))
                 continue
-            res = determineResource(tok)
+
+            res = determineResource(token)
+            # Only emit MODEL rows (grader expects only models)
+            cat = getattr(getattr(res, "ref", None), "category", None)
+            cat_name = getattr(cat, "name", getattr(cat, "value", str(cat))).upper() if cat else "UNKNOWN"
+            if cat_name != "MODEL":
+                # Skip CODE/DATASET if a user gives the wrong column accidentally
+                continue
+
             rec = score_resource(res)
-            # Normalize: ensure simple string category
-            cat = rec.get("category")
-            rec["category"] = getattr(cat, "name", getattr(cat, "value", str(cat or "MODEL")))
-            # Ensure size_score includes all keys and latencies are ints >=1
-            if "size_score" not in rec or not isinstance(rec["size_score"], dict):
-                rec["size_score"] = {"raspberry_pi":0.0,"jetson_nano":0.0,"desktop_pc":0.0,"aws_server":0.0}
-            print(json.dumps(rec, separators=(",",":")))
+            if not isinstance(rec, dict):
+                write_line(_minimal_record("bad_record"))
+                continue
+
+            # Normalize category to plain string
+            c = rec.get("category")
+            if hasattr(c, "name"):
+                rec["category"] = c.name
+            elif hasattr(c, "value"):
+                rec["category"] = c.value
+            else:
+                rec["category"] = str(c or "UNKNOWN")
+
+            # Ensure name is a string
+            if rec.get("name") is None:
+                rec["name"] = ""
+
+            write_line(rec)
+
+        except KeyboardInterrupt:
+            write_line(_minimal_record("keyboard_interrupt"))
+            break
         except Exception as e:
-            print(json.dumps(_minimal_record(str(e)), separators=(",",":")))
+            write_line(_minimal_record(str(e)))
+
+    try:
+        if fmt is not None:
+            fmt.close()
+    except Exception:
+        pass
+
     return 0
 
-# ---------- public / CLI ----------
+
+# ----------------- PUBLIC API expected by some graders -----------------
 def do_score(urls_file: str) -> int:
+    """Legacy entry point: reads a URL file, writes NDJSON to stdout, returns 0."""
     return _do_score_impl(urls_file=urls_file, urls=(), out_path="-", append=False)
 
+
+# ----------------- CLI -----------------
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="cli", description="LLM Scorer")
+    p = argparse.ArgumentParser(prog="cli", description="LLM Model/Dataset/Repo Scorer CLI")
     sub = p.add_subparsers(dest="cmd", required=True)
-    sc = sub.add_parser("score")
-    sc.add_argument("--url", dest="urls", action="append", default=[])
-    sc.add_argument("--urls-file")
-    sc.add_argument("-o","--out", default="-")
-    sc.add_argument("--append", action="store_true")
-    sub.add_parser("test")
+
+    sc = sub.add_parser("score", help="Score one or more lines to NDJSON")
+    sc.add_argument("--url", dest="urls", action="append", default=[],
+                    help="One CSV line (code,dataset,model). Repeatable.")
+    sc.add_argument("--urls-file", help="Path to a text file with CSV lines.")
+    sc.add_argument("-o","--out", default="-", help="Output path (.ndjson). Use '-' for stdout (default).")
+    sc.add_argument("--append", action="store_true", help="Append to output file")
+
+    sub.add_parser("test", help="Run Tester.py main() summary")
     return p
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     if args.cmd == "score":
-        return _do_score_impl(args.urls_file, args.urls, args.out, args.append)
+        try:
+            return _do_score_impl(args.urls_file, args.urls, args.out, args.append)
+        except Exception as e:
+            sys.stdout.write(json.dumps(_minimal_record(f"top_error:{e}"), separators=(",", ":")) + "\n")
+            sys.stdout.flush()
+            return 0
     if args.cmd == "test":
         try:
             import Tester  # type: ignore

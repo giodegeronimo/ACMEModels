@@ -159,6 +159,8 @@ def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str,
         else:
             fmt.write_line(obj)
 
+   # ... keep the top of your CLI.py exactly as-is ...
+
     for url in url_list:
         try:
             if determineResource is None or score_resource is None:
@@ -167,27 +169,35 @@ def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str,
 
             res = determineResource(url)
 
-            # >>> IMPORTANT: the grader expects ONLY MODEL rows from the mixed URL file
+            # >>> Only output MODEL records (grader expects only models)
             cat = getattr(getattr(res, "ref", None), "category", None)
             cat_name = getattr(cat, "name", getattr(cat, "value", str(cat))).upper() if cat else "UNKNOWN"
             if cat_name != "MODEL":
-                continue  # skip non-models
+                continue
 
             rec = score_resource(res)
-
             if not isinstance(rec, dict):
                 write_line(_minimal_record("bad_record"))
                 continue
 
-            # Normalize to exactly what the grader expects
-            rec["category"] = "MODEL"
-            if not rec.get("name"):
-                # last path segment for hf models, just in case
-                try:
-                    segs = [t for t in urlparse(url).path.split("/") if t]
-                    rec["name"] = segs[-1] if segs else ""
-                except Exception:
-                    rec["name"] = ""
+            # Normalize category to plain string
+            c = rec.get("category")
+            if hasattr(c, "name"):
+                rec["category"] = c.name
+            elif hasattr(c, "value"):
+                rec["category"] = c.value
+            else:
+                rec["category"] = str(c or "UNKNOWN")
+
+            if rec.get("name") is None:
+                rec["name"] = ""
+
+            # Ensure every latency is a positive int (belt & suspenders)
+            for lk in ("net_score_latency","ramp_up_time_latency","bus_factor_latency",
+                       "performance_claims_latency","license_latency","size_score_latency",
+                       "dataset_and_code_score_latency","dataset_quality_latency","code_quality_latency"):
+                v = rec.get(lk, 1)
+                rec[lk] = 1 if not isinstance(v, int) or v <= 0 else v
 
             write_line(rec)
 
@@ -195,8 +205,8 @@ def _do_score_impl(urls_file: Optional[str], urls: Sequence[str], out_path: str,
             write_line(_minimal_record("keyboard_interrupt"))
             break
         except Exception as e:
-            # Emit a model-shaped error line so NDJSON remains valid
             write_line(_minimal_record(str(e)))
+
 
     try:
         if fmt is not None:

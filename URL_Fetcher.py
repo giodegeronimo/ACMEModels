@@ -67,10 +67,8 @@ class Resource:
             with open(readme_path, "r", encoding="utf-8") as f:
                 return f.read()
         except HfHubHTTPError:
-            # CRITICAL FIX: This catches authentication errors or file-not-found errors.
             return None
         except Exception:
-            # Catch any other unexpected errors during file download or read.
             return None
 
     def fetchMetadata(self) -> dict | None:
@@ -84,7 +82,6 @@ class Resource:
             else: # DATASET
                 info = self._api.dataset_info(repo_id, token=os.environ.get("GITHUB_TOKEN"))
             
-            # Extract relevant fields into a dictionary
             return {
                 "likes": getattr(info, 'likes', 0),
                 "downloads": getattr(info, 'downloads', 0),
@@ -92,8 +89,6 @@ class Resource:
                 "fileCount": len(getattr(info, 'siblings', [])),
             }
         except HfHubHTTPError:
-            # CRITICAL FIX: This catches authentication errors.
             return None
         except Exception:
-            # Catch any other unexpected errors.
             return None

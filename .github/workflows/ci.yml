@@ -37,4 +37,4 @@ jobs:
         run: mypy .
 
       - name: Run tests
-        run: ./run test
+        run: ./run pytest

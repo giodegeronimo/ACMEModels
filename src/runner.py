@@ -2,11 +2,15 @@ from __future__ import annotations
 
 """Helper routines for the top-level `run` launcher."""
 
+import contextlib
 import io
+import os
+import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Iterable, Mapping, Sequence, Tuple
 
 from .CLIApp import main as cli_main
 
@@ -64,53 +68,121 @@ class _PytestStats:
             self.passed += 1
 
 
-def _collect_line_coverage() -> float:
+def _collect_line_coverage(data_path: Path | None = None) -> float:
     """Load the latest coverage results and return the total line coverage."""
     # Local import so ./run install works before dependencies are present.
     from coverage import Coverage
 
-    coverage_api = Coverage()
+    if data_path is None:
+        coverage_api = Coverage()
+    else:
+        coverage_api = Coverage(data_file=str(data_path))
     try:
         coverage_api.load()
     except FileNotFoundError:
         return 0.0
 
     buffer = io.StringIO()
-    total_percentage = coverage_api.report(file=buffer)
-    # Echo the coverage table so developers see the detailed breakdown.
-    print(buffer.getvalue().strip())
+    include_patterns = [str(Path.cwd() / "src" / "*")]
+    total_percentage = coverage_api.report(
+        file=buffer,
+        include=include_patterns,
+    )
     return total_percentage
+
+
+def _cleanup_coverage_artifacts(
+    artifacts: Iterable[Path | str] | None = None,
+) -> None:
+    """Remove coverage artifacts created during test execution."""
+    if os.environ.get("KEEP_COVERAGE"):
+        return
+
+    targets: Iterable[Path | str]
+    if artifacts is None:
+        targets = (Path(".coverage"), Path("coverage.xml"))
+    else:
+        targets = artifacts
+
+    for artifact in targets:
+        path = Path(artifact)
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+
+
+def _run_pytest_subprocess(
+    args: Sequence[str],
+    env: Mapping[str, str],
+) -> subprocess.CompletedProcess[str]:
+    """Invoke pytest in a subprocess so coverage data is isolated."""
+
+    command = [sys.executable, "-m", "pytest", *args]
+    return subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        env=dict(env),
+        check=False,
+    )
+
+
+def _summarize_pytest_output(stdout: str, stderr: str) -> Tuple[int, int]:
+    """Derive passed and total test counts from pytest output text."""
+
+    summary_text = f"{stdout}\n{stderr}"
+    pattern = re.compile(
+        r"(\d+)\s+(passed|failed|errors?|skipped|xfailed|xpassed)"
+    )
+
+    counts: dict[str, int] = {}
+    for match in pattern.finditer(summary_text):
+        count = int(match.group(1))
+        key = match.group(2)
+        counts[key] = counts.get(key, 0) + count
+
+    passed = counts.get("passed", 0)
+    total = sum(counts.values())
+    return passed, total
 
 
 def run_tests() -> int:
     """Execute pytest and print the required summary."""
-    try:
-        import pytest
-    except ModuleNotFoundError as error:  # pragma: no cover - defensive
-        print(error, file=sys.stderr)
-        return 1
+    coverage_fd, coverage_file = tempfile.mkstemp(
+        prefix="coverage-",
+        suffix=".dat",
+    )
+    os.close(coverage_fd)
+    coverage_path = Path(coverage_file)
+    coverage_xml = coverage_path.with_suffix(".xml")
 
-    stats_plugin = _PytestStats()
     pytest_args = [
         "--maxfail=1",
         "--disable-warnings",
-        "--cov=.",
-        "--cov-report=term",
-        "--cov-report=xml",
+        "--quiet",
+        "--cov=src",
+        "--cov-report=",
     ]
+    pytest_env = os.environ.copy()
+    pytest_env["COVERAGE_FILE"] = str(coverage_path)
 
-    exit_code = pytest.main(pytest_args, plugins=[stats_plugin])
-    if exit_code != 0:
-        return exit_code
+    result = _run_pytest_subprocess(pytest_args, pytest_env)
 
-    coverage_percentage = _collect_line_coverage()
+    if result.returncode != 0:
+        print(result.stdout, end="")
+        print(result.stderr, end="", file=sys.stderr)
+        _cleanup_coverage_artifacts((coverage_path, coverage_xml))
+        return result.returncode
+
+    coverage_percentage = _collect_line_coverage(coverage_path)
+    passed, total = _summarize_pytest_output(result.stdout, result.stderr)
     rounded_coverage = round(coverage_percentage)
 
     summary = (
-        f"{stats_plugin.passed}/{stats_plugin.total} test cases passed. "
+        f"{passed}/{total} test cases passed. "
         f"{int(rounded_coverage)}% line coverage achieved."
     )
     print(summary)
+    _cleanup_coverage_artifacts((coverage_path, coverage_xml))
     return 0
 
 
@@ -120,7 +192,7 @@ def run_pytest(additional_args: Sequence[str] | None = None) -> int:
         sys.executable,
         "-m",
         "pytest",
-        "--cov=.",
+        "--cov=src",
         "--cov-report=term-missing",
     ]
     if additional_args:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import types
 from pathlib import Path
-from typing import Any, List
+from typing import List
 
 import pytest
 
@@ -150,7 +150,7 @@ def test_run_pytest_invokes_subprocess(
     exit_code = runner.run_pytest(["-k", "pattern"])
 
     assert exit_code == 0
-    assert "--cov=." in executed_commands[0]
+    assert "--cov=src" in executed_commands[0]
     assert executed_commands[0][-2:] == ["-k", "pattern"]
 
 
@@ -171,31 +171,39 @@ def test_run_tests_formats_summary(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    class DummyStats:
-        def __init__(self) -> None:
-            self.passed = 18
-            self.total = 20
-
-        def pytest_runtest_logreport(self, report: Any) -> None:
-            return None
-
-    def fake_collect() -> float:
-        print("TOTAL 20 0 100%")
+    def fake_collect(_path=None) -> float:
         return 89.6
 
-    def fake_pytest_main(args: List[str], plugins: List[Any]) -> int:
-        assert isinstance(plugins[0], DummyStats)
-        return 0
+    recorded_args: List[List[str]] = []
 
-    fake_pytest_module = types.SimpleNamespace(main=fake_pytest_main)
+    class DummyCompletedProcess:
+        def __init__(self) -> None:
+            self.returncode = 0
+            self.stdout = "36 passed in 0.10s"
+            self.stderr = ""
 
-    monkeypatch.setitem(sys.modules, "pytest", fake_pytest_module)
-    monkeypatch.setattr(runner, "_PytestStats", lambda: DummyStats())
+    def fake_execute(
+        args: List[str], env: dict[str, str]
+    ) -> DummyCompletedProcess:
+        recorded_args.append(list(args))
+        assert "COVERAGE_FILE" in env
+        return DummyCompletedProcess()
+
+    monkeypatch.setattr(runner, "_run_pytest_subprocess", fake_execute)
     monkeypatch.setattr(runner, "_collect_line_coverage", fake_collect)
+    cleanup_calls: List[bool] = []
+    monkeypatch.setattr(
+        runner,
+        "_cleanup_coverage_artifacts",
+        lambda artifacts=None: cleanup_calls.append(bool(artifacts)),
+    )
 
     exit_code = runner.run_tests()
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    expected_line = "18/20 test cases passed. 90% line coverage achieved."
-    assert expected_line in captured.out
+    expected_line = "36/36 test cases passed. 90% line coverage achieved."
+    assert captured.out.strip() == expected_line
+    assert captured.err == ""
+    assert cleanup_calls == [True]
+    assert recorded_args[0][2] == "--quiet"

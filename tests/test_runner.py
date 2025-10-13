@@ -75,7 +75,7 @@ def test_run_parser_delegates_to_cli(
         called_args.append(args)
         return 0
 
-    monkeypatch.setattr(runner, "cli_main", fake_cli_main)
+    monkeypatch.setattr(runner, "_CLI_MAIN", fake_cli_main)
 
     exit_code = runner.run_parser(url_file)
 

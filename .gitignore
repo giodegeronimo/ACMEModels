@@ -30,3 +30,6 @@ dist/
 .mypy_cache/
 .ruff_cache/
 
+
+# Local environment files
+.env

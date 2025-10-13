@@ -10,9 +10,19 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence, Tuple
+from typing import Any, Callable, Iterable, Mapping, Sequence, Tuple
 
-from .CLIApp import main as cli_main
+_CLI_MAIN: Callable[[Sequence[str] | None], int] | None = None
+
+
+def _get_cli_main() -> Callable[[Sequence[str] | None], int]:
+    """Lazy-load CLI main entry point to avoid import-time dependencies."""
+    global _CLI_MAIN
+    if _CLI_MAIN is None:
+        from .CLIApp import main as cli_main
+
+        _CLI_MAIN = cli_main
+    return _CLI_MAIN
 
 
 def install_dependencies(requirements_path: Path) -> int:
@@ -47,6 +57,7 @@ def run_parser(url_file: Path) -> int:
         print(f"URL file not found: {url_file}", file=sys.stderr)
         return 1
 
+    cli_main = _get_cli_main()
     # Mirror the CLI app so ./run stays in sync with direct script usage.
     return cli_main([str(url_file)])
 

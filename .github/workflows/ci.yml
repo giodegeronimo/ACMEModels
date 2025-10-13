@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Update pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install dependencies
+        run: ./run install
+
+      - name: Expose user base binary path
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run isort check
+        run: isort --check-only .
+
+      - name: Run flake8
+        run: flake8 .
+
+      - name: Run mypy
+        run: mypy .
+
+      - name: Run tests
+        run: ./run test

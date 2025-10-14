@@ -24,7 +24,7 @@ DEFAULT_MAX_CALLS = 5
 DEFAULT_PERIOD_SECONDS = 1.0
 
 
-class HFClient(BaseClient[ModelInfo]):
+class HFClient(BaseClient[Any]):
     """Thin wrapper around ``huggingface_hub.HfApi`` with rate limiting."""
 
     def __init__(
@@ -62,6 +62,7 @@ class HFClient(BaseClient[ModelInfo]):
         normalized_repo = self._normalize_repo_id(repo_id)
 
         def _operation() -> ModelInfo:
+            self._logger.debug("Requesting model info for %s", normalized_repo)
             return self._api.model_info(normalized_repo)
 
         return self._execute_with_rate_limit(
@@ -83,6 +84,7 @@ class HFClient(BaseClient[ModelInfo]):
         normalized_repo = self._normalize_repo_id(repo_id)
 
         def _operation() -> str:
+            self._logger.debug("Downloading README.md for %s", normalized_repo)
             url = hf_hub_url(
                 repo_id=normalized_repo,
                 filename="README.md",
@@ -99,7 +101,12 @@ class HFClient(BaseClient[ModelInfo]):
                 _operation,
                 name=f"hf.model_readme({normalized_repo})",
             )
-        except (requests.RequestException, HfHubHTTPError):
+        except (requests.RequestException, HfHubHTTPError) as exc:
+            self._logger.info(
+                "README unavailable for %s: %s",
+                normalized_repo,
+                exc,
+            )
             return ""
 
     @staticmethod

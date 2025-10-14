@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
+from .logging_config import configure_logging
 from .metrics.net_score import NetScoreCalculator
 from .metrics.registry import MetricDispatcher
 from .parser import Parser
@@ -61,6 +62,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    configure_logging()
     argument_parser = build_arg_parser()
     parsed_args = argument_parser.parse_args(argv)
 

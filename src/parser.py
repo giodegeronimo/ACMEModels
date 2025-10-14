@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Union
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class Parser:
@@ -27,6 +30,12 @@ class Parser:
             if record:
                 parsed_records.append(record)
 
+        _LOGGER.info(
+            "Parsed %d records from %s",
+            len(parsed_records),
+            self._url_file,
+        )
+
         return parsed_records
 
     def _read_lines(self) -> List[str]:
@@ -35,7 +44,13 @@ class Parser:
             raise FileNotFoundError(f"URL file not found: {self._url_file}")
 
         with self._url_file.open("r", encoding="utf-8") as handle:
-            return [line.rstrip("\n") for line in handle]
+            lines = [line.rstrip("\n") for line in handle]
+        _LOGGER.debug(
+            "Read %d raw lines from %s",
+            len(lines),
+            self._url_file,
+        )
+        return lines
 
     def _parse_line(self, line: str) -> Dict[str, str]:
         """Tokenize a single manifest line into the expected URL slots."""

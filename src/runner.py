@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence, Tuple
 
 _CLI_MAIN: Callable[[Sequence[str] | None], int] | None = None
+PYTHON_BIN = "python3"
+PIP_BIN = "pip3"
 
 
 def _get_cli_main() -> Callable[[Sequence[str] | None], int]:
@@ -26,7 +28,7 @@ def _get_cli_main() -> Callable[[Sequence[str] | None], int]:
 
 
 def install_dependencies(requirements_path: Path) -> int:
-    """Install dependencies declared in `requirements.txt` using pip."""
+    """Install dependencies declared in `requirements.txt` using pip3."""
     if not requirements_path.exists():
         print(
             f"requirements file not found: {requirements_path}",
@@ -35,9 +37,7 @@ def install_dependencies(requirements_path: Path) -> int:
         return 1
 
     command = [
-        sys.executable,
-        "-m",
-        "pip",
+        PIP_BIN,
         "install",
         "-r",
         str(requirements_path),
@@ -127,7 +127,7 @@ def _run_pytest_subprocess(
 ) -> subprocess.CompletedProcess[str]:
     """Invoke pytest in a subprocess so coverage data is isolated."""
 
-    command = [sys.executable, "-m", "pytest", *args]
+    command = [PYTHON_BIN, "-m", "pytest", *args]
     return subprocess.run(
         command,
         capture_output=True,
@@ -200,7 +200,7 @@ def run_tests() -> int:
 def run_pytest(additional_args: Sequence[str] | None = None) -> int:
     """Run pytest with coverage and stream the full output."""
     command = [
-        sys.executable,
+        PYTHON_BIN,
         "-m",
         "pytest",
         "--cov=src",

@@ -46,8 +46,8 @@ def test_install_dependencies_invokes_pip(
     exit_code = runner.install_dependencies(requirements_path)
 
     assert exit_code == 0
-    expected_prefix = [runner.sys.executable, "-m", "pip", "install"]
-    assert executed_commands[0][:4] == expected_prefix
+    expected_prefix = [runner.PIP_BIN, "install", "-r", str(requirements_path)]
+    assert executed_commands[0] == expected_prefix
 
 
 def test_run_parser_missing_file(
@@ -150,8 +150,10 @@ def test_run_pytest_invokes_subprocess(
     exit_code = runner.run_pytest(["-k", "pattern"])
 
     assert exit_code == 0
-    assert "--cov=src" in executed_commands[0]
-    assert executed_commands[0][-2:] == ["-k", "pattern"]
+    command = executed_commands[0]
+    assert command[:3] == [runner.PYTHON_BIN, "-m", "pytest"]
+    assert "--cov=src" in command
+    assert command[-2:] == ["-k", "pattern"]
 
 
 def test_collect_line_coverage_handles_missing_file(

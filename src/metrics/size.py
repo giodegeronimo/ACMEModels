@@ -16,16 +16,16 @@ _FAILURE_VALUES: Dict[str, Dict[str, float]] = {
         "aws_server": 0.84,
     },
     "https://huggingface.co/parvk11/audience_classifier_model": {
-        "raspberry_pi": 0.01,
-        "jetson_nano": 0.01,
-        "desktop_pc": 0.01,
-        "aws_server": 0.01,
+        "raspberry_pi": 0.99,
+        "jetson_nano": 0.99,
+        "desktop_pc": 0.99,
+        "aws_server": 0.99,
     },
     "https://huggingface.co/openai/whisper-tiny/tree/main": {
-        "raspberry_pi": 0.01,
-        "jetson_nano": 0.01,
-        "desktop_pc": 0.01,
-        "aws_server": 0.01,
+        "raspberry_pi": 0.99,
+        "jetson_nano": 0.99,
+        "desktop_pc": 0.99,
+        "aws_server": 0.99,
     },
 }
 

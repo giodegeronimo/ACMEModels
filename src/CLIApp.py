@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
+from .metrics.net_score import NetScoreCalculator
 from .metrics.registry import MetricDispatcher
 from .parser import Parser
 from .results import ResultsFormatter, to_ndjson_line
@@ -28,10 +29,15 @@ class CLIApp:
         parsed_urls = parser.parse()
         dispatcher = MetricDispatcher()
         metric_results = dispatcher.compute(parsed_urls)
+        net_score_calculator = NetScoreCalculator()
+        augmented_results = [
+            net_score_calculator.with_net_score(results)
+            for results in metric_results
+        ]
         formatter = ResultsFormatter()
         formatted_records = formatter.format_records(
             parsed_urls,
-            metric_results,
+            augmented_results,
         )
         for record in formatted_records:
             print(to_ndjson_line(record))

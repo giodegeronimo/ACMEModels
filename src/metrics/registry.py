@@ -12,7 +12,6 @@ from src.metrics.dataset_and_code import DatasetAndCodeMetric
 from src.metrics.dataset_quality import DatasetQualityMetric
 from src.metrics.license import LicenseMetric
 from src.metrics.metric_result import MetricResult
-from src.metrics.net_score import NetScoreMetric
 from src.metrics.performance import PerformanceMetric
 from src.metrics.ramp_up import RampUpMetric
 from src.metrics.size import SizeMetric
@@ -75,7 +74,6 @@ class MetricDispatcher:
 
 def default_metrics() -> List[Metric]:
     return [
-        NetScoreMetric(),
         RampUpMetric(),
         BusFactorMetric(),
         LicenseMetric(),

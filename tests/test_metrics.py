@@ -10,7 +10,8 @@ from src.metrics.code_quality import CodeQualityMetric
 from src.metrics.dataset_and_code import DatasetAndCodeMetric
 from src.metrics.dataset_quality import DatasetQualityMetric
 from src.metrics.license import LicenseMetric
-from src.metrics.net_score import NetScoreMetric
+from src.metrics.metric_result import MetricResult
+from src.metrics.net_score import NetScoreCalculator
 from src.metrics.performance import PerformanceMetric
 from src.metrics.ramp_up import RampUpMetric
 from src.metrics.registry import MetricDispatcher, default_metrics
@@ -20,7 +21,6 @@ from src.metrics.size import SizeMetric
 @pytest.mark.parametrize(
     "metric_cls",
     [
-        NetScoreMetric,
         RampUpMetric,
         BusFactorMetric,
         LicenseMetric,
@@ -79,3 +79,42 @@ def test_dispatcher_handles_errors() -> None:
     assert faulty.value is None
     assert faulty.error == "boom"
     assert faulty.latency_ms >= 0
+
+
+def test_net_score_calculator_averages_numeric_metrics() -> None:
+    calculator = NetScoreCalculator()
+    input_results = [
+        MetricResult(
+            metric="A",
+            key="a",
+            value=0.2,
+            latency_ms=10,
+        ),
+        MetricResult(
+            metric="B",
+            key="b",
+            value=0.4,
+            latency_ms=20,
+        ),
+    ]
+
+    results = calculator.with_net_score(input_results)
+    net_score = results[0]
+
+    assert net_score.key == "net_score"
+    assert net_score.value == pytest.approx(0.30)
+    assert net_score.latency_ms == 30
+    assert results[1:] == input_results
+
+
+def test_net_score_calculator_ignores_non_numeric_values() -> None:
+    calculator = NetScoreCalculator()
+    input_results = [
+        MetricResult("A", "a", {"key": 0.5}, latency_ms=5),
+        MetricResult("B", "b", None, latency_ms=5),
+    ]
+
+    net_score = calculator.with_net_score(input_results)[0]
+
+    assert net_score.value == pytest.approx(0.0)
+    assert net_score.latency_ms == 10

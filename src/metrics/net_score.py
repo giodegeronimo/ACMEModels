@@ -1,34 +1,47 @@
 from __future__ import annotations
 
-import time
-from typing import Dict, Optional
+"""Aggregate metric for computing the overall net score."""
 
-from src.metrics.base import Metric, MetricOutput
+from dataclasses import dataclass
+from typing import Iterable, List
 
-FAIL = True
+from src.metrics.metric_result import MetricResult
 
-_FAILURE_VALUES: Dict[str, float] = {
-    "https://huggingface.co/google-bert/bert-base-uncased": 0.01,
-    "https://huggingface.co/parvk11/audience_classifier_model": 0.02,
-    "https://huggingface.co/openai/whisper-tiny/tree/main": 0.03,
-}
+STANDARD_KEY = "net_score"
+STANDARD_NAME = "Net Score"
 
 
-class NetScoreMetric(Metric):
-    """Placeholder net score metric."""
+@dataclass(frozen=True)
+class NetScoreCalculator:
+    """Derive the net score from previously computed metric results."""
 
-    def __init__(self) -> None:
-        super().__init__(name="Net Score", key="net_score")
+    def with_net_score(
+        self, metric_results: Iterable[MetricResult]
+    ) -> List[MetricResult]:
+        results_list = list(metric_results)
+        net_score_result = self._create_net_score(results_list)
+        return [net_score_result, *results_list]
 
-    def compute(self, url_record: Dict[str, str]) -> MetricOutput:
-        if FAIL:
-            time.sleep(0.05)
-            return _FAILURE_VALUES.get(
-                _extract_hf_url(url_record),
-                0.0,
-            )
-        return 0.5
+    def _create_net_score(
+        self, metric_results: List[MetricResult]
+    ) -> MetricResult:
+        numeric_values: List[float] = []
+        total_latency = 0
 
+        for metric_result in metric_results:
+            total_latency += metric_result.latency_ms
+            value = metric_result.value
+            if isinstance(value, (int, float)):
+                numeric_values.append(float(value))
 
-def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:
-    return record.get("hf_url")
+        if numeric_values:
+            average = sum(numeric_values) / len(numeric_values)
+        else:
+            average = 0.0
+
+        return MetricResult(
+            metric=STANDARD_NAME,
+            key=STANDARD_KEY,
+            value=round(average, 2),
+            latency_ms=total_latency,
+        )

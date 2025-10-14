@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Union
 
 
 class Parser:
@@ -14,7 +14,7 @@ class Parser:
 
     EXPECTED_FIELDS = ("git_url", "ds_url", "hf_url")
 
-    def __init__(self, url_file: Path | str) -> None:
+    def __init__(self, url_file: Union[Path, str]) -> None:
         self._url_file = Path(url_file)
 
     def parse(self) -> List[Dict[str, str]]:

@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Tuple, Union
 
 _CLI_MAIN: Optional[Callable[[Optional[Sequence[str]]], int]] = None
 PYTHON_BIN = "python3"
@@ -102,14 +102,17 @@ def _collect_line_coverage(data_path: Optional[Path] = None) -> float:
     return total_percentage
 
 
+Artifact = Union[Path, str]
+
+
 def _cleanup_coverage_artifacts(
-    artifacts: Optional[Iterable[Path | str]] = None,
+    artifacts: Optional[Iterable[Artifact]] = None,
 ) -> None:
     """Remove coverage artifacts created during test execution."""
     if os.environ.get("KEEP_COVERAGE"):
         return
 
-    targets: Iterable[Path | str]
+    targets: Iterable[Artifact]
     if artifacts is None:
         targets = (Path(".coverage"), Path("coverage.xml"))
     else:

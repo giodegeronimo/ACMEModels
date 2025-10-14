@@ -3,9 +3,9 @@ from __future__ import annotations
 """Base class for metrics used in the ACME Models CLI."""
 
 from abc import ABC, abstractmethod
-from typing import Dict, Mapping
+from typing import Dict, Mapping, Union
 
-MetricOutput = float | Mapping[str, float]
+MetricOutput = Union[float, Mapping[str, float]]
 
 
 class Metric(ABC):

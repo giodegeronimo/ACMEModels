@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 _ENV_LOADED = False
 
 
-def load_dotenv(dotenv_path: str | Path = ".env") -> None:
+def load_dotenv(dotenv_path: Union[str, Path] = ".env") -> None:
     """Load environment variables from a simple ``.env`` file if present."""
     global _ENV_LOADED
     if _ENV_LOADED:

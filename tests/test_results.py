@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import MappingProxyType
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pytest
 
@@ -15,7 +15,7 @@ def _metric(
     key: str,
     value: Any,
     latency_ms: int = 12,
-    name: str | None = None,
+    name: Optional[str] = None,
 ) -> MetricResult:
     metric_name = name or key.replace("_", " ").title()
     return MetricResult(

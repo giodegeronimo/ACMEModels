@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
+from typing import Optional
 
 
 class RateLimiter:
@@ -20,8 +21,8 @@ class RateLimiter:
         max_calls: int,
         period_seconds: float,
         *,
-        time_fn: Callable[[], float] | None = None,
-        sleep_fn: Callable[[float], None] | None = None,
+        time_fn: Optional[Callable[[], float]] = None,
+        sleep_fn: Optional[Callable[[float], None]] = None,
     ) -> None:
         if max_calls <= 0:
             raise ValueError("max_calls must be positive.")

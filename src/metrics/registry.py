@@ -3,7 +3,7 @@ from __future__ import annotations
 """Dispatcher that evaluates metrics for URL records."""
 
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 from src.metrics.base import Metric
 from src.metrics.bus_factor import BusFactorMetric
@@ -21,7 +21,7 @@ from src.metrics.size import SizeMetric
 class MetricDispatcher:
     """Evaluate registered metrics for a sequence of URL records."""
 
-    def __init__(self, metrics: Iterable[Metric] | None = None) -> None:
+    def __init__(self, metrics: Optional[Iterable[Metric]] = None) -> None:
         if metrics is None:
             metrics = default_metrics()
         self._metrics: List[Metric] = list(metrics)
@@ -59,7 +59,7 @@ class MetricDispatcher:
         start = perf_counter()
         try:
             value = metric.compute(url_record)
-            error: str | None = None
+            error: Optional[str] = None
         except Exception as exc:  # pragma: no cover - defensive guard
             value = None
             error = str(exc)

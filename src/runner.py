@@ -10,14 +10,14 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Sequence, Tuple
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Tuple
 
-_CLI_MAIN: Callable[[Sequence[str] | None], int] | None = None
+_CLI_MAIN: Optional[Callable[[Optional[Sequence[str]]], int]] = None
 PYTHON_BIN = "python3"
 PIP_BIN = "pip3"
 
 
-def _get_cli_main() -> Callable[[Sequence[str] | None], int]:
+def _get_cli_main() -> Callable[[Optional[Sequence[str]]], int]:
     """Lazy-load CLI main entry point to avoid import-time dependencies."""
     global _CLI_MAIN
     if _CLI_MAIN is None:
@@ -79,7 +79,7 @@ class _PytestStats:
             self.passed += 1
 
 
-def _collect_line_coverage(data_path: Path | None = None) -> float:
+def _collect_line_coverage(data_path: Optional[Path] = None) -> float:
     """Load the latest coverage results and return the total line coverage."""
     # Local import so ./run install works before dependencies are present.
     from coverage import Coverage
@@ -103,7 +103,7 @@ def _collect_line_coverage(data_path: Path | None = None) -> float:
 
 
 def _cleanup_coverage_artifacts(
-    artifacts: Iterable[Path | str] | None = None,
+    artifacts: Optional[Iterable[Path | str]] = None,
 ) -> None:
     """Remove coverage artifacts created during test execution."""
     if os.environ.get("KEEP_COVERAGE"):
@@ -197,7 +197,7 @@ def run_tests() -> int:
     return 0
 
 
-def run_pytest(additional_args: Sequence[str] | None = None) -> int:
+def run_pytest(additional_args: Optional[Sequence[str]] = None) -> int:
     """Run pytest with coverage and stream the full output."""
     command = [
         PYTHON_BIN,
@@ -235,7 +235,7 @@ def dispatch(argv: Sequence[str]) -> int:
     return run_parser(url_file)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Optional[Sequence[str]] = None) -> int:
     """Entry point shared between the CLI wrapper and direct invocation."""
     argv = list(argv or sys.argv)
     return dispatch(argv)

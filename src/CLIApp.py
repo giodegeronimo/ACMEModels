@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Sequence
+from typing import Optional, Sequence
 
 from .metrics.registry import MetricDispatcher
 from .parser import Parser
@@ -54,7 +54,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return argument_parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Optional[Sequence[str]] = None) -> int:
     argument_parser = build_arg_parser()
     parsed_args = argument_parser.parse_args(argv)
 

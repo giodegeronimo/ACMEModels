@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 _ENV_LOADED = False
 
@@ -26,7 +26,7 @@ def load_dotenv(dotenv_path: str | Path = ".env") -> None:
     _ENV_LOADED = True
 
 
-def _parse_line(line: str) -> Tuple[str, str] | None:
+def _parse_line(line: str) -> Optional[Tuple[str, str]]:
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
         return None

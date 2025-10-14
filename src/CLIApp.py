@@ -1,14 +1,15 @@
+
+
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 from typing import Sequence
 
 from .metrics.registry import MetricDispatcher
 from .parser import Parser
-from .results import ResultsFormatter
+from .results import ResultsFormatter, to_ndjson_line
 
 
 class CLIApp:
@@ -33,7 +34,7 @@ class CLIApp:
             metric_results,
         )
         for record in formatted_records:
-            print(json.dumps(record, separators=(",", ":")))
+            print(to_ndjson_line(record))
 
         return 0
 

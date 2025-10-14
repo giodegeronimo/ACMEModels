@@ -6,7 +6,8 @@ from typing import Any, Dict, List
 import pytest
 
 from src.metrics.metric_result import MetricResult
-from src.results import ResultsFormatter
+from src.results import (OUTPUT_FIELD_ORDER, SIZE_SCORE_DEVICE_ORDER,
+                         ResultsFormatter, to_ndjson_line)
 
 
 def _metric(
@@ -90,3 +91,82 @@ def test_resolve_name_handles_dataset_prefix() -> None:
     formatted = formatter.format_records(url_records, metrics)
 
     assert formatted[0]["name"] == "sample-dataset"
+
+
+def test_scores_are_rounded_to_two_decimals() -> None:
+    formatter = ResultsFormatter()
+    url_records = [{"hf_url": "https://huggingface.co/org/model"}]
+    metrics = [
+        [
+            _metric(key="net_score", value=0.876),
+            _metric(
+                key="size_score",
+                value={"aws_server": 0.995, "jetson_nano": 0.131},
+            ),
+            _metric(key="bus_factor", value=1),
+        ]
+    ]
+
+    formatted = formatter.format_records(url_records, metrics)
+    record = formatted[0]
+
+    assert record["net_score"] == pytest.approx(0.88)
+    size = record["size_score"]
+    assert size["aws_server"] == pytest.approx(1.00)
+    assert size["jetson_nano"] == pytest.approx(0.13)
+    assert record["bus_factor"] == pytest.approx(1.0)
+
+
+def test_formatter_uses_specified_field_order() -> None:
+    formatter = ResultsFormatter()
+    url_records = [{"hf_url": "https://huggingface.co/org/model"}]
+    metrics = [
+        _metric(key="code_quality", value=0.11, latency_ms=70),
+        _metric(key="net_score", value=0.2, latency_ms=10),
+        _metric(
+            key="size_score",
+            value={
+                "desktop_pc": 0.95,
+                "raspberry_pi": 0.2,
+                "aws_server": 1.0,
+                "jetson_nano": 0.4,
+            },
+            latency_ms=60,
+        ),
+        _metric(key="dataset_and_code_score", value=0.3, latency_ms=50),
+        _metric(key="bus_factor", value=0.9, latency_ms=30),
+        _metric(key="dataset_quality", value=0.6, latency_ms=55),
+        _metric(key="license", value=0.7, latency_ms=20),
+        _metric(key="performance_claims", value=0.8, latency_ms=40),
+        _metric(key="ramp_up_time", value=0.5, latency_ms=25),
+    ]
+
+    record = formatter.format_records(url_records, [metrics])[0]
+
+    expected_order = [key for key in OUTPUT_FIELD_ORDER if key in record]
+    assert list(record.keys()) == expected_order
+
+    size_keys = list(record["size_score"].keys())
+    expected_size_order = [
+        key for key in SIZE_SCORE_DEVICE_ORDER if key in record["size_score"]
+    ]
+    assert size_keys[: len(expected_size_order)] == expected_size_order
+
+    line = to_ndjson_line(record)
+    positions = [line.index(f'"{key}"') for key in expected_order]
+    assert positions == sorted(positions)
+
+
+def test_to_ndjson_line_formats_two_decimal_scores() -> None:
+    line = to_ndjson_line(
+        {
+            "name": "model",
+            "net_score": 0.8,
+            "net_score_latency": 15,
+            "size_score": {"aws_server": 1.0},
+        }
+    )
+
+    assert '"net_score":0.80' in line
+    assert '"size_score":{"aws_server":1.00}' in line
+    assert '"net_score_latency":15' in line

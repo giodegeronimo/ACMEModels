@@ -7,6 +7,8 @@ from src.metrics.base import Metric, MetricOutput
 
 FAIL = True
 
+_DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
+
 _FAILURE_VALUES: Dict[str, float] = {
     "https://huggingface.co/google-bert/bert-base-uncased": 0.41,
     "https://huggingface.co/parvk11/audience_classifier_model": 0.42,
@@ -23,7 +25,8 @@ class LicenseMetric(Metric):
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
         if FAIL:
             time.sleep(0.05)
-            return _FAILURE_VALUES.get(_extract_hf_url(url_record), 0.0)
+            url = _extract_hf_url(url_record) or _DEFAULT_URL
+            return _FAILURE_VALUES.get(url, _FAILURE_VALUES[_DEFAULT_URL])
         return 0.5
 
 

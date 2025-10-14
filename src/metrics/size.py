@@ -6,6 +6,7 @@ from typing import Dict, Mapping, Optional
 from src.metrics.base import Metric
 
 FAIL = True
+_DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 
 _FAILURE_VALUES: Dict[str, Dict[str, float]] = {
     "https://huggingface.co/google-bert/bert-base-uncased": {
@@ -38,15 +39,8 @@ class SizeMetric(Metric):
     def compute(self, url_record: Dict[str, str]) -> Mapping[str, float]:
         if FAIL:
             time.sleep(0.05)
-            return _FAILURE_VALUES.get(
-                _extract_hf_url(url_record),
-                {
-                    "raspberry_pi": 0.0,
-                    "jetson_nano": 0.0,
-                    "desktop_pc": 0.0,
-                    "aws_server": 0.0,
-                },
-            )
+            url = _extract_hf_url(url_record) or _DEFAULT_URL
+            return _FAILURE_VALUES.get(url, _FAILURE_VALUES[_DEFAULT_URL])
         return {
             "raspberry_pi": 0.5,
             "jetson_nano": 0.5,

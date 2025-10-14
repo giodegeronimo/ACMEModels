@@ -1,4 +1,4 @@
 # Runs isort, mypy, and flake8 all in one command
-python -m isort .
-python -m mypy .
-python -m flake8 .
+python3 -m isort .
+python3 -m mypy src tests
+python3 -m flake8 .

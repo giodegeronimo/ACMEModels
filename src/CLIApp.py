@@ -8,6 +8,7 @@ from typing import Sequence
 
 from .metrics.registry import MetricDispatcher
 from .parser import Parser
+from .results import ResultsFormatter
 
 
 class CLIApp:
@@ -24,15 +25,15 @@ class CLIApp:
         # Parse manifest first so errors surface quickly.
         parser = Parser(self._url_file)
         parsed_urls = parser.parse()
-        print(json.dumps(parsed_urls, indent=2))
-
         dispatcher = MetricDispatcher()
         metric_results = dispatcher.compute(parsed_urls)
-        serialised = [
-            [result.as_dict() for result in record_results]
-            for record_results in metric_results
-        ]
-        print(json.dumps(serialised, indent=2, default=str))
+        formatter = ResultsFormatter()
+        formatted_records = formatter.format_records(
+            parsed_urls,
+            metric_results,
+        )
+        for record in formatted_records:
+            print(json.dumps(record, separators=(",", ":")))
 
         return 0
 

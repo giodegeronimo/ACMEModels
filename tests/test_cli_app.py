@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -11,17 +11,9 @@ from src.CLIApp import CLIApp, build_arg_parser, main
 from src.metrics.registry import default_metrics
 
 
-def _parse_output(
-    text: str,
-) -> tuple[list[dict[str, str]], list[list[dict[str, Any]]]]:
-    stripped = text.strip()
-    decoder = json.JSONDecoder()
-    first_obj, idx = decoder.raw_decode(stripped)
-    manifest = cast(list[dict[str, str]], first_obj)
-    remainder = stripped[idx:].lstrip()
-    second_obj, _ = decoder.raw_decode(remainder)
-    metrics = cast(list[list[dict[str, Any]]], second_obj)
-    return manifest, metrics
+def _parse_ndjson(text: str) -> list[dict[str, Any]]:
+    lines = [line for line in text.strip().splitlines() if line.strip()]
+    return [json.loads(line) for line in lines]
 
 
 def test_cli_app_run_outputs_expected_json(
@@ -38,21 +30,27 @@ def test_cli_app_run_outputs_expected_json(
     )
     app = CLIApp(url_file)
     exit_code = app.run()
-    manifest, metrics = _parse_output(capsys.readouterr().out)
+    results = _parse_ndjson(capsys.readouterr().out)
 
     assert exit_code == 0
-    assert manifest == [
-        {
-            "git_url": "https://git.example/repo",
-            "ds_url": "https://hf.co/datasets/sample",
-            "hf_url": "https://hf.co/model",
-        }
-    ]
-    assert len(metrics) == 1
-    assert len(metrics[0]) == len(default_metrics())
-    first_result = metrics[0][0]
-    for field in ("metric", "key", "value", "latency_ms", "details", "error"):
-        assert field in first_result
+    assert len(results) == 1
+    record = results[0]
+    assert record["name"] == "model"
+    assert record["category"] == "MODEL"
+
+    for metric in default_metrics():
+        key = metric.key
+        assert key in record
+        assert f"{key}_latency" in record
+
+    size_score = record["size_score"]
+    assert isinstance(size_score, dict)
+    assert set(size_score) == {
+        "raspberry_pi",
+        "jetson_nano",
+        "desktop_pc",
+        "aws_server",
+    }
 
 
 def test_cli_main_calls_cli_app(
@@ -64,11 +62,12 @@ def test_cli_main_calls_cli_app(
         encoding="utf-8",
     )
     exit_code = main([str(url_file)])
-    manifest, metrics = _parse_output(capsys.readouterr().out)
+    results = _parse_ndjson(capsys.readouterr().out)
 
     assert exit_code == 0
-    assert manifest == [{"hf_url": "https://hf.co/model"}]
-    assert len(metrics) == 1
+    assert len(results) == 1
+    assert results[0]["name"] == "model"
+    assert results[0]["category"] == "MODEL"
 
 
 def test_build_arg_parser_requires_url_file() -> None:

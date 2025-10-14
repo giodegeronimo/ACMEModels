@@ -6,6 +6,9 @@ import logging
 from typing import TYPE_CHECKING, Any, Optional, cast
 from urllib.parse import urlparse
 
+import requests
+from huggingface_hub import hf_hub_url
+
 if TYPE_CHECKING:
     from huggingface_hub import HfApi, ModelInfo  # type: ignore[import]
     from huggingface_hub.errors import HfHubHTTPError  # type: ignore[import]
@@ -30,12 +33,14 @@ class HFClient(BaseClient[ModelInfo]):
         api: Optional[Any] = None,
         rate_limiter: Optional[RateLimiter] = None,
         logger: Optional[logging.Logger] = None,
+        http_session: Optional[requests.Session] = None,
     ) -> None:
         limiter = rate_limiter or RateLimiter(
             max_calls=DEFAULT_MAX_CALLS,
             period_seconds=DEFAULT_PERIOD_SECONDS,
         )
         super().__init__(limiter, logger=logger)
+        self._http_session = http_session or requests.Session()
         if api is not None:
             self._api = api
         else:
@@ -71,6 +76,31 @@ class HFClient(BaseClient[ModelInfo]):
         except HfHubHTTPError:
             return False
         return True
+
+    def get_model_readme(self, repo_id: str) -> str:
+        """Fetch the model card README as UTF-8 text."""
+
+        normalized_repo = self._normalize_repo_id(repo_id)
+
+        def _operation() -> str:
+            url = hf_hub_url(
+                repo_id=normalized_repo,
+                filename="README.md",
+            )
+            response = self._http_session.get(url, timeout=30)
+            if response.status_code == 404:
+                return ""
+            response.raise_for_status()
+            response.encoding = response.encoding or "utf-8"
+            return response.text
+
+        try:
+            return self._execute_with_rate_limit(
+                _operation,
+                name=f"hf.model_readme({normalized_repo})",
+            )
+        except (requests.RequestException, HfHubHTTPError):
+            return ""
 
     @staticmethod
     def _normalize_repo_id(repo_identifier: str) -> str:

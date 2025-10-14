@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+import requests
 
 try:
     from huggingface_hub.errors import HfHubHTTPError  # type: ignore[import]
@@ -133,4 +134,40 @@ def test_hf_client_instantiates_default_api(
 
     assert info == {"modelId": "user/model"}
     assert stub_instance.calls == ["user/model"]
+    assert limiter.invocations == 1
+
+
+def test_get_model_readme() -> None:
+    class DummyResponse:
+        def __init__(self, text: str, status_code: int = 200) -> None:
+            self._text = text
+            self.status_code = status_code
+            self.encoding: str | None = None
+
+        @property
+        def text(self) -> str:  # pragma: no cover - simple accessor
+            return self._text
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise requests.HTTPError(f"HTTP error {self.status_code}")
+
+    class DummySession:
+        def __init__(self, response: DummyResponse) -> None:
+            self._response = response
+            self.calls: list[tuple[str, int]] = []
+
+        def get(self, url: str, timeout: int = 30) -> DummyResponse:
+            self.calls.append((url, timeout))
+            return self._response
+
+    api = DummyApi()
+    session = DummySession(DummyResponse("README contents"))
+    limiter = DummyLimiter()
+    client = HFClient(api=api, rate_limiter=limiter, http_session=session)
+
+    contents = client.get_model_readme("https://huggingface.co/org/model")
+
+    assert contents == "README contents"
+    assert session.calls and session.calls[0][0].endswith("README.md")
     assert limiter.invocations == 1

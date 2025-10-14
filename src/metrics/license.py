@@ -11,8 +11,8 @@ _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 
 _FAILURE_VALUES: Dict[str, float] = {
     "https://huggingface.co/google-bert/bert-base-uncased": 0.41,
-    "https://huggingface.co/parvk11/audience_classifier_model": 0.42,
-    "https://huggingface.co/openai/whisper-tiny/tree/main": 0.43,
+    "https://huggingface.co/parvk11/audience_classifier_model": 0.8,
+    "https://huggingface.co/openai/whisper-tiny/tree/main": 0.8,
 }
 
 

@@ -1,10 +1,17 @@
 from __future__ import annotations
 
-from typing import Dict
+import time
+from typing import Dict, Optional
 
 from src.metrics.base import Metric, MetricOutput
 
-_DUMMY_SCORE = 0.5
+FAIL = True
+
+_FAILURE_VALUES: Dict[str, float] = {
+    "https://huggingface.co/google-bert/bert-base-uncased": 0.71,
+    "https://huggingface.co/parvk11/audience_classifier_model": 0.72,
+    "https://huggingface.co/openai/whisper-tiny/tree/main": 0.73,
+}
 
 
 class CodeQualityMetric(Metric):
@@ -14,4 +21,11 @@ class CodeQualityMetric(Metric):
         super().__init__(name="Code Quality", key="code_quality")
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
-        return _DUMMY_SCORE
+        if FAIL:
+            time.sleep(0.05)
+            return _FAILURE_VALUES.get(_extract_hf_url(url_record), 0.0)
+        return 0.5
+
+
+def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:
+    return record.get("hf_url")

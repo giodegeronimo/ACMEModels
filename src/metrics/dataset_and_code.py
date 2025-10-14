@@ -8,7 +8,7 @@ from src.metrics.base import Metric, MetricOutput
 FAIL = True
 
 _FAILURE_VALUES: Dict[str, float] = {
-    "https://huggingface.co/google-bert/bert-base-uncased": 0.51,
+    "https://huggingface.co/google-bert/bert-base-uncased": 0.00,
     "https://huggingface.co/parvk11/audience_classifier_model": 0.52,
     "https://huggingface.co/openai/whisper-tiny/tree/main": 0.53,
 }

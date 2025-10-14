@@ -10,7 +10,8 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Tuple, Union
+from typing import (Any, Callable, Iterable, Mapping, Optional, Sequence,
+                    Tuple, Union)
 
 _CLI_MAIN: Optional[Callable[[Optional[Sequence[str]]], int]] = None
 PYTHON_BIN = "python3"

@@ -78,6 +78,30 @@ class HFClient(BaseClient[Any]):
             return False
         return True
 
+    def dataset_exists(self, dataset_id: str) -> bool:
+        """Return ``True`` when the dataset slug resolves on the Hub."""
+
+        normalized_dataset = self._normalize_dataset_id(dataset_id)
+
+        def _operation() -> bool:
+            self._logger.debug(
+                "Checking dataset existence for %s", normalized_dataset
+            )
+            self._api.dataset_info(normalized_dataset)
+            return True
+
+        try:
+            return self._execute_with_rate_limit(
+                _operation,
+                name=f"hf.dataset_exists({normalized_dataset})",
+            )
+        except HfHubHTTPError:
+            self._logger.debug(
+                "Dataset %s does not exist or is inaccessible",
+                normalized_dataset,
+            )
+            return False
+
     def get_model_readme(self, repo_id: str) -> str:
         """Fetch the model card README as UTF-8 text."""
 
@@ -133,5 +157,38 @@ class HFClient(BaseClient[Any]):
 
         if len(segments) < 2:
             raise ValueError(f"Unable to extract repo id from URL: {trimmed}")
+
+        return "/".join(segments[:2])
+
+    @staticmethod
+    def _normalize_dataset_id(dataset_identifier: str) -> str:
+        trimmed = dataset_identifier.strip()
+        if not trimmed:
+            raise ValueError("Dataset identifier cannot be empty.")
+
+        if "://" not in trimmed:
+            if "/" not in trimmed:
+                raise ValueError("Dataset identifier must include owner/name")
+            return trimmed
+
+        parsed = urlparse(trimmed)
+        if parsed.netloc != "huggingface.co":
+            raise ValueError(
+                f"Unsupported Hugging Face host in dataset id: {parsed.netloc}"
+            )
+
+        segments = [segment for segment in parsed.path.split("/") if segment]
+        if not segments:
+            raise ValueError(
+                f"Unable to extract dataset id from URL: {dataset_identifier}"
+            )
+
+        if segments[0] == "datasets":
+            segments = segments[1:]
+
+        if len(segments) < 2:
+            raise ValueError(
+                f"Unable to extract dataset id from URL: {dataset_identifier}"
+            )
 
         return "/".join(segments[:2])

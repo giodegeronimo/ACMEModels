@@ -102,6 +102,58 @@ class HFClient(BaseClient[Any]):
             )
             return False
 
+    def get_dataset_info(self, dataset_id: str) -> Any:
+        """Fetch dataset metadata from the Hugging Face Hub."""
+
+        normalized_dataset = self._normalize_dataset_id(dataset_id)
+
+        def _operation() -> Any:
+            self._logger.debug(
+                "Requesting dataset info for %s", normalized_dataset
+            )
+            return self._api.dataset_info(normalized_dataset)
+
+        return self._execute_with_rate_limit(
+            _operation,
+            name=f"hf.dataset_info({normalized_dataset})",
+        )
+
+    def count_models_trained_on_dataset(
+        self,
+        dataset_id: str,
+        limit: int = 1000,
+    ) -> int:
+        """Count models that reference the dataset via trained_dataset."""
+
+        normalized_dataset = self._normalize_dataset_id(dataset_id)
+
+        def _operation() -> int:
+            self._logger.debug(
+                "Listing models trained on dataset %s (limit=%d)",
+                normalized_dataset,
+                limit,
+            )
+            count = 0
+            iterator = self._api.list_models(
+                trained_dataset=normalized_dataset,
+                limit=limit,
+            )
+            for _ in iterator:
+                count += 1
+            return count
+
+        try:
+            return self._execute_with_rate_limit(
+                _operation,
+                name=f"hf.models_for_dataset({normalized_dataset})",
+            )
+        except HfHubHTTPError:
+            self._logger.debug(
+                "Unable to list models for dataset %s",
+                normalized_dataset,
+            )
+            return 0
+
     def get_model_readme(self, repo_id: str) -> str:
         """Fetch the model card README as UTF-8 text."""
 

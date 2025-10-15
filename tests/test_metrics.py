@@ -13,7 +13,6 @@ from src.metrics.license import LicenseMetric
 from src.metrics.metric_result import MetricResult
 from src.metrics.net_score import NetScoreCalculator
 from src.metrics.performance import PerformanceMetric
-from src.metrics.ramp_up import RampUpMetric
 from src.metrics.registry import MetricDispatcher, default_metrics
 from src.metrics.size import SizeMetric
 
@@ -21,7 +20,6 @@ from src.metrics.size import SizeMetric
 @pytest.mark.parametrize(
     "metric_cls",
     [
-        RampUpMetric,
         BusFactorMetric,
         LicenseMetric,
         DatasetAndCodeMetric,

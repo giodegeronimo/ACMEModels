@@ -50,7 +50,9 @@ def test_license_from_readme_recognized_scores_high() -> None:
     ## License
     This project is released under the MIT License.
     """
-    metric = LicenseMetric(hf_client=_FakeHFClient(model_info=_FakeModelInfo(), readme=readme))
+    metric = LicenseMetric(
+        hf_client=_FakeHFClient(model_info=_FakeModelInfo(), readme=readme)
+    )
 
     score = metric.compute({"hf_url": "https://huggingface.co/org/model"})
 
@@ -85,4 +87,3 @@ def test_license_unknown_is_zero() -> None:
     score = metric.compute({"hf_url": "https://huggingface.co/org/model"})
 
     assert score == pytest.approx(0.0)
-

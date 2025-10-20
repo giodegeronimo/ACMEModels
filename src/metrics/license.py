@@ -80,7 +80,9 @@ class LicenseMetric(Metric):
             return 0.0
 
         clarity = _clarity_score(
-            from_metadata=from_meta, from_readme=from_readme, recognized=candidates
+            from_metadata=from_meta,
+            from_readme=from_readme,
+            recognized=candidates,
         )
 
         classification = _classify(candidates, policy)

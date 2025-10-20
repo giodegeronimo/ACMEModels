@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Dict, Iterable, Mapping, Optional, Protocol, Tuple
 import time
+from typing import Dict, Iterable, Mapping, Optional, Protocol, Tuple
 
 from src.clients.hf_client import HFClient
 from src.metrics.base import Metric

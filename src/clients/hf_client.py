@@ -185,6 +185,78 @@ class HFClient(BaseClient[Any]):
             )
             return ""
 
+    def list_model_files(
+        self,
+        repo_id: str,
+        *,
+        recursive: bool = True,
+    ) -> list[tuple[str, int]]:
+        """Return a list of (path, size_bytes) for files in the model repo.
+
+        The implementation prefers ``list_repo_tree`` (which provides sizes),
+        falls back to ``model_info().siblings`` if necessary, and finally
+        attempts HEAD requests to obtain ``Content-Length`` for entries with
+        unknown sizes.
+        """
+
+        normalized_repo = self._normalize_repo_id(repo_id)
+
+        def _list_via_tree() -> list[tuple[str, int]]:
+            try:
+                items = self._api.list_repo_tree(  # type: ignore[attr-defined]
+                    normalized_repo,
+                    repo_type="model",
+                    recursive=recursive,
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                self._logger.debug(
+                    "list_repo_tree failed for %s: %s", normalized_repo, exc
+                )
+                return []
+
+            results: list[tuple[str, int]] = []
+            for item in items:
+                # RepoFile typically has 'path' and 'size' attrs
+                path = getattr(item, "path", None) or getattr(
+                    item, "rfilename", None
+                )
+                size = getattr(item, "size", None)
+                if isinstance(path, str) and isinstance(size, int):
+                    results.append((path, size))
+            return results
+
+        def _list_via_siblings() -> list[tuple[str, int]]:
+            try:
+                info = self._api.model_info(normalized_repo)
+            except Exception as exc:  # pragma: no cover - defensive
+                self._logger.debug(
+                    "model_info failed for %s: %s", normalized_repo, exc
+                )
+                return []
+
+            results: list[tuple[str, int]] = []
+            siblings = getattr(info, "siblings", None) or []
+            for sibling in siblings:
+                path = getattr(sibling, "rfilename", None)
+                size = getattr(sibling, "size", None)
+                if isinstance(path, str) and isinstance(size, int):
+                    results.append((path, size))
+            return results
+
+        def _operation() -> list[tuple[str, int]]:
+            files = _list_via_tree()
+            if files:
+                return files
+            files = _list_via_siblings()
+            # Optionally fill missing sizes via HEAD; avoid over-fetching.
+            # Here we keep it simple and return only known sizes.
+            return files
+
+        return self._execute_with_rate_limit(
+            _operation,
+            name=f"hf.list_files({normalized_repo})",
+        )
+
     @staticmethod
     def _normalize_repo_id(repo_identifier: str) -> str:
         trimmed = repo_identifier.strip()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Protocol, cast
 
 import requests  # type: ignore[import]
 
@@ -19,6 +19,16 @@ CHAT_COMPLETIONS_PATH = "/chat/completions"
 ENV_TOKEN_KEY = "GEN_AI_STUDIO_API_KEY"
 
 
+class _SessionWithPost(Protocol):
+    def post(
+        self,
+        url: str,
+        headers: Dict[str, str],
+        json: Dict[str, Any],
+        timeout: int = 30,
+    ) -> Any: ...
+
+
 class PurdueClient(BaseClient[Dict[str, Any]]):
     """Minimal wrapper around the Purdue GenAI Studio REST API."""
 
@@ -27,7 +37,7 @@ class PurdueClient(BaseClient[Dict[str, Any]]):
         *,
         rate_limiter: Optional[RateLimiter] = None,
         logger: Optional[logging.Logger] = None,
-        session: Optional[requests.Session] = None,
+        session: Optional[_SessionWithPost] = None,
         base_url: str = DEFAULT_BASE_URL,
     ) -> None:
         load_dotenv()
@@ -38,7 +48,9 @@ class PurdueClient(BaseClient[Dict[str, Any]]):
         )
         super().__init__(limiter, logger=logger)
 
-        self._session = session or requests.Session()
+        self._session: _SessionWithPost = cast(
+            _SessionWithPost, session or requests.Session()
+        )
         self._base_url = base_url.rstrip("/")
         self._api_token = os.environ.get(ENV_TOKEN_KEY)
         if not self._api_token:

@@ -3,7 +3,7 @@ from __future__ import annotations
 """Git service client with rate limiting support."""
 
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, Protocol, cast
 
 import requests  # type: ignore[import]
 
@@ -14,6 +14,10 @@ DEFAULT_MAX_CALLS = 5
 DEFAULT_PERIOD_SECONDS = 1.0
 
 
+class _SessionWithGet(Protocol):
+    def get(self, url: str, timeout: int) -> Any: ...
+
+
 class GitClient(BaseClient[Any]):
     """Generic adapter for interacting with Git repository hosts."""
 
@@ -22,7 +26,7 @@ class GitClient(BaseClient[Any]):
         *,
         rate_limiter: Optional[RateLimiter] = None,
         logger: Optional[logging.Logger] = None,
-        session: Optional[requests.Session] = None,
+        session: Optional[_SessionWithGet] = None,
     ) -> None:
         limiter = rate_limiter or RateLimiter(
             max_calls=DEFAULT_MAX_CALLS,
@@ -30,7 +34,9 @@ class GitClient(BaseClient[Any]):
         )
         super().__init__(limiter, logger=logger)
 
-        self._session = session or requests.Session()
+        self._session: _SessionWithGet = cast(
+            _SessionWithGet, session or requests.Session()
+        )
 
     def get_repo_metadata(self, repo_url: str) -> dict[str, Any]:
         """Fetch repository metadata from supported hosts."""

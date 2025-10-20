@@ -3,7 +3,7 @@ from __future__ import annotations
 """Hugging Face Hub client with rate limiting."""
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, Protocol, cast
 from urllib.parse import urlparse
 
 import requests
@@ -24,6 +24,10 @@ DEFAULT_MAX_CALLS = 5
 DEFAULT_PERIOD_SECONDS = 1.0
 
 
+class _SessionWithGet(Protocol):
+    def get(self, url: str, timeout: int = 30) -> Any: ...
+
+
 class HFClient(BaseClient[Any]):
     """Thin wrapper around ``huggingface_hub.HfApi`` with rate limiting."""
 
@@ -33,14 +37,16 @@ class HFClient(BaseClient[Any]):
         api: Optional[Any] = None,
         rate_limiter: Optional[RateLimiter] = None,
         logger: Optional[logging.Logger] = None,
-        http_session: Optional[requests.Session] = None,
+        http_session: Optional[_SessionWithGet] = None,
     ) -> None:
         limiter = rate_limiter or RateLimiter(
             max_calls=DEFAULT_MAX_CALLS,
             period_seconds=DEFAULT_PERIOD_SECONDS,
         )
         super().__init__(limiter, logger=logger)
-        self._http_session = http_session or requests.Session()
+        self._http_session = cast(
+            _SessionWithGet, http_session or requests.Session()
+        )
         if api is not None:
             self._api = api
         else:

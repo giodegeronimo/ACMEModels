@@ -64,7 +64,9 @@ def test_model_exists_handles_missing(monkeypatch: pytest.MonkeyPatch) -> None:
 
     class FailingApi(DummyApi):
         def model_info(self, repo_id: str) -> dict[str, Any]:
-            raise HfHubHTTPError("missing", response=DummyResponse())
+            raise HfHubHTTPError(
+                "missing", response=DummyResponse()  # type: ignore[arg-type]
+            )
 
     failing_api = FailingApi()
     client = HFClient(api=failing_api, rate_limiter=DummyLimiter())
@@ -150,7 +152,11 @@ def test_get_model_readme() -> None:
 
         def raise_for_status(self) -> None:
             if self.status_code >= 400:
-                raise requests.HTTPError(f"HTTP error {self.status_code}")
+                raise requests.HTTPError(
+                    "HTTP error {}".format(self.status_code),
+                    request=None,  # type: ignore[arg-type]
+                    response=None,  # type: ignore[arg-type]
+                )
 
     class DummySession:
         def __init__(self, response: DummyResponse) -> None:
@@ -171,3 +177,80 @@ def test_get_model_readme() -> None:
     assert contents == "README contents"
     assert session.calls and session.calls[0][0].endswith("README.md")
     assert limiter.invocations == 1
+
+
+def test_list_model_files_uses_repo_tree() -> None:
+    class RepoItem:
+        def __init__(self, path: str, size: int) -> None:
+            self.path = path
+            self.size = size
+
+    class TreeApi:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, bool]] = []
+
+        def list_repo_tree(
+            self,
+            repo_id: str,
+            repo_type: str = "model",
+            recursive: bool = True,
+        ) -> list[RepoItem]:
+            self.calls.append((repo_id, recursive))
+            return [
+                RepoItem("a.bin", 100),
+                RepoItem("b.safetensors", 200),
+            ]
+
+    api = TreeApi()
+    limiter = DummyLimiter()
+    client = HFClient(api=api, rate_limiter=limiter)
+
+    files = client.list_model_files("https://huggingface.co/org/model")
+
+    assert files == [("a.bin", 100), ("b.safetensors", 200)]
+    assert limiter.invocations == 1
+
+
+def test_list_model_files_falls_back_to_siblings() -> None:
+    class Sibling:
+        def __init__(self, rfilename: str, size: int) -> None:
+            self.rfilename = rfilename
+            self.size = size
+
+    class Info:
+        def __init__(self) -> None:
+            self.siblings = [Sibling("weights/pytorch_model.bin", 123)]
+
+    class FallbackApi:
+        def list_repo_tree(self, *args: Any, **kwargs: Any) -> list[Any]:
+            raise RuntimeError("tree not available")
+
+        def model_info(self, repo_id: str) -> Info:
+            return Info()
+
+    api = FallbackApi()
+    limiter = DummyLimiter()
+    client = HFClient(api=api, rate_limiter=limiter)
+
+    files = client.list_model_files("org/model")
+
+    assert files == [("weights/pytorch_model.bin", 123)]
+    assert limiter.invocations == 1
+
+
+def test_list_model_files_ignores_missing_sizes() -> None:
+    class RepoItem:
+        def __init__(self, path: str, size: int | None) -> None:
+            self.path = path
+            self.size = size  # type: ignore[assignment]
+
+    class TreeApi:
+        def list_repo_tree(self, *args: Any, **kwargs: Any) -> list[RepoItem]:
+            return [RepoItem("a.bin", 100), RepoItem("b.bin", None)]
+
+    api = TreeApi()
+    client = HFClient(api=api, rate_limiter=DummyLimiter())
+
+    files = client.list_model_files("org/model")
+
+    assert files == [("a.bin", 100)]

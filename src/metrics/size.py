@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Dict, Iterable, Mapping, Optional, Tuple
+from typing import Dict, Iterable, Mapping, Optional, Protocol, Tuple
 
 from src.clients.hf_client import HFClient
 from src.metrics.base import Metric
@@ -59,6 +59,12 @@ _DEVICE_BINS: dict[str, Tuple[float, float]] = {
 }
 
 
+class _HFClientProtocol(Protocol):
+    def list_model_files(
+        self, repo_id: str, *, recursive: bool = True
+    ) -> list[tuple[str, int]]: ...
+
+
 class SizeMetric(Metric):
     """Compute per-device compatibility from model artifact sizes.
 
@@ -68,9 +74,9 @@ class SizeMetric(Metric):
     - Final per-device score picks the best (max) variant
     """
 
-    def __init__(self, hf_client: Optional[HFClient] = None) -> None:
+    def __init__(self, hf_client: Optional[_HFClientProtocol] = None) -> None:
         super().__init__(name="Size Score", key="size_score")
-        self._hf = hf_client or HFClient()
+        self._hf: _HFClientProtocol = hf_client or HFClient()
 
     def compute(self, url_record: Dict[str, str]) -> Mapping[str, float]:
         hf_url = _extract_hf_url(url_record)

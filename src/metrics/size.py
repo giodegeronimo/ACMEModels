@@ -3,14 +3,38 @@ from __future__ import annotations
 import logging
 import re
 from typing import Dict, Iterable, Mapping, Optional, Protocol, Tuple
+import time
 
 from src.clients.hf_client import HFClient
 from src.metrics.base import Metric
+from src.utils.env import fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
 
-FAIL = False
+FAIL = True
 _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
+
+# Stub mapping used when FAIL is active (deterministic behavior)
+_FAILURE_VALUES: Dict[str, Dict[str, float]] = {
+    "https://huggingface.co/google-bert/bert-base-uncased": {
+        "raspberry_pi": 0.81,
+        "jetson_nano": 0.82,
+        "desktop_pc": 0.83,
+        "aws_server": 0.84,
+    },
+    "https://huggingface.co/parvk11/audience_classifier_model": {
+        "raspberry_pi": 0.99,
+        "jetson_nano": 0.99,
+        "desktop_pc": 0.99,
+        "aws_server": 0.99,
+    },
+    "https://huggingface.co/openai/whisper-tiny/tree/main": {
+        "raspberry_pi": 0.99,
+        "jetson_nano": 0.99,
+        "desktop_pc": 0.99,
+        "aws_server": 0.99,
+    },
+}
 
 # Weight file identification
 _WEIGHT_EXTS = {
@@ -80,6 +104,10 @@ class SizeMetric(Metric):
 
     def compute(self, url_record: Dict[str, str]) -> Mapping[str, float]:
         hf_url = _extract_hf_url(url_record)
+        if fail_stub_active(FAIL):
+            time.sleep(0.05)
+            url = hf_url or _DEFAULT_URL
+            return _FAILURE_VALUES.get(url, _FAILURE_VALUES[_DEFAULT_URL])
         if not hf_url:
             return _zero_scores()
 

@@ -181,6 +181,8 @@ def run_tests() -> int:
     ]
     pytest_env = os.environ.copy()
     pytest_env["COVERAGE_FILE"] = str(coverage_path)
+    # Ensure unit tests ignore module-level FAIL flags in metrics.
+    pytest_env["ACME_IGNORE_FAIL"] = "1"
 
     result = _run_pytest_subprocess(pytest_args, pytest_env)
 

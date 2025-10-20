@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional, Protocol
 from src.clients.hf_client import HFClient
 from src.clients.purdue_client import PurdueClient
 from src.metrics.base import Metric, MetricOutput
+from src.utils.env import fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ class RampUpMetric(Metric):
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
         hf_url = _extract_hf_url(url_record)
-        if FAIL:
+        if fail_stub_active(FAIL):
             fallback_url = hf_url or _DEFAULT_URL
             _LOGGER.info(
                 "FAIL flag enabled; returning stub score for %s",

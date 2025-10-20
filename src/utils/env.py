@@ -36,3 +36,34 @@ def _parse_line(line: str) -> Optional[Tuple[str, str]]:
 
     key, value = stripped.split("=", 1)
     return (key.strip(), value.strip())
+
+
+# --- Test and stub controls -------------------------------------------------
+
+def _truthy(value: Optional[str]) -> bool:
+    if value is None:
+        return False
+    lowered = value.strip().lower()
+    return lowered in {"1", "true", "yes", "on"}
+
+
+def ignore_fail_flags() -> bool:
+    """Return True when FAIL flags should be ignored (e.g., during tests).
+
+    Controlled by environment variable ``ACME_IGNORE_FAIL``. Any of
+    "1/true/yes/on" enables ignoring FAIL.
+    """
+
+    load_dotenv()
+    return _truthy(os.environ.get("ACME_IGNORE_FAIL"))
+
+
+def fail_stub_active(flag: bool) -> bool:
+    """Return True when a metric's FAIL stub should be used.
+
+    This is a single place to centralize the condition, so tests can disable
+    FAIL by setting ``ACME_IGNORE_FAIL=1`` while allowing developers to toggle
+    FAIL in code for manual runs.
+    """
+
+    return bool(flag and not ignore_fail_flags())

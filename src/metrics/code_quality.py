@@ -4,6 +4,7 @@ import time
 from typing import Dict, Optional
 
 from src.metrics.base import Metric, MetricOutput
+from src.utils.env import fail_stub_active
 
 FAIL = True
 _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
@@ -22,7 +23,7 @@ class CodeQualityMetric(Metric):
         super().__init__(name="Code Quality", key="code_quality")
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
-        if FAIL:
+        if fail_stub_active(FAIL):
             time.sleep(0.05)
             url = _extract_hf_url(url_record) or _DEFAULT_URL
             return _FAILURE_VALUES.get(url, _FAILURE_VALUES[_DEFAULT_URL])

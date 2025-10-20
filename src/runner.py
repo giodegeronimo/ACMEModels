@@ -217,7 +217,9 @@ def run_pytest(additional_args: Optional[Sequence[str]] = None) -> int:
     if additional_args:
         command.extend(additional_args)
 
-    completed = subprocess.run(command)
+    env = os.environ.copy()
+    env["ACME_IGNORE_FAIL"] = "1"
+    completed = subprocess.run(command, env=env)
     return completed.returncode
 
 

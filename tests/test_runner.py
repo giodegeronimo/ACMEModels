@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import types
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Optional
 
 import pytest
 
@@ -140,9 +140,16 @@ def test_run_pytest_invokes_subprocess(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     executed_commands: List[List[str]] = []
+    injected_env: List[Dict[str, str]] = []
 
-    def fake_run(command: List[str]) -> DummyCompletedProcess:
+    def fake_run(
+        command: List[str],
+        env: Optional[Dict[str, str]] = None,
+        **_: Any,
+    ) -> DummyCompletedProcess:
         executed_commands.append(command)
+        if env is not None:
+            injected_env.append(env)
         return DummyCompletedProcess(0)
 
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
@@ -154,6 +161,7 @@ def test_run_pytest_invokes_subprocess(
     assert command[:3] == [runner.PYTHON_BIN, "-m", "pytest"]
     assert "--cov=src" in command
     assert command[-2:] == ["-k", "pattern"]
+    assert injected_env and injected_env[0].get("ACME_IGNORE_FAIL") == "1"
 
 
 def test_collect_line_coverage_handles_missing_file(

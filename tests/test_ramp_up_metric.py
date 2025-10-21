@@ -150,3 +150,28 @@ def test_ramp_up_partial_scores_accumulate() -> None:
 
     assert isinstance(score, float)
     assert 0.0 < score < 1.0
+
+
+def test_ramp_up_handles_missing_purdue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_client() -> None:
+        raise RuntimeError("GEN_AI_STUDIO_API_KEY missing")
+
+    monkeypatch.setattr(
+        "src.metrics.ramp_up.PurdueClient",
+        fail_client,
+    )
+
+    long_readme = "Documentation\n" + ("content\n" * 1000)
+    metric = RampUpMetric(
+        hf_client=_FakeHFClient(
+            model_info=_FakeModelInfo(siblings=[]),
+            readme=long_readme,
+        )
+    )
+
+    score = metric.compute({"hf_url": "https://huggingface.co/org/model"})
+
+    assert isinstance(score, float)
+    assert score >= 0.0

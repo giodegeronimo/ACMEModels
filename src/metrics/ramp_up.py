@@ -69,8 +69,7 @@ class RampUpMetric(Metric):
     ) -> None:
         super().__init__(name="Ramp-up Score", key="ramp_up_time")
         self._hf_client: _HFClientProtocol = hf_client or HFClient()
-        _purdue_client = purdue_client or PurdueClient()
-        self._purdue_client: Optional[_PurdueClientProtocol] = _purdue_client
+        self._purdue_client: Optional[_PurdueClientProtocol] = purdue_client
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
         hf_url = _extract_hf_url(url_record)
@@ -124,7 +123,8 @@ class RampUpMetric(Metric):
         return fallback
 
     def _score_readme_with_llm(self, readme_text: str) -> Optional[float]:
-        if self._purdue_client is None:
+        client = self._get_purdue_client()
+        if client is None:
             return None
         if len(readme_text) < LLM_MIN_LENGTH:
             _LOGGER.debug(
@@ -149,8 +149,8 @@ class RampUpMetric(Metric):
         )
 
         try:
-            analysis = self._purdue_client.llm(analysis_prompt)
-            extraction = self._purdue_client.llm(
+            analysis = client.llm(analysis_prompt)
+            extraction = client.llm(
                 extraction_prompt.format(analysis=analysis)
             )
             match = re.search(r"([01](?:\.\d+)?)", extraction)
@@ -211,6 +211,23 @@ class RampUpMetric(Metric):
             usage_hits,
         )
         return score
+
+    def _get_purdue_client(self) -> Optional[_PurdueClientProtocol]:
+        if self._purdue_client is not None:
+            return self._purdue_client
+
+        try:
+            client = PurdueClient()
+        except RuntimeError as exc:
+            _LOGGER.info(
+                "Purdue client unavailable; skipping LLM evaluation: %s",
+                exc,
+            )
+            self._purdue_client = None
+            return None
+
+        self._purdue_client = client
+        return client
 
     def _score_artifacts(self, model_info: Any) -> float:
         if model_info is None:

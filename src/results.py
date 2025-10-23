@@ -31,6 +31,8 @@ OUTPUT_FIELD_ORDER: Sequence[str] = (
     "dataset_quality_latency",
     "code_quality",
     "code_quality_latency",
+    "reproducibility",
+    "reproducibility_latency",
 )
 
 SIZE_SCORE_DEVICE_ORDER: Sequence[str] = (

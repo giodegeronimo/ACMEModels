@@ -26,7 +26,7 @@ _FAILURE_VALUES: Dict[str, float] = {
 _FAILURE_VALUES: Dict[str, float] = {
     "https://huggingface.co/google-bert/bert-base-uncased": 0.56,
     "https://huggingface.co/parvk11/audience_classifier_model": 0.21,
-    "https://huggingface.co/openai/whisper-tiny/tree/main": 0.42,
+    "https://huggingface.co/openai/whisper-tiny/tree/main": 0.9,
 }
 
 CONTRIBUTOR_WEIGHT = 0.6

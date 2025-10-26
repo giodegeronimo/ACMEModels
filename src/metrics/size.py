@@ -125,16 +125,39 @@ class SizeMetric(Metric):
         if not variants:
             return _zero_scores()
 
+        variant_details = {
+            name: total_bytes / (1024.0 ** 3)
+            for name, total_bytes in variants.items()
+        }
+
+        _LOGGER.info(
+            "Size metric: evaluated %d variant(s) for %s -> %s",
+            len(variant_details),
+            hf_url,
+            {k: f"{v:.2f} GB" for k, v in variant_details.items()},
+        )
+
         # For each device, compute max score across variants
         scores: Dict[str, float] = {}
         for device, (ideal, hard) in _DEVICE_BINS.items():
-            best = 0.0
-            for _variant, total_bytes in variants.items():
-                total_gb = total_bytes / (1024.0 ** 3)
-                score = _piecewise_linear_score(total_gb, ideal, hard)
-                if score > best:
-                    best = score
+            device_scores: Dict[str, float] = {}
+            for variant_name, total_gb in variant_details.items():
+                device_scores[variant_name] = _piecewise_linear_score(
+                    total_gb,
+                    ideal,
+                    hard,
+                )
+            best = max(device_scores.values()) if device_scores else 0.0
             scores[device] = float(best)
+            _LOGGER.info(
+                "Size metric: device=%s ideal<=%.2fGB hard<=%.2fGB "
+                "variant_scores=%s best=%.2f",
+                device,
+                ideal,
+                hard,
+                {k: f"{v:.2f}" for k, v in device_scores.items()},
+                best,
+            )
 
         return scores
 

@@ -66,7 +66,13 @@ class DatasetAndCodeMetric(Metric):
             hf_url or "<unknown>",
         )
 
-        dataset_score = self._dataset_score_from_manifest(url_record, hf_url)
+        dataset_score, dataset_detail = self._dataset_score_from_manifest(
+            url_record,
+            hf_url,
+        )
+        dataset_sources: list[str] = []
+        if dataset_detail:
+            dataset_sources.append(dataset_detail)
 
         code_score = 0.5 if _has_explicit_code(url_record) else 0.0
         if code_score:
@@ -77,6 +83,7 @@ class DatasetAndCodeMetric(Metric):
             )
         else:
             _LOGGER.debug("No code repository URL in manifest for %s", hf_url)
+        code_sources: list[str] = ["manifest"] if code_score else []
 
         readme_text: Optional[str] = None
 
@@ -104,6 +111,7 @@ class DatasetAndCodeMetric(Metric):
                             hf_url,
                             f"https://huggingface.co/datasets/{slug}",
                         )
+                        dataset_sources.append(f"readme:{slug}")
                     dataset_score = 0.5
                 else:
                     _LOGGER.debug(
@@ -128,6 +136,7 @@ class DatasetAndCodeMetric(Metric):
                     repo_url,
                 )
                 code_score = 0.5
+                code_sources.append("readme")
             else:
                 _LOGGER.debug(
                     "No code repository reference found in README for %s",
@@ -136,19 +145,24 @@ class DatasetAndCodeMetric(Metric):
 
         total = min(dataset_score + code_score, 1.0)
         _LOGGER.info(
-            "Dataset/code score for %s computed as %.2f",
+            "Dataset/code score for %s computed as %.2f (dataset=%.2f "
+            "sources=%s, code=%.2f sources=%s)",
             hf_url or "<unknown>",
             total,
+            dataset_score,
+            dataset_sources or ["none"],
+            code_score,
+            code_sources or ["none"],
         )
         return total
 
     def _dataset_score_from_manifest(
         self, url_record: Dict[str, str], hf_url: Optional[str]
-    ) -> float:
+    ) -> tuple[float, Optional[str]]:
         ds_url = url_record.get("ds_url")
         if not ds_url or not ds_url.strip():
             _LOGGER.debug("No dataset URL in manifest for %s", hf_url)
-            return 0.0
+            return 0.0, None
 
         if self._dataset_reference_is_valid(ds_url):
             _LOGGER.info(
@@ -156,14 +170,16 @@ class DatasetAndCodeMetric(Metric):
                 hf_url,
                 ds_url,
             )
-            return 0.5
+            slug = _to_dataset_slug(ds_url)
+            detail = f"manifest:{slug or ds_url}"
+            return 0.5, detail
 
         _LOGGER.info(
             "Dataset URL in manifest for %s did not resolve: %s",
             hf_url,
             ds_url,
         )
-        return 0.0
+        return 0.0, None
 
     def _score_dataset_from_hub(self, hf_url: str) -> float:
         model_info = self._safe_model_info(hf_url)

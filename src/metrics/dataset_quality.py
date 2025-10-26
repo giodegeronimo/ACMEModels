@@ -109,14 +109,38 @@ class DatasetQualityMetric(Metric):
 
         models_count = self._count_models_using_dataset(dataset_slug)
 
+        metadata_score = self._score_metadata(dataset_info)
+        splits_score = self._score_splits(dataset_info)
+        license_score = self._score_license(dataset_info)
+        adoption_score = self._score_adoption(dataset_info, models_count)
+        freshness_score = self._score_freshness(dataset_info)
+
         total = (
-            self._score_metadata(dataset_info)
-            + self._score_splits(dataset_info)
-            + self._score_license(dataset_info)
-            + self._score_adoption(dataset_info, models_count)
-            + self._score_freshness(dataset_info)
+            metadata_score
+            + splits_score
+            + license_score
+            + adoption_score
+            + freshness_score
         )
         final_score = min(total, 1.0)
+        downloads = getattr(dataset_info, "downloads", "?")
+        likes = getattr(dataset_info, "likes", "?")
+        last_modified = getattr(dataset_info, "last_modified", "unknown")
+        _LOGGER.info(
+            "Dataset quality sub-scores for %s: metadata=%.2f splits=%.2f "
+            "license=%.2f adoption=%.2f freshness=%.2f (downloads=%s, "
+            "likes=%s, models_using=%d, last_modified=%s)",
+            dataset_slug,
+            metadata_score,
+            splits_score,
+            license_score,
+            adoption_score,
+            freshness_score,
+            downloads,
+            likes,
+            models_count,
+            last_modified,
+        )
         _LOGGER.info(
             "Dataset quality score for %s computed as %.2f",
             dataset_slug,

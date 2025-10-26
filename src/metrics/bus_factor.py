@@ -84,6 +84,18 @@ class BusFactorMetric(Metric):
         if repo_url:
             metadata = self._safe_repo_metadata(repo_url)
             contributors = self._safe_contributors(repo_url)
+            _LOGGER.info(
+                "Bus factor inputs for %s: repo=%s metadata=%s "
+                "contributors=%d",
+                hf_url,
+                repo_url,
+                bool(metadata),
+                len(contributors),
+            )
+        else:
+            _LOGGER.info(
+                "Bus factor: no repository URL resolved for %s", hf_url
+            )
 
         if not contributors and metadata is None:
             # Fallback to README-based heuristics
@@ -92,6 +104,14 @@ class BusFactorMetric(Metric):
                 contributor_score = _readme_contributor_score(readme_names)
                 ownership_score = 0.3 if len(readme_names) >= 2 else 0.1
                 community_score = 0.0
+                _LOGGER.info(
+                    "Bus factor README fallback for %s: names=%s "
+                    "contributor=%.2f ownership=%.2f",
+                    hf_url,
+                    readme_names,
+                    contributor_score,
+                    ownership_score,
+                )
                 return max(
                     0.0,
                     min(
@@ -114,11 +134,12 @@ class BusFactorMetric(Metric):
 
         _LOGGER.info(
             "Bus factor metrics for %s: contributors=%.2f ownership=%.2f "
-            "community=%.2f",
+            "community=%.2f (total_contributors=%d)",
             hf_url,
             contributor_score,
             ownership_score,
             community_score,
+            len(contributors),
         )
 
         return max(0.0, min(1.0, final_score))

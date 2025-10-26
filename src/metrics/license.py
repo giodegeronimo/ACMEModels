@@ -76,7 +76,20 @@ class LicenseMetric(Metric):
         from_meta, from_readme = _collect_candidates(self._hf, hf_url)
         candidates = _normalize_candidates([*from_meta, *from_readme])
 
+        _LOGGER.info(
+            "License metric inputs for %s: metadata=%s readme=%s "
+            "normalized=%s",
+            hf_url,
+            from_meta,
+            from_readme,
+            candidates,
+        )
+
         if not candidates:
+            _LOGGER.info(
+                "License metric: no recognized licenses for %s",
+                hf_url,
+            )
             return 0.0
 
         clarity = _clarity_score(
@@ -97,7 +110,17 @@ class LicenseMetric(Metric):
             compat = 0.0
 
         score = COMPAT_WEIGHT * compat + CLARITY_WEIGHT * clarity
-        return max(0.0, min(score, 1.0))
+        final = max(0.0, min(score, 1.0))
+        _LOGGER.info(
+            "License metric for %s: class=%s compat=%.2f clarity=%.2f "
+            "final=%.2f",
+            hf_url,
+            classification,
+            compat,
+            clarity,
+            final,
+        )
+        return final
 
 
 def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:

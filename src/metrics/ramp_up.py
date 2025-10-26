@@ -98,6 +98,17 @@ class RampUpMetric(Metric):
         artifact_score = self._score_artifacts(model_info)
         link_score = self._score_external_links(normalised_readme)
 
+        _LOGGER.info(
+            "Ramp-up sub-scores for %s: metadata=%.2f usage=%.2f "
+            "artifacts=%.2f external_links=%.2f (readme_length=%d)",
+            hf_url,
+            metadata_score,
+            usage_score,
+            artifact_score,
+            link_score,
+            len(normalised_readme),
+        )
+
         total = metadata_score + usage_score + artifact_score + link_score
         final_score = min(total, 1.0)
         _LOGGER.info(
@@ -156,6 +167,12 @@ class RampUpMetric(Metric):
             match = re.search(r"([01](?:\.\d+)?)", extraction)
             if match:
                 value = float(match.group(1))
+                _LOGGER.info(
+                    "Ramp-up LLM evaluation succeeded for README (length=%d) "
+                    "with score %.2f",
+                    len(readme_text),
+                    value,
+                )
                 return max(0.0, min(value, 1.0))
             _LOGGER.debug("LLM extraction produced no number: %s", extraction)
         except Exception as exc:

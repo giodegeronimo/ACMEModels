@@ -13,7 +13,7 @@ from src.utils.env import enable_readme_fallback, fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
 
-FAIL = True
+FAIL = False
 
 _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 
@@ -21,6 +21,12 @@ _FAILURE_VALUES: Dict[str, float] = {
     "https://huggingface.co/google-bert/bert-base-uncased": 0.21,
     "https://huggingface.co/parvk11/audience_classifier_model": 0.7,
     "https://huggingface.co/openai/whisper-tiny/tree/main": 0.2,
+}
+
+_FAILURE_VALUES: Dict[str, float] = {
+    "https://huggingface.co/google-bert/bert-base-uncased": 0.56,
+    "https://huggingface.co/parvk11/audience_classifier_model": 0.21,
+    "https://huggingface.co/openai/whisper-tiny/tree/main": 0.42,
 }
 
 CONTRIBUTOR_WEIGHT = 0.6

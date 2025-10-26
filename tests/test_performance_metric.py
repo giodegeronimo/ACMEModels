@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import pytest
 
@@ -11,9 +11,6 @@ from src.metrics.performance import PerformanceMetric
 @dataclass
 class _FakeModelInfo:
     card_data: Dict[str, Any]
-    downloads: int = 0
-    likes: int = 0
-    lastModified: Optional[str] = None
 
 
 class _FakeHFClient:
@@ -27,19 +24,43 @@ class _FakeHFClient:
         self._readme = readme
 
     def get_model_info(self, repo_id: str) -> Any:
-        if self._info is None:
-            raise RuntimeError("info missing")
         return self._info
 
     def get_model_readme(self, repo_id: str) -> str:
         return self._readme
 
 
-def _metric(info: Optional[_FakeModelInfo], readme: str) -> PerformanceMetric:
-    return PerformanceMetric(hf_client=_FakeHFClient(info=info, readme=readme))
+class _FakePurdueClient:
+    def __init__(self, responses: Optional[List[str]] = None) -> None:
+        self._responses = list(responses or [])
+        self.calls: List[str] = []
+
+    def llm(
+        self,
+        prompt: str,
+        *,
+        model: str = "llama3.1:latest",
+        stream: bool = False,
+        **extra: Any,
+    ) -> str:
+        self.calls.append(prompt)
+        if not self._responses:
+            raise RuntimeError("No responses configured")
+        return self._responses.pop(0)
 
 
-def test_performance_full_metadata_score() -> None:
+def _metric(
+    info: Optional[_FakeModelInfo],
+    readme: str,
+    purdue: Optional[_FakePurdueClient] = None,
+) -> PerformanceMetric:
+    return PerformanceMetric(
+        hf_client=_FakeHFClient(info=info, readme=readme),
+        purdue_client=purdue,
+    )
+
+
+def test_performance_detects_structured_metadata() -> None:
     info = _FakeModelInfo(
         card_data={
             "model-index": [
@@ -55,36 +76,44 @@ def test_performance_full_metadata_score() -> None:
                     ]
                 }
             ]
-        },
-        downloads=250000,
-        likes=900,
-        lastModified="2024-08-01T10:00:00Z",
+        }
     )
-    metric = _metric(info, readme="")
+    purdue = _FakePurdueClient()
+    metric = _metric(info, readme="", purdue=purdue)
 
     score = metric.compute({"hf_url": "https://huggingface.co/org/model"})
 
     assert isinstance(score, float)
     assert score == pytest.approx(1.0)
+    assert purdue.calls == []
 
 
-def test_performance_readme_table() -> None:
-    readme = (
-        "## Results\n"
-        "| Dataset | Metric | Score |\n"
-        "| --- | --- | --- |\n"
-        "| MNLI | accuracy | 87.5 |\n"
+def test_performance_llm_positive() -> None:
+    readme = "## Results\nThis model achieves 92% accuracy on MNLI."
+    purdue = _FakePurdueClient(
+        [
+            "Analysis... Final answer: YES",
+            "YES",
+        ]
     )
-    metric = _metric(None, readme)
+    metric = _metric(None, readme, purdue=purdue)
 
     score = metric.compute({"hf_url": "https://huggingface.co/org/model"})
 
     assert isinstance(score, float)
-    assert score > 0.5
+    assert score == pytest.approx(1.0)
+    assert len(purdue.calls) == 2
 
 
-def test_performance_no_claims() -> None:
-    metric = _metric(None, "")
+def test_performance_llm_negative() -> None:
+    readme = "## Model Card\nNo evaluation results provided."
+    purdue = _FakePurdueClient(
+        [
+            "Analysis... Final answer: NO",
+            "NO",
+        ]
+    )
+    metric = _metric(None, readme, purdue=purdue)
 
     score = metric.compute({"hf_url": "https://huggingface.co/org/model"})
 
@@ -92,20 +121,34 @@ def test_performance_no_claims() -> None:
     assert score == pytest.approx(0.0)
 
 
-def test_performance_repro_signals() -> None:
-    info = _FakeModelInfo(
-        card_data={
-            "paper": "https://arxiv.org/abs/1234.5678",
-            "eval": ["python eval.py"],
-        },
-        downloads=1500,
-        likes=50,
-        lastModified="2024-05-01T00:00:00Z",
-    )
-    readme = "Run evaluation: python eval.py"
-    metric = _metric(info, readme)
+def test_performance_empty_readme_returns_zero() -> None:
+    purdue = _FakePurdueClient([
+        "Analysis... Final answer: YES",
+        "YES",
+    ])
+    metric = _metric(None, "\n", purdue=purdue)
 
     score = metric.compute({"hf_url": "https://huggingface.co/org/model"})
 
     assert isinstance(score, float)
-    assert score > 0.3
+    assert score == pytest.approx(0.0)
+    assert purdue.calls == []
+
+
+def test_performance_fallback_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ACME_ENABLE_README_FALLBACK", "0")
+    purdue = _FakePurdueClient(
+        [
+            "Analysis... Final answer: YES",
+            "YES",
+        ]
+    )
+    metric = _metric(None, "Results...", purdue=purdue)
+
+    score = metric.compute({"hf_url": "https://huggingface.co/org/model"})
+
+    assert isinstance(score, float)
+    assert score == pytest.approx(0.0)
+    assert purdue.calls == []

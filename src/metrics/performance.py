@@ -16,27 +16,10 @@ FAIL = False
 _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 
 _FAILURE_VALUES: Dict[str, float] = {
-    "https://huggingface.co/google-bert/bert-base-uncased": 0.31,
-    "https://huggingface.co/parvk11/audience_classifier_model": 0.99,
-    "https://huggingface.co/openai/whisper-tiny/tree/main": 0.11,
+    "https://huggingface.co/google-bert/bert-base-uncased": 1.0,
+    "https://huggingface.co/parvk11/audience_classifier_model": 1.0,
+    "https://huggingface.co/openai/whisper-tiny/tree/main": 0.0,
 }
-
-_CLAIM_PATTERNS = (
-    r"accuracy",
-    r"f1",
-    r"bleu",
-    r"wer",
-    r"mrr",
-    r"rouge",
-    r"exact match",
-    r"top-1",
-    r"top-5",
-    r"cer",
-    r"precision",
-    r"recall",
-    r"auc",
-    r"mae",
-)
 
 
 class _HFClientProtocol(Protocol):
@@ -45,15 +28,28 @@ class _HFClientProtocol(Protocol):
     def get_model_readme(self, repo_id: str) -> str: ...
 
 
+class _PurdueClientProtocol(Protocol):
+    def llm(
+        self,
+        prompt: str,
+        *,
+        model: str = "llama3.1:latest",
+        stream: bool = False,
+        **extra: Any,
+    ) -> str: ...
+
+
 class PerformanceMetric(Metric):
-    """Score strength of performance claims for a model."""
+    """Binary performance-claims detector using metadata or an LLM."""
 
     def __init__(
         self,
         hf_client: Optional[_HFClientProtocol] = None,
+        purdue_client: Optional[_PurdueClientProtocol] = None,
     ) -> None:
         super().__init__(name="Performance Claims", key="performance_claims")
         self._hf = hf_client or HFClient()
+        self._purdue_client: Optional[_PurdueClientProtocol] = purdue_client
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
         hf_url = _extract_hf_url(url_record)
@@ -66,61 +62,35 @@ class PerformanceMetric(Metric):
             return 0.0
 
         info = self._safe_model_info(hf_url)
-        readme_text = self._safe_readme(hf_url)
-
-        metadata_score, metadata_details = _metadata_claims_score(info)
-        readme_score, readme_details = _readme_claims_score(readme_text)
-        reproducibility_score, repro_details = _repro_score(info, readme_text)
-
-        components: List[tuple[float, float, str, Dict[str, Any]]] = []
-        if metadata_score > 0:
-            components.append(
-                (0.6, metadata_score, "metadata", metadata_details)
+        if _has_structured_claims(info):
+            _LOGGER.info(
+                "Performance metric: structured claims detected for %s",
+                hf_url,
             )
-        if readme_score > 0:
-            components.append(
-                (0.3, readme_score, "readme", readme_details)
-            )
-        if reproducibility_score > 0:
-            components.append(
-                (0.1, reproducibility_score, "repro", repro_details)
-            )
+            return 1.0
 
-        if not components:
-            if enable_readme_fallback():
-                _LOGGER.info(
-                    "Performance metric: no structured claims for %s",
-                    hf_url,
-                )
-            else:
-                _LOGGER.info(
-                    "Performance metric: README fallback disabled and no "
-                    "claims for %s",
-                    hf_url,
-                )
+        if not enable_readme_fallback():
+            _LOGGER.info(
+                "Performance metric: README fallback disabled for %s",
+                hf_url,
+            )
             return 0.0
 
-        weight_sum = sum(weight for weight, _, _, _ in components)
-        final_score = 0.0
-        for weight, score, label, details in components:
-            normalized_weight = weight / weight_sum if weight_sum else 0.0
-            final_score += normalized_weight * score
+        readme_text = self._safe_readme(hf_url)
+        if not readme_text.strip():
             _LOGGER.info(
-                "Performance metric component %s: weight=%.2f score=%.2f "
-                "details=%s",
-                label,
-                normalized_weight,
-                score,
-                details,
+                "Performance metric: empty README for %s",
+                hf_url,
             )
+            return 0.0
 
-        final_score = max(0.0, min(1.0, final_score))
+        has_claims = self._llm_detect_claims(readme_text)
         _LOGGER.info(
-            "Performance metric for %s computed as %.2f",
+            "Performance metric LLM result for %s: %s",
             hf_url,
-            final_score,
+            has_claims,
         )
-        return final_score
+        return 1.0 if has_claims else 0.0
 
     def _safe_model_info(self, hf_url: str) -> Optional[Any]:
         try:
@@ -142,58 +112,91 @@ class PerformanceMetric(Metric):
             )
             return ""
 
+    def _get_purdue_client(self) -> Optional[_PurdueClientProtocol]:
+        if self._purdue_client is not None:
+            return self._purdue_client
 
-def _metadata_claims_score(
-    info: Optional[Any],
-) -> tuple[float, Dict[str, Any]]:
+        try:
+            from src.clients.purdue_client import PurdueClient
+
+            self._purdue_client = PurdueClient()
+        except Exception as exc:
+            _LOGGER.info(
+                "Performance metric: Purdue client unavailable (%s)",
+                exc,
+            )
+            self._purdue_client = None
+        return self._purdue_client
+
+    def _llm_detect_claims(self, readme_text: str) -> bool:
+        client = self._get_purdue_client()
+        if client is None:
+            return False
+
+        analysis_prompt = (
+            "You are reviewing a Hugging Face model card. Determine whether "
+            "it contains explicit performance claims such as benchmark names, "
+            "datasets, or metrics with numeric results. Think step-by-step "
+            "and end with 'Final answer: YES' or 'Final answer: NO'.\n\n"
+            "Model card:\n"
+            f"{readme_text}\n"
+        )
+        extraction_prompt = (
+            "Based on the analysis, respond with only YES or NO to indicate "
+            "whether performance claims are present.\n\n"
+            "Analysis:\n{analysis}\n"
+        )
+
+        try:
+            analysis = client.llm(analysis_prompt)
+            decision = client.llm(extraction_prompt.format(analysis=analysis))
+            match = re.search(r"\b(YES|NO)\b", decision.upper())
+            if match:
+                return match.group(1) == "YES"
+            _LOGGER.debug(
+                "Performance metric: LLM extraction yielded no YES/NO: %s",
+                decision,
+            )
+        except Exception as exc:
+            _LOGGER.debug(
+                "Performance metric: LLM detection failed: %s",
+                exc,
+            )
+        return False
+
+
+def _has_structured_claims(info: Optional[Any]) -> bool:
     if info is None:
-        return 0.0, {}
+        return False
 
     card = getattr(info, "card_data", None)
     if card is None:
         card = getattr(info, "cardData", None)
     if not isinstance(card, dict):
-        return 0.0, {}
+        return False
 
     model_index = card.get("model-index")
-    if isinstance(model_index, list):
-        claims = _parse_model_index(model_index)
-        if claims:
-            _LOGGER.info(
-                "Performance metadata claims: %s",
-                claims,
-            )
-            return 1.0, {"model_index": claims}
+    if isinstance(model_index, list) and _parse_model_index(model_index):
+        return True
 
     evals = card.get("eval_results") or card.get("evaluation")
     if isinstance(evals, list):
-        claims = []
         for entry in evals:
-            if not isinstance(entry, dict):
-                continue
-            metric = entry.get("metric")
-            value = entry.get("value")
-            dataset = entry.get("dataset")
-            if metric and value is not None:
-                claims.append(
-                    {
-                        "metric": metric,
-                        "value": value,
-                        "dataset": dataset,
-                    }
-                )
-        if claims:
-            return 0.7, {"eval_results": claims}
+            if isinstance(entry, dict):
+                metric = entry.get("metric")
+                value = entry.get("value")
+                if metric and value is not None:
+                    return True
 
     metrics_field = card.get("metrics")
     if isinstance(metrics_field, list) and metrics_field:
-        return 0.5, {"metrics": metrics_field}
+        return True
 
     benchmark = card.get("benchmark")
     if benchmark:
-        return 0.3, {"benchmark": benchmark}
+        return True
 
-    return 0.0, {}
+    return False
 
 
 def _parse_model_index(model_index: Sequence[Any]) -> List[Dict[str, Any]]:
@@ -227,81 +230,6 @@ def _parse_model_index(model_index: Sequence[Any]) -> List[Dict[str, Any]]:
                             "dataset": dataset_name,
                         }
                     )
-    return claims
-
-
-def _readme_claims_score(readme_text: str) -> tuple[float, Dict[str, Any]]:
-    if not readme_text or not enable_readme_fallback():
-        return 0.0, {}
-
-    tables = _extract_tables(readme_text)
-    numeric_claims = _extract_numeric_claims(readme_text)
-
-    if tables:
-        _LOGGER.info("Performance README tables found: %d", len(tables))
-        return 0.9, {"tables": tables[:3]}
-
-    if numeric_claims:
-        return 0.6, {"claims": numeric_claims[:5]}
-
-    if re.search(r"benchmark|evaluation|results", readme_text, re.IGNORECASE):
-        return 0.3, {"mentions": "benchmark keywords"}
-
-    return 0.0, {}
-
-
-def _repro_score(
-    info: Optional[Any], readme_text: str
-) -> tuple[float, Dict[str, Any]]:
-    signals: Dict[str, Any] = {}
-    score = 0.0
-
-    if info is not None:
-        card = getattr(info, "card_data", None) or {}
-        if isinstance(card, dict):
-            paper = card.get("paper") or card.get("arxiv")
-            if paper:
-                signals["paper"] = paper
-                score += 0.4
-            scripts = card.get("training") or card.get("eval")
-            if scripts:
-                signals["scripts"] = scripts
-                score += 0.3
-
-    if readme_text:
-        if re.search(r"eval\.(py|sh)|evaluation", readme_text, re.IGNORECASE):
-            signals.setdefault("readme_scripts", True)
-            score += 0.3
-        if re.search(r"arxiv|paper|doi", readme_text, re.IGNORECASE):
-            signals.setdefault("readme_paper", True)
-            score += 0.2
-
-    score = min(1.0, score)
-    return score, signals
-
-
-def _extract_tables(readme_text: str) -> List[str]:
-    tables: List[str] = []
-    pattern = re.compile(
-        r"^\|.+\|\s*$\n(?:^\|(?:[-:]+\|)+\s*$\n)?(?:^\|.+\|\s*$\n)+",
-        re.MULTILINE,
-    )
-    for match in pattern.finditer(readme_text):
-        tables.append(match.group(0)[:300])
-    return tables
-
-
-def _extract_numeric_claims(readme_text: str) -> List[str]:
-    claims: List[str] = []
-    lines = readme_text.splitlines()
-    claim_pattern = re.compile(
-        rf"(\b(?:{'|'.join(_CLAIM_PATTERNS)})\b.*?\d+\.?\d*)",
-        re.IGNORECASE,
-    )
-    for line in lines:
-        match = claim_pattern.search(line)
-        if match:
-            claims.append(match.group(1).strip())
     return claims
 
 

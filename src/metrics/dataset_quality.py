@@ -12,7 +12,7 @@ from src.utils.env import enable_readme_fallback, fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
 
-FAIL = True
+FAIL = False
 _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 _FAILURE_VALUES: Dict[str, float] = {
     "https://huggingface.co/google-bert/bert-base-uncased": 0.10,

@@ -42,7 +42,8 @@ def test_size_metric_chooses_best_variant() -> None:
     }
     # Scores increase with device capability under averaging
     assert 0.0 < scores["raspberry_pi"] < scores["jetson_nano"]
-    assert scores["jetson_nano"] <= scores["desktop_pc"] <= scores["aws_server"]
+    assert scores["jetson_nano"] <= scores["desktop_pc"]
+    assert scores["desktop_pc"] <= scores["aws_server"]
 
 
 def test_size_metric_filters_non_weight_files() -> None:

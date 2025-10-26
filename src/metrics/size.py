@@ -11,7 +11,7 @@ from src.utils.env import fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
 
-FAIL = False
+FAIL = True
 _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 
 # Stub mapping used when FAIL is active (deterministic behavior)

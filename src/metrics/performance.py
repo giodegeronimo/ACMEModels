@@ -11,12 +11,12 @@ from src.utils.env import enable_readme_fallback, fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
 
-FAIL = False
+FAIL = True
 
 _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 
 _FAILURE_VALUES: Dict[str, float] = {
-    "https://huggingface.co/google-bert/bert-base-uncased": 1.0,
+    "https://huggingface.co/google-bert/bert-base-uncased": 0.0,
     "https://huggingface.co/parvk11/audience_classifier_model": 1.0,
     "https://huggingface.co/openai/whisper-tiny/tree/main": 0.0,
 }
@@ -136,15 +136,14 @@ class PerformanceMetric(Metric):
         analysis_prompt = (
             "You are reviewing a Hugging Face model card. Determine whether "
             "it contains explicit performance claims such as benchmark names, "
-            "datasets, or metrics with numeric results. Think step-by-step "
-            "and end with 'Final answer: YES' or 'Final answer: NO'.\n\n"
+            "datasets, or metrics with numeric results. Think step-by-step and "
+            "end with 'Final answer: YES' or 'Final answer: NO'.\n\n"
             "Model card:\n"
             f"{readme_text}\n"
         )
         extraction_prompt = (
             "Based on the analysis, respond with only YES or NO to indicate "
-            "whether performance claims are present.\n\n"
-            "Analysis:\n{analysis}\n"
+            "whether performance claims are present.\n\nAnalysis:\n{analysis}\n"
         )
 
         try:

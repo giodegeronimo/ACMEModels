@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional, Tuple, Union
 
 _ENV_LOADED = False
+_README_FALLBACK_DEFAULT = False
 
 
 def load_dotenv(dotenv_path: Union[str, Path] = ".env") -> None:
@@ -74,7 +75,6 @@ def enable_readme_fallback() -> bool:
 
     load_dotenv()
     value = os.environ.get("ACME_ENABLE_README_FALLBACK")
-    value = "0"
-    if value is None:
-        return True
-    return _truthy(value)
+    if value is not None:
+        return _truthy(value)
+    return _README_FALLBACK_DEFAULT

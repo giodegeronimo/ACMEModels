@@ -34,6 +34,7 @@ _GITHUB_URL_PATTERN = re.compile(
 
 class _HFClientProtocol(Protocol):
     def get_model_readme(self, repo_id: str) -> str: ...
+    def get_model_info(self, repo_id: str) -> Any: ...
 
 
 class _GitClientProtocol(Protocol):
@@ -77,6 +78,7 @@ class BusFactorMetric(Metric):
             return 0.0
 
         readme_text = self._safe_readme(hf_url)
+        hf_info = self._safe_model_info(hf_url)
         repo_url = self._select_repo_url(url_record, readme_text)
 
         contributors: List[Dict[str, Any]] = []
@@ -98,7 +100,15 @@ class BusFactorMetric(Metric):
             )
 
         if not contributors and metadata is None:
-            # Fallback to README-based heuristics
+            hf_fallback = _hf_metadata_fallback(hf_info)
+            if hf_fallback is not None:
+                _LOGGER.info(
+                    "Bus factor HF metadata fallback for %s yielded %.2f",
+                    hf_url,
+                    hf_fallback,
+                )
+                return hf_fallback
+
             readme_names = _extract_readme_maintainers(readme_text)
             if readme_names:
                 contributor_score = _readme_contributor_score(readme_names)
@@ -124,7 +134,7 @@ class BusFactorMetric(Metric):
 
         contributor_score = _contributor_diversity(contributors)
         ownership_score = _ownership_resilience(metadata, contributors)
-        community_score = _community_support(metadata)
+        community_score = _community_support(metadata, hf_info)
 
         final_score = (
             CONTRIBUTOR_WEIGHT * contributor_score
@@ -173,6 +183,13 @@ class BusFactorMetric(Metric):
         except Exception as exc:
             _LOGGER.debug("Failed to fetch README for %s: %s", hf_url, exc)
             return ""
+
+    def _safe_model_info(self, hf_url: str) -> Optional[Any]:
+        try:
+            return self._hf.get_model_info(hf_url)
+        except Exception as exc:
+            _LOGGER.debug("Model info unavailable for %s: %s", hf_url, exc)
+            return None
 
     def _safe_repo_metadata(self, repo_url: str) -> Optional[Dict[str, Any]]:
         try:
@@ -266,32 +283,53 @@ def _ownership_resilience(
     return 0.3
 
 
-def _community_support(metadata: Optional[Dict[str, Any]]) -> float:
-    if not metadata or metadata.get("archived"):
+def _community_support(
+    metadata: Optional[Dict[str, Any]],
+    hf_info: Optional[Any],
+) -> float:
+    archived = False
+    popularity: int = 0
+    pushed_at: Optional[str] = None
+
+    if metadata:
+        archived = bool(metadata.get("archived"))
+        if not archived:
+            value = metadata.get("stargazers_count")
+            if not isinstance(value, int):
+                value = metadata.get("watchers_count") or metadata.get(
+                    "forks_count"
+                )
+            if isinstance(value, int):
+                popularity = value
+            pushed_at = metadata.get("pushed_at") or metadata.get("updated_at")
+    elif hf_info is not None:
+        card = _hf_card_data(hf_info)
+        archived = bool(card.get("deprecated"))
+        downloads = getattr(hf_info, "downloads", 0) or 0
+        if isinstance(downloads, int):
+            popularity = downloads
+        pushed_at = getattr(hf_info, "lastModified", None) or getattr(
+            hf_info,
+            "last_modified",
+            None,
+        )
+
+    if archived:
         return 0.0
 
-    popularity = metadata.get("stargazers_count")
-    if not isinstance(popularity, int):
-        popularity = metadata.get("watchers_count") or metadata.get(
-            "forks_count"
-        )
-    if not isinstance(popularity, int):
-        popularity = 0
-
-    if popularity >= 500:
+    if popularity >= 500000:
         popularity_score = 1.0
-    elif popularity >= 100:
+    elif popularity >= 100000:
         popularity_score = 0.7
-    elif popularity >= 20:
+    elif popularity >= 20000:
         popularity_score = 0.5
-    elif popularity >= 5:
+    elif popularity >= 5000:
         popularity_score = 0.3
     elif popularity > 0:
         popularity_score = 0.1
     else:
         popularity_score = 0.0
 
-    pushed_at = metadata.get("pushed_at") or metadata.get("updated_at")
     recency_score = 0.0
     if isinstance(pushed_at, str):
         days = _days_since(pushed_at)
@@ -306,6 +344,156 @@ def _community_support(metadata: Optional[Dict[str, Any]]) -> float:
                 recency_score = 0.1
 
     return min(1.0, (popularity_score + recency_score) / 2)
+
+
+KNOWN_ORG_OWNERS = {
+    "google",
+    "facebook",
+    "meta",
+    "microsoft",
+    "openai",
+    "huggingface",
+    "stabilityai",
+    "anthropic",
+    "ibm",
+    "aws",
+}
+
+
+def _hf_metadata_fallback(hf_info: Optional[Any]) -> Optional[float]:
+    if hf_info is None:
+        return None
+
+    card = _hf_card_data(hf_info)
+    maintainers = _hf_maintainers(card)
+    owner = _hf_owner(hf_info)
+    if owner and owner not in maintainers:
+        maintainers.append(owner)
+
+    contributor_score = _maintainer_count_score(len(maintainers))
+    ownership_score = 0.0
+    if owner:
+        ownership_score = 1.0 if owner.lower() in KNOWN_ORG_OWNERS else 0.4
+    if len(maintainers) >= 3:
+        ownership_score = max(ownership_score, 0.6)
+    elif len(maintainers) >= 2:
+        ownership_score = max(ownership_score, 0.4)
+    elif len(maintainers) == 1:
+        ownership_score = max(ownership_score, 0.2)
+    else:
+        ownership_score = max(ownership_score, 0.1)
+
+    downloads = getattr(hf_info, "downloads", 0) or 0
+    likes = getattr(hf_info, "likes", 0) or 0
+    last_modified = getattr(hf_info, "lastModified", None) or getattr(
+        hf_info,
+        "last_modified",
+        None,
+    )
+    community_score = _hf_community_score(downloads, likes, last_modified)
+
+    final = (
+        CONTRIBUTOR_WEIGHT * contributor_score
+        + OWNERSHIP_WEIGHT * ownership_score
+        + COMMUNITY_WEIGHT * community_score
+    )
+    _LOGGER.info(
+        "Bus factor HF metadata fallback: maintainers=%s owner=%s "
+        "downloads=%s likes=%s last_modified=%s -> contributor=%.2f "
+        "ownership=%.2f community=%.2f final=%.2f",
+        maintainers,
+        owner,
+        downloads,
+        likes,
+        last_modified,
+        contributor_score,
+        ownership_score,
+        community_score,
+        final,
+    )
+    return max(0.0, min(1.0, final))
+
+
+def _hf_community_score(
+    downloads: int,
+    likes: int,
+    last_modified: Optional[str],
+) -> float:
+    popularity = max(downloads, likes)
+    if popularity >= 500000:
+        popularity_score = 1.0
+    elif popularity >= 100000:
+        popularity_score = 0.7
+    elif popularity >= 20000:
+        popularity_score = 0.5
+    elif popularity >= 5000:
+        popularity_score = 0.3
+    elif popularity > 0:
+        popularity_score = 0.1
+    else:
+        popularity_score = 0.0
+
+    recency_score = 0.0
+    if isinstance(last_modified, str):
+        days = _days_since(last_modified)
+        if days is not None:
+            if days <= 90:
+                recency_score = 1.0
+            elif days <= 180:
+                recency_score = 0.7
+            elif days <= 365:
+                recency_score = 0.4
+            else:
+                recency_score = 0.1
+
+    return min(1.0, (popularity_score + recency_score) / 2)
+
+
+def _hf_card_data(hf_info: Any) -> Dict[str, Any]:
+    card = getattr(hf_info, "card_data", None)
+    if card is None:
+        card = getattr(hf_info, "cardData", None)
+    if isinstance(card, dict):
+        return card
+    return {}
+
+
+def _hf_maintainers(card: Dict[str, Any]) -> List[str]:
+    maintainers_field = card.get("maintainers")
+    names: List[str] = []
+    if isinstance(maintainers_field, list):
+        for entry in maintainers_field:
+            if isinstance(entry, str):
+                names.append(entry.strip())
+            elif isinstance(entry, dict):
+                name = entry.get("name") or entry.get("github")
+                if isinstance(name, str):
+                    names.append(name.strip())
+    author = card.get("author")
+    if isinstance(author, str):
+        names.append(author.strip())
+    elif isinstance(author, list):
+        names.extend(str(item).strip() for item in author)
+    return [name for name in names if name]
+
+
+def _hf_owner(hf_info: Any) -> Optional[str]:
+    identifier = getattr(hf_info, "id", "")
+    if isinstance(identifier, str) and "/" in identifier:
+        return identifier.split("/", 1)[0]
+    return None
+
+
+def _maintainer_count_score(count: int) -> float:
+    if count >= 5:
+        return 1.0
+    if count >= 3:
+        return 0.7
+    if count == 2:
+        return 0.4
+    if count == 1:
+        return 0.2
+    return 0.1
 
 
 def _days_since(timestamp: str) -> Optional[float]:

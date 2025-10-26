@@ -9,11 +9,26 @@ from src.metrics.bus_factor import BusFactorMetric
 
 
 @dataclass
+class _FakeHFInfo:
+    id: str
+    card_data: Dict[str, Any]
+    downloads: int = 0
+    likes: int = 0
+    lastModified: Optional[str] = None
+
+
+@dataclass
 class _FakeHFClient:
     readme: str
+    model_info: Optional[_FakeHFInfo] = None
 
     def get_model_readme(self, repo_id: str) -> str:
         return self.readme
+
+    def get_model_info(self, repo_id: str) -> Any:
+        if self.model_info is None:
+            raise RuntimeError("model info missing")
+        return self.model_info
 
 
 class _FakeGitClient:
@@ -61,9 +76,11 @@ class _FakeGitClient:
 def _metric(
     readme: str,
     git_client: _FakeGitClient,
+    *,
+    hf_info: Optional[_FakeHFInfo] = None,
 ) -> BusFactorMetric:
     return BusFactorMetric(
-        hf_client=_FakeHFClient(readme=readme),
+        hf_client=_FakeHFClient(readme=readme, model_info=hf_info),
         git_client=git_client,
     )
 
@@ -171,3 +188,29 @@ def test_bus_factor_handles_git_failures() -> None:
 
     assert isinstance(score, float)
     assert 0.0 <= score <= 0.5
+
+
+def test_bus_factor_hf_metadata_fallback() -> None:
+    hf_info = _FakeHFInfo(
+        id="org/model",
+        card_data={
+            "maintainers": [
+                {"name": "Alice"},
+                {"name": "Bob"},
+                {"name": "Carol"},
+            ]
+        },
+        downloads=150000,
+        likes=800,
+        lastModified="2024-09-15T12:00:00Z",
+    )
+    metric = _metric(
+        readme="",
+        git_client=_FakeGitClient(metadata=None, contributors=[]),
+        hf_info=hf_info,
+    )
+
+    score = metric.compute({"hf_url": "https://huggingface.co/org/model"})
+
+    assert isinstance(score, float)
+    assert score > 0.5

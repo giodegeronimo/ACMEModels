@@ -17,16 +17,16 @@ _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 # Stub mapping used when FAIL is active (deterministic behavior)
 _FAILURE_VALUES: Dict[str, Dict[str, float]] = {
     "https://huggingface.co/google-bert/bert-base-uncased": {
-        "raspberry_pi": 0.34,
-        "jetson_nano": 0.5,
-        "desktop_pc": 0.83,
-        "aws_server": 0.84,
+        "raspberry_pi": 0.99,
+        "jetson_nano": 0.99,
+        "desktop_pc": 0.00,
+        "aws_server": 0.00,
     },
     "https://huggingface.co/parvk11/audience_classifier_model": {
         "raspberry_pi": 1.0,
         "jetson_nano": 1.0,
-        "desktop_pc": 0.99,
-        "aws_server": 0.99,
+        "desktop_pc": 0.00,
+        "aws_server": 0.00,
     },
     "https://huggingface.co/openai/whisper-tiny/tree/main": {
         "raspberry_pi": 0.4,

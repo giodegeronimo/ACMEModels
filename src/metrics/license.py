@@ -14,7 +14,7 @@ from src.utils.env import fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
 
-FAIL = True
+FAIL = False
 
 _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 

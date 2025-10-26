@@ -67,3 +67,14 @@ def fail_stub_active(flag: bool) -> bool:
     """
 
     return bool(flag and not ignore_fail_flags())
+
+
+def enable_readme_fallback() -> bool:
+    """Return True when README-based fallbacks are permitted."""
+
+    load_dotenv()
+    value = os.environ.get("ACME_ENABLE_README_FALLBACK")
+    value = "0"
+    if value is None:
+        return True
+    return _truthy(value)

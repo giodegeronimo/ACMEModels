@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 from src.clients.hf_client import HFClient
 from src.metrics.base import Metric, MetricOutput
-from src.utils.env import fail_stub_active
+from src.utils.env import enable_readme_fallback, fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -229,6 +229,12 @@ class DatasetQualityMetric(Metric):
 
     def _slug_from_readme(self, hf_url: Optional[str]) -> Optional[str]:
         if not hf_url:
+            return None
+        if not enable_readme_fallback():
+            _LOGGER.info(
+                "Dataset slug README fallback disabled for %s",
+                hf_url,
+            )
             return None
 
         readme = self._safe_readme(hf_url)

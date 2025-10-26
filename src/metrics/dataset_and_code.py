@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 from src.clients.hf_client import HFClient
 from src.metrics.base import Metric, MetricOutput
-from src.utils.env import fail_stub_active
+from src.utils.env import enable_readme_fallback, fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,58 +88,73 @@ class DatasetAndCodeMetric(Metric):
         readme_text: Optional[str] = None
 
         if dataset_score == 0.0 and hf_url:
-            _LOGGER.info(
-                "Checking Hugging Face metadata for datasets on %s", hf_url
-            )
-            dataset_score = self._score_dataset_from_hub(hf_url)
-            if dataset_score == 0.0:
+            if enable_readme_fallback():
                 _LOGGER.info(
-                    "Scanning README for dataset references on %s",
+                    "Checking Hugging Face metadata for datasets on %s",
+                    hf_url,
+                )
+                dataset_score = self._score_dataset_from_hub(hf_url)
+                if dataset_score == 0.0:
+                    _LOGGER.info(
+                        "Scanning README for dataset references on %s",
+                        hf_url,
+                    )
+                    readme_text = readme_text or self._safe_readme(hf_url)
+                    dataset_reference = _extract_dataset_from_readme(
+                        readme_text or ""
+                    )
+                    if dataset_reference and self._dataset_reference_is_valid(
+                        dataset_reference
+                    ):
+                        slug = _to_dataset_slug(dataset_reference)
+                        if slug:
+                            _LOGGER.info(
+                                "Dataset reference found in README for %s: %s",
+                                hf_url,
+                                f"https://huggingface.co/datasets/{slug}",
+                            )
+                            dataset_sources.append(f"readme:{slug}")
+                        dataset_score = 0.5
+                    else:
+                        _LOGGER.debug(
+                            "No dataset reference found in README for %s",
+                            hf_url,
+                        )
+            else:
+                _LOGGER.info(
+                    "README-based dataset fallback disabled for %s",
+                    hf_url,
+                )
+
+        if code_score == 0.0 and hf_url:
+            if enable_readme_fallback():
+                _LOGGER.info(
+                    "Scanning README for code repository references on %s",
                     hf_url,
                 )
                 readme_text = readme_text or self._safe_readme(hf_url)
-                dataset_reference = _extract_dataset_from_readme(
-                    readme_text or ""
+                match = (
+                    _CODE_URL_PATTERN.search(readme_text)
+                    if readme_text
+                    else None
                 )
-                if dataset_reference and self._dataset_reference_is_valid(
-                    dataset_reference
-                ):
-                    slug = _to_dataset_slug(dataset_reference)
-                    if slug:
-                        _LOGGER.info(
-                            "Dataset reference found in README for %s: %s",
-                            hf_url,
-                            f"https://huggingface.co/datasets/{slug}",
-                        )
-                        dataset_sources.append(f"readme:{slug}")
-                    dataset_score = 0.5
+                if match:
+                    repo_url = match.group(0)
+                    _LOGGER.info(
+                        "Code repository reference found in README for %s: %s",
+                        hf_url,
+                        repo_url,
+                    )
+                    code_score = 0.5
+                    code_sources.append("readme")
                 else:
                     _LOGGER.debug(
-                        "No dataset reference found in README for %s", hf_url
+                        "No code repository reference found in README for %s",
+                        hf_url,
                     )
-
-        if code_score == 0.0 and hf_url:
-            _LOGGER.info(
-                "Scanning README for code repository references on %s", hf_url
-            )
-            readme_text = readme_text or self._safe_readme(hf_url)
-            match = (
-                _CODE_URL_PATTERN.search(readme_text)
-                if readme_text
-                else None
-            )
-            if match:
-                repo_url = match.group(0)
-                _LOGGER.info(
-                    "Code repository reference found in README for %s: %s",
-                    hf_url,
-                    repo_url,
-                )
-                code_score = 0.5
-                code_sources.append("readme")
             else:
-                _LOGGER.debug(
-                    "No code repository reference found in README for %s",
+                _LOGGER.info(
+                    "README-based code fallback disabled for %s",
                     hf_url,
                 )
 

@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Protocol, Sequence
 from src.clients.git_client import GitClient
 from src.clients.hf_client import HFClient
 from src.metrics.base import Metric, MetricOutput
-from src.utils.env import fail_stub_active
+from src.utils.env import enable_readme_fallback, fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -152,6 +152,13 @@ class BusFactorMetric(Metric):
         git_url = (url_record.get("git_url") or "").strip()
         if git_url:
             return _normalize_github_url(git_url)
+
+        if not enable_readme_fallback():
+            _LOGGER.info(
+                "Bus factor: README repo fallback disabled for %s",
+                url_record.get("hf_url"),
+            )
+            return None
 
         for match in _GITHUB_URL_PATTERN.finditer(readme_text or ""):
             candidate = f"https://github.com/{match.group(1)}/{match.group(2)}"
@@ -319,6 +326,9 @@ def _parse_iso_datetime(timestamp: str) -> datetime:
 
 def _extract_readme_maintainers(text: str) -> List[str]:
     if not text:
+        return []
+    if not enable_readme_fallback():
+        _LOGGER.info("Bus factor: README maintainer fallback disabled")
         return []
     sections = re.split(r"^##+\s+", text, flags=re.MULTILINE)
     names: List[str] = []

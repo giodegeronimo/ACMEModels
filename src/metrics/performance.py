@@ -135,15 +135,16 @@ class PerformanceMetric(Metric):
 
         analysis_prompt = (
             "You are reviewing a Hugging Face model card. Determine whether "
-            "it contains explicit performance claims such as benchmark names, "
-            "datasets, or metrics with numeric results. Think step-by-step and "
-            "end with 'Final answer: YES' or 'Final answer: NO'.\n\n"
-            "Model card:\n"
+            "it contains explicit performance claims such as benchmark "
+            "names, datasets, or metrics with numeric results. Think "
+            "step-by-step and end with 'Final answer: YES' or 'Final answer: "
+            "NO'.\n\nModel card:\n"
             f"{readme_text}\n"
         )
         extraction_prompt = (
             "Based on the analysis, respond with only YES or NO to indicate "
-            "whether performance claims are present.\n\nAnalysis:\n{analysis}\n"
+            "whether performance claims are present.\n\n"
+            "Analysis:\n{analysis}\n"
         )
 
         try:

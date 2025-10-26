@@ -14,12 +14,12 @@ from src.utils.env import fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
 
-FAIL = True
+FAIL = False
 
 _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 
 _FAILURE_VALUES: Dict[str, float] = {
-    "https://huggingface.co/google-bert/bert-base-uncased": 1.0,
+    "https://huggingface.co/google-bert/bert-base-uncased": 0.1,
     "https://huggingface.co/parvk11/audience_classifier_model": 0.8,
     "https://huggingface.co/openai/whisper-tiny/tree/main": 0.9,
 }
@@ -92,12 +92,6 @@ class LicenseMetric(Metric):
             )
             return 0.0
 
-        clarity = _clarity_score(
-            from_metadata=from_meta,
-            from_readme=from_readme,
-            recognized=candidates,
-        )
-
         classification = _classify(candidates, policy)
         compat = 0.0
         if classification == "compatible":
@@ -109,15 +103,11 @@ class LicenseMetric(Metric):
         else:
             compat = 0.0
 
-        score = COMPAT_WEIGHT * compat + CLARITY_WEIGHT * clarity
-        final = max(0.0, min(score, 1.0))
+        final = max(0.0, min(compat, 1.0))
         _LOGGER.info(
-            "License metric for %s: class=%s compat=%.2f clarity=%.2f "
-            "final=%.2f",
+            "License metric for %s: class=%s score=%.2f",
             hf_url,
             classification,
-            compat,
-            clarity,
             final,
         )
         return final
@@ -125,21 +115,6 @@ class LicenseMetric(Metric):
 
 def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:
     return record.get("hf_url")
-
-
-def _clarity_score(
-    *,
-    from_metadata: Sequence[str],
-    from_readme: Sequence[str],
-    recognized: Sequence[str],
-) -> float:
-    if not recognized:
-        return 0.0
-    if from_metadata and any(x in recognized for x in from_metadata):
-        return 1.0
-    if from_readme and any(x in recognized for x in from_readme):
-        return 0.7
-    return 0.0
 
 
 def _collect_candidates(

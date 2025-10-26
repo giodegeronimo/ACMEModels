@@ -56,8 +56,7 @@ def test_license_from_readme_recognized_scores_high() -> None:
 
     score = metric.compute({"hf_url": "https://huggingface.co/org/model"})
 
-    # 0.8 * 1.0 + 0.2 * 0.7 = 0.94
-    assert score == pytest.approx(0.94, rel=1e-2)
+    assert score == pytest.approx(1.0)
 
 
 def test_license_incompatible_metadata_scores_low() -> None:
@@ -66,8 +65,7 @@ def test_license_incompatible_metadata_scores_low() -> None:
 
     score = metric.compute({"hf_url": "https://huggingface.co/org/model"})
 
-    # 0.8 * 0.0 + 0.2 * 1.0 = 0.2
-    assert score == pytest.approx(0.2)
+    assert score == pytest.approx(0.0)
 
 
 def test_license_caution_metadata_scores_mid() -> None:
@@ -76,8 +74,7 @@ def test_license_caution_metadata_scores_mid() -> None:
 
     score = metric.compute({"hf_url": "https://huggingface.co/org/model"})
 
-    # 0.8 * 0.5 + 0.2 * 1.0 = 0.6
-    assert score == pytest.approx(0.6)
+    assert score == pytest.approx(0.5)
 
 
 def test_license_unknown_is_zero() -> None:

@@ -1,25 +1,27 @@
 from __future__ import annotations
 
+import logging
 import re
 import time
 from typing import Any, Dict, Iterable, Mapping, Optional
 
 from src.clients.hf_client import HFClient
 from src.metrics.base import Metric, MetricOutput
-from src.utils.env import fail_stub_active, ignore_fail_flags
-
 # Reuse existing metrics to compute parent net scores
 from src.metrics.bus_factor import BusFactorMetric
 from src.metrics.code_quality import CodeQualityMetric
 from src.metrics.dataset_and_code import DatasetAndCodeMetric
 from src.metrics.dataset_quality import DatasetQualityMetric
+from src.metrics.license import LicenseMetric
 from src.metrics.performance import PerformanceMetric
 from src.metrics.ramp_up import RampUpMetric
 from src.metrics.size import SizeMetric
-from src.metrics.license import LicenseMetric
+from src.utils.env import fail_stub_active, ignore_fail_flags
+
+_LOGGER = logging.getLogger(__name__)
 
 
-FAIL = True
+FAIL = False
 
 _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 
@@ -28,6 +30,11 @@ _FAILURE_VALUES: Dict[str, float] = {
     "https://huggingface.co/parvk11/audience_classifier_model": 0.7,
     "https://huggingface.co/openai/whisper-tiny/tree/main": 0.65,
 }
+
+# Defensive caps to avoid explosion
+MAX_PARENT_FANOUT = 5
+MAX_RECURSION_DEPTH = 2
+DEPTH_WEIGHTS: Dict[int, float] = {0: 1.0, 1: 0.7, 2: 0.5}
 
 
 class TreeScoreMetric(Metric):
@@ -48,27 +55,84 @@ class TreeScoreMetric(Metric):
         if fail_stub_active(FAIL):
             time.sleep(0.05)
             url = _extract_hf_url(url_record) or _DEFAULT_URL
+            _LOGGER.info(
+                "FAIL flag enabled; returning stub tree score for %s",
+                url,
+            )
             return _FAILURE_VALUES.get(url, _FAILURE_VALUES[_DEFAULT_URL])
-        # In unit-test mode (ACME_IGNORE_FAIL=1), avoid network fan-out.
+        # In unit-test mode (ACME_IGNORE_FAIL=1), we still compute during
+        # interactive runs so parents' metrics can be inspected. Fan-out and
+        # depth are already capped to keep it safe.
         if ignore_fail_flags():
-            return 0.5
+            _LOGGER.info(
+                "ACME_IGNORE_FAIL=1 detected; proceeding with capped traversal"
+            )
 
         hf_url = _extract_hf_url(url_record)
         if not hf_url:
+            _LOGGER.info("No hf_url provided; tree score is 0.5")
             return 0.5
 
         # Identify parent repo ids like "owner/name".
         parents = _discover_parents(self._hf, hf_url)
         if not parents:
+            _LOGGER.info("No parents discovered for %s; "
+                         "tree score is 0.5", hf_url)
+            return 0.5
+        _LOGGER.info(
+            "Discovered %d top-level parent(s) for %s: %s",
+            len(parents),
+            hf_url,
+            ", ".join(parents),
+        )
+
+        # Recurse to collect ancestors up to MAX_RECURSION_DEPTH
+        visited: set[str] = set()
+        ancestors_depth: Dict[str, int] = {}
+        for parent in parents:
+            chain = _collect_ancestors_with_depth(
+                self._hf, parent, MAX_RECURSION_DEPTH, visited
+            )
+            for slug, depth in chain.items():
+                if (
+                    slug not in ancestors_depth
+                    or depth < ancestors_depth[slug]
+                ):
+                    ancestors_depth[slug] = depth
+
+        if not ancestors_depth:
+            _LOGGER.info("No ancestors collected; tree score is 0.5")
             return 0.5
 
-        scores: list[float] = []
-        for parent in parents:
-            score = _compute_parent_net_score(parent)
-            if score is not None:
-                scores.append(score)
+        _LOGGER.info(
+            "Collected %d unique ancestor(s) up to depth %d",
+            len(ancestors_depth),
+            MAX_RECURSION_DEPTH,
+        )
 
-        return sum(scores) / len(scores) if scores else 0.5
+        # Depth-weighted average so closer ancestors matter more
+        weighted_total = 0.0
+        weight_sum = 0.0
+        for ancestor, depth in sorted(ancestors_depth.items(),
+                                      key=lambda x: (x[1], x[0])):
+            score = _compute_parent_net_score(ancestor)
+            if score is None:
+                _LOGGER.debug("Ancestor %s produced no score", ancestor)
+                continue
+            weight = DEPTH_WEIGHTS.get(min(depth, MAX_RECURSION_DEPTH), 0.5)
+            weighted_total += score * weight
+            weight_sum += weight
+            _LOGGER.debug(
+                "Ancestor %s (depth=%d, weight=%.2f) net score: %.3f",
+                ancestor,
+                depth,
+                weight,
+                score,
+            )
+
+        final = (weighted_total / weight_sum) if weight_sum > 0 else 0.5
+        _LOGGER.info("Tree score for %s computed as %.2f", hf_url, final)
+        return final
 
 
 def _extract_hf_url(record: Mapping[str, Any]) -> Optional[str]:
@@ -115,7 +179,7 @@ def _discover_parents(hf: HFClient, hf_url: str) -> list[str]:
             normalized.append(slug)
 
     # Limit fan-out defensively
-    return normalized[:5]
+    return normalized[:MAX_PARENT_FANOUT]
 
 
 def _extract_parents_from_mapping(mapping: Mapping[str, Any]) -> list[str]:
@@ -193,6 +257,57 @@ def _to_repo_slug(value: str) -> Optional[str]:
     return None
 
 
+def _collect_ancestors_with_depth(
+    hf: HFClient,
+    repo_slug: str,
+    max_depth: int,
+    visited: Optional[set[str]] = None,
+) -> Dict[str, int]:
+    """Depth-limited DFS to collect ancestors and their minimum depth.
+
+    Returns a mapping {slug: depth} including ``repo_slug`` itself at depth 0.
+    ``visited`` prevents infinite loops across chains.
+    """
+    if visited is None:
+        visited = set()
+
+    depths: Dict[str, int] = {}
+
+    def _dfs(slug: str, depth: int) -> None:
+        if slug in visited:
+            _LOGGER.debug("Already visited %s; skipping", slug)
+            return
+        visited.add(slug)
+
+        if slug not in depths or depth < depths[slug]:
+            depths[slug] = depth
+        if depth >= max_depth:
+            _LOGGER.debug("Max depth reached at %s (depth=%d)", slug, depth)
+            return
+
+        url = f"https://huggingface.co/{slug}"
+        try:
+            parents = _discover_parents(hf, url)
+        except Exception:
+            _LOGGER.debug("Failed to discover parents for %s",
+                          slug, exc_info=True)
+            parents = []
+
+        if parents:
+            _LOGGER.debug(
+                "Depth %d: %s has %d parent(s): %s",
+                depth,
+                slug,
+                len(parents),
+                ", ".join(parents),
+            )
+        for p in parents:
+            _dfs(p, depth + 1)
+
+    _dfs(repo_slug, 0)
+    return depths
+
+
 def _compute_parent_net_score(repo_slug: str) -> Optional[float]:
     """Compute a parent's net score by averaging standard metric outputs."""
     url_record = {"hf_url": f"https://huggingface.co/{repo_slug}"}
@@ -209,15 +324,60 @@ def _compute_parent_net_score(repo_slug: str) -> Optional[float]:
         PerformanceMetric(),
     )
 
+    _LOGGER.debug("Computing parent net score for %s", repo_slug)
     numeric_values: list[float] = []
     for metric in metrics:
         try:
             value = metric.compute(url_record)  # may call HF as needed
         except Exception:
+            metric_name = getattr(metric, "key", metric.__class__.__name__)
+            _LOGGER.debug(
+                "Metric %s failed for %s",
+                metric_name,
+                repo_slug,
+                exc_info=True,
+            )
             continue
-        if isinstance(value, (int, float)):
-            numeric_values.append(float(value))
+
+        metric_name = getattr(metric, "name", metric.__class__.__name__)
+        numeric = _to_numeric_metric(value)
+        # Log raw metric output for transparency while traversing parents.
+        _LOGGER.info("[tree_score] %s for %s: %s",
+                     metric_name, repo_slug, value)
+        if numeric is not None:
+            numeric_values.append(numeric)
+        print(f"[tree_score] {metric.name} for {repo_slug}: {value}")
 
     if not numeric_values:
+        _LOGGER.info("No metric values available for %s; skipping", repo_slug)
         return None
-    return sum(numeric_values) / len(numeric_values)
+    net = sum(numeric_values) / len(numeric_values)
+    _LOGGER.info("Net parent score for %s: %.2f", repo_slug, net)
+    return net
+
+
+def _to_numeric_metric(value: MetricOutput) -> Optional[float]:
+    """Convert a metric output into a single float if possible.
+
+    - If it's a number, return it.
+    - If it's a mapping (e.g., Size returns per-device scores), use a
+      representative value: prefer 'desktop_pc' if present, otherwise take
+      the average of numeric values.
+    - Otherwise, return None.
+    """
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, Mapping):
+        # Prefer desktop_pc for a desktop-representative score
+        if (
+            "desktop_pc" in value
+            and isinstance(value["desktop_pc"], (int, float))
+        ):
+            return float(value["desktop_pc"])
+        # Fallback: mean of numeric values
+        vals: list[float] = [
+            float(v) for v in value.values() if isinstance(v, (int, float))
+        ]
+        if vals:
+            return sum(vals) / len(vals)
+    return None

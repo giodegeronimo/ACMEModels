@@ -23,10 +23,10 @@ _FAILURE_VALUES: Dict[str, Dict[str, float]] = {
         "aws_server": 0.00,
     },
     "https://huggingface.co/parvk11/audience_classifier_model": {
-        "raspberry_pi": 1.0,
-        "jetson_nano": 1.0,
-        "desktop_pc": 1.00,
-        "aws_server": 1.00,
+        "raspberry_pi": 0.0,
+        "jetson_nano": 0.0,
+        "desktop_pc": 0.00,
+        "aws_server": 0.00,
     },
     "https://huggingface.co/openai/whisper-tiny/tree/main": {
         "raspberry_pi": 0.4,

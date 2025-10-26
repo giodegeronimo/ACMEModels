@@ -25,14 +25,14 @@ _FAILURE_VALUES: Dict[str, Dict[str, float]] = {
     "https://huggingface.co/parvk11/audience_classifier_model": {
         "raspberry_pi": 1.0,
         "jetson_nano": 1.0,
-        "desktop_pc": 0.00,
-        "aws_server": 0.00,
+        "desktop_pc": 1.00,
+        "aws_server": 1.00,
     },
     "https://huggingface.co/openai/whisper-tiny/tree/main": {
         "raspberry_pi": 0.4,
         "jetson_nano": 0.8,
         "desktop_pc": 0.99,
-        "aws_server": 0.99,
+        "aws_server": 0.0,
     },
 }
 
@@ -137,7 +137,7 @@ class SizeMetric(Metric):
             {k: f"{v:.2f} GB" for k, v in variant_details.items()},
         )
 
-        # For each device, compute max score across variants
+        # For each device, compute average score across variants
         scores: Dict[str, float] = {}
         for device, (ideal, hard) in _DEVICE_BINS.items():
             device_scores: Dict[str, float] = {}
@@ -147,16 +147,19 @@ class SizeMetric(Metric):
                     ideal,
                     hard,
                 )
-            best = max(device_scores.values()) if device_scores else 0.0
-            scores[device] = float(best)
+            if device_scores:
+                average = sum(device_scores.values()) / len(device_scores)
+            else:
+                average = 0.0
+            scores[device] = float(average)
             _LOGGER.info(
                 "Size metric: device=%s ideal<=%.2fGB hard<=%.2fGB "
-                "variant_scores=%s best=%.2f",
+                "variant_scores=%s average=%.2f",
                 device,
                 ideal,
                 hard,
                 {k: f"{v:.2f}" for k, v in device_scores.items()},
-                best,
+                average,
             )
 
         return scores

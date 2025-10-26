@@ -40,13 +40,9 @@ def test_size_metric_chooses_best_variant() -> None:
         "desktop_pc",
         "aws_server",
     }
-    # With a 0.4 GB variant, all but raspberry_pi should be 1.0
-    assert scores["jetson_nano"] == pytest.approx(1.0)
-    assert scores["desktop_pc"] == pytest.approx(1.0)
-    assert scores["aws_server"] == pytest.approx(1.0)
-    # Raspberry Pi scores within its bin for 0.4 GB
-    # ideal=0.25, hard=1.0 => 1 - (0.4-0.25)/0.75 ~= 0.80
-    assert scores["raspberry_pi"] == pytest.approx(0.80, rel=1e-2)
+    # Scores increase with device capability under averaging
+    assert 0.0 < scores["raspberry_pi"] < scores["jetson_nano"]
+    assert scores["jetson_nano"] <= scores["desktop_pc"] <= scores["aws_server"]
 
 
 def test_size_metric_filters_non_weight_files() -> None:

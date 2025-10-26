@@ -69,6 +69,27 @@ class GitClient(BaseClient[Any]):
 
         raise ValueError(f"Unsupported git repository host: {repo_url}")
 
+    def list_repo_contributors(
+        self,
+        repo_url: str,
+        *,
+        per_page: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Return a list of contributors for the repository.
+
+        Each contributor dictionary contains at least ``login`` and
+        ``contributions`` keys. Currently supports GitHub repositories.
+        """
+
+        normalized = repo_url.strip().rstrip("/")
+        if normalized.startswith("https://github.com/"):
+            return self._execute_with_rate_limit(
+                lambda: self._fetch_github_contributors(normalized, per_page),
+                name=f"github.contributors({normalized})",
+            )
+
+        raise ValueError(f"Unsupported git repository host: {repo_url}")
+
     def _fetch_github_repo(self, repo_url: str) -> dict[str, Any]:
         parts = repo_url.removeprefix("https://github.com/").split("/")
         if len(parts) < 2:
@@ -121,3 +142,41 @@ class GitClient(BaseClient[Any]):
                 if isinstance(path, str):
                     paths.append(path)
         return paths
+
+    def _fetch_github_contributors(
+        self,
+        repo_url: str,
+        per_page: int,
+    ) -> list[dict[str, Any]]:
+        parts = repo_url.removeprefix("https://github.com/").split("/")
+        if len(parts) < 2:
+            raise ValueError(f"Invalid GitHub repository URL: {repo_url}")
+
+        owner, repo = parts[0], parts[1]
+        per_page = max(1, min(per_page, 100))
+        api_url = (
+            "https://api.github.com/repos/"
+            f"{owner}/{repo}/contributors?per_page={per_page}&anon=1"
+        )
+
+        response = self._session.get(api_url, timeout=10)
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Failed to retrieve repo contributors: {response.status_code}"
+            )
+
+        payload = response.json()
+        if not isinstance(payload, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for entry in payload:
+            if isinstance(entry, dict):
+                login = entry.get("login")
+                contributions = entry.get("contributions")
+                normalized.append(
+                    {
+                        "login": login,
+                        "contributions": contributions,
+                    }
+                )
+        return normalized

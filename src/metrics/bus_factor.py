@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import logging
+import re
 import time
-from typing import Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Protocol, Sequence
 
+from src.clients.git_client import GitClient
+from src.clients.hf_client import HFClient
 from src.metrics.base import Metric, MetricOutput
 from src.utils.env import fail_stub_active
 
-FAIL = True
+_LOGGER = logging.getLogger(__name__)
+
+FAIL = False
 
 _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 
@@ -16,20 +23,327 @@ _FAILURE_VALUES: Dict[str, float] = {
     "https://huggingface.co/openai/whisper-tiny/tree/main": 0.7,
 }
 
+CONTRIBUTOR_WEIGHT = 0.6
+OWNERSHIP_WEIGHT = 0.2
+COMMUNITY_WEIGHT = 0.2
+
+_GITHUB_URL_PATTERN = re.compile(
+    r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)"
+)
+
+
+class _HFClientProtocol(Protocol):
+    def get_model_readme(self, repo_id: str) -> str: ...
+
+
+class _GitClientProtocol(Protocol):
+    def get_repo_metadata(self, repo_url: str) -> Dict[str, Any]: ...
+
+    def list_repo_files(
+        self,
+        repo_url: str,
+        *,
+        branch: Optional[str] = None,
+    ) -> List[str]: ...
+
+    def list_repo_contributors(
+        self,
+        repo_url: str,
+        *,
+        per_page: int = 100,
+    ) -> List[Dict[str, Any]]: ...
+
 
 class BusFactorMetric(Metric):
-    """Placeholder bus factor metric."""
+    """Estimate the resilience of a project to maintainer loss."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        hf_client: Optional[_HFClientProtocol] = None,
+        git_client: Optional[_GitClientProtocol] = None,
+    ) -> None:
         super().__init__(name="Bus Factor", key="bus_factor")
+        self._hf = hf_client or HFClient()
+        self._git = git_client or GitClient()
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
         if fail_stub_active(FAIL):
             time.sleep(0.05)
             url = _extract_hf_url(url_record) or _DEFAULT_URL
             return _FAILURE_VALUES.get(url, _FAILURE_VALUES[_DEFAULT_URL])
-        return 0.5
+
+        hf_url = _extract_hf_url(url_record)
+        if not hf_url:
+            return 0.0
+
+        readme_text = self._safe_readme(hf_url)
+        repo_url = self._select_repo_url(url_record, readme_text)
+
+        contributors: List[Dict[str, Any]] = []
+        metadata: Optional[Dict[str, Any]] = None
+        if repo_url:
+            metadata = self._safe_repo_metadata(repo_url)
+            contributors = self._safe_contributors(repo_url)
+
+        if not contributors and metadata is None:
+            # Fallback to README-based heuristics
+            readme_names = _extract_readme_maintainers(readme_text)
+            if readme_names:
+                contributor_score = _readme_contributor_score(readme_names)
+                ownership_score = 0.3 if len(readme_names) >= 2 else 0.1
+                community_score = 0.0
+                return max(
+                    0.0,
+                    min(
+                        1.0,
+                        CONTRIBUTOR_WEIGHT * contributor_score
+                        + OWNERSHIP_WEIGHT * ownership_score
+                        + COMMUNITY_WEIGHT * community_score,
+                    ),
+                )
+
+        contributor_score = _contributor_diversity(contributors)
+        ownership_score = _ownership_resilience(metadata, contributors)
+        community_score = _community_support(metadata)
+
+        final_score = (
+            CONTRIBUTOR_WEIGHT * contributor_score
+            + OWNERSHIP_WEIGHT * ownership_score
+            + COMMUNITY_WEIGHT * community_score
+        )
+
+        _LOGGER.info(
+            "Bus factor metrics for %s: contributors=%.2f ownership=%.2f "
+            "community=%.2f",
+            hf_url,
+            contributor_score,
+            ownership_score,
+            community_score,
+        )
+
+        return max(0.0, min(1.0, final_score))
+
+    def _select_repo_url(
+        self,
+        url_record: Dict[str, str],
+        readme_text: str,
+    ) -> Optional[str]:
+        git_url = (url_record.get("git_url") or "").strip()
+        if git_url:
+            return _normalize_github_url(git_url)
+
+        for match in _GITHUB_URL_PATTERN.finditer(readme_text or ""):
+            candidate = f"https://github.com/{match.group(1)}/{match.group(2)}"
+            normalized = _normalize_github_url(candidate)
+            if normalized:
+                return normalized
+        return None
+
+    def _safe_readme(self, hf_url: str) -> str:
+        try:
+            return self._hf.get_model_readme(hf_url) or ""
+        except Exception as exc:
+            _LOGGER.debug("Failed to fetch README for %s: %s", hf_url, exc)
+            return ""
+
+    def _safe_repo_metadata(self, repo_url: str) -> Optional[Dict[str, Any]]:
+        try:
+            return self._git.get_repo_metadata(repo_url)
+        except Exception as exc:
+            _LOGGER.info(
+                "Repository metadata unavailable for %s: %s",
+                repo_url,
+                exc,
+            )
+            return None
+
+    def _safe_contributors(self, repo_url: str) -> List[Dict[str, Any]]:
+        try:
+            return self._git.list_repo_contributors(repo_url)
+        except Exception as exc:
+            _LOGGER.info(
+                "Unable to list contributors for %s: %s",
+                repo_url,
+                exc,
+            )
+            return []
 
 
 def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:
     return record.get("hf_url")
+
+
+def _normalize_github_url(url: str) -> Optional[str]:
+    match = _GITHUB_URL_PATTERN.search(url)
+    if not match:
+        return None
+    owner, repo = match.group(1), match.group(2)
+    return f"https://github.com/{owner}/{repo}"
+
+
+def _contributor_diversity(contributors: Sequence[Dict[str, Any]]) -> float:
+    if not contributors:
+        return 0.0
+
+    counts = [
+        int(entry.get("contributions", 0) or 0)
+        for entry in contributors
+    ]
+    counts = [count for count in counts if count > 0]
+    if not counts:
+        return 0.0
+
+    num_contributors = len(counts)
+    if num_contributors >= 5:
+        num_score = 1.0
+    elif num_contributors >= 3:
+        num_score = 0.7
+    elif num_contributors == 2:
+        num_score = 0.4
+    else:
+        num_score = 0.1
+
+    total_commits = sum(counts)
+    top_commits = max(counts)
+    dominance = top_commits / total_commits if total_commits else 1.0
+    if dominance <= 0.5:
+        diversity = 1.0
+    else:
+        diversity = max(0.0, 1.0 - (dominance - 0.5) / 0.5)
+
+    return 0.6 * num_score + 0.4 * diversity
+
+
+def _ownership_resilience(
+    metadata: Optional[Dict[str, Any]],
+    contributors: Sequence[Dict[str, Any]],
+) -> float:
+    if not metadata:
+        return 0.2 if len(contributors) >= 2 else 0.1
+
+    owner = metadata.get("owner") or {}
+    owner_type = owner.get("type") if isinstance(owner, dict) else None
+    if metadata.get("archived"):
+        return 0.0
+
+    if owner_type == "Organization":
+        return 1.0
+
+    if len(contributors) >= 3:
+        return 0.6
+
+    if metadata.get("fork"):
+        return 0.2
+
+    return 0.3
+
+
+def _community_support(metadata: Optional[Dict[str, Any]]) -> float:
+    if not metadata or metadata.get("archived"):
+        return 0.0
+
+    popularity = metadata.get("stargazers_count")
+    if not isinstance(popularity, int):
+        popularity = metadata.get("watchers_count") or metadata.get(
+            "forks_count"
+        )
+    if not isinstance(popularity, int):
+        popularity = 0
+
+    if popularity >= 500:
+        popularity_score = 1.0
+    elif popularity >= 100:
+        popularity_score = 0.7
+    elif popularity >= 20:
+        popularity_score = 0.5
+    elif popularity >= 5:
+        popularity_score = 0.3
+    elif popularity > 0:
+        popularity_score = 0.1
+    else:
+        popularity_score = 0.0
+
+    pushed_at = metadata.get("pushed_at") or metadata.get("updated_at")
+    recency_score = 0.0
+    if isinstance(pushed_at, str):
+        days = _days_since(pushed_at)
+        if days is not None:
+            if days <= 90:
+                recency_score = 1.0
+            elif days <= 180:
+                recency_score = 0.7
+            elif days <= 365:
+                recency_score = 0.4
+            else:
+                recency_score = 0.1
+
+    return min(1.0, (popularity_score + recency_score) / 2)
+
+
+def _days_since(timestamp: str) -> Optional[float]:
+    try:
+        parsed = _parse_iso_datetime(timestamp)
+    except ValueError:
+        return None
+    delta = datetime.now(timezone.utc) - parsed
+    return delta.days + delta.seconds / 86400.0
+
+
+def _parse_iso_datetime(timestamp: str) -> datetime:
+    cleaned = timestamp.strip()
+    if cleaned.endswith("Z"):
+        cleaned = cleaned[:-1] + "+00:00"
+    return datetime.fromisoformat(cleaned)
+
+
+def _extract_readme_maintainers(text: str) -> List[str]:
+    if not text:
+        return []
+    sections = re.split(r"^##+\s+", text, flags=re.MULTILINE)
+    names: List[str] = []
+    for section in sections:
+        header_match = re.match(
+            r"(maintainers?|authors?)\b",
+            section,
+            re.IGNORECASE,
+        )
+        if header_match:
+            body = section[header_match.end():]
+            names.extend(_extract_names_from_section(body))
+    if not names:
+        # fallback: bullet lists mentioning maintainer/author
+        pattern = re.compile(
+            r"^(?:[-*]|\d+\.)\s+(.+)$",
+            re.MULTILINE,
+        )
+        for match in pattern.finditer(text):
+            line = match.group(1)
+            if re.search(r"maintainer|author", line, re.IGNORECASE):
+                names.append(line.strip())
+    return list(dict.fromkeys(names))
+
+
+def _extract_names_from_section(section: str) -> List[str]:
+    pattern = re.compile(
+        r"^(?:[-*]|\d+\.)\s+(.+)$",
+        re.MULTILINE,
+    )
+    names: List[str] = []
+    for match in pattern.finditer(section):
+        entry = match.group(1).strip()
+        if entry:
+            names.append(entry)
+    return names
+
+
+def _readme_contributor_score(names: Sequence[str]) -> float:
+    count = len(names)
+    if count >= 5:
+        return 0.8
+    if count >= 3:
+        return 0.6
+    if count == 2:
+        return 0.4
+    if count == 1:
+        return 0.2
+    return 0.0

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional, Tuple, Union
 
 _ENV_LOADED = False
-_README_FALLBACK_DEFAULT = False
+_README_FALLBACK_DEFAULT = True
 
 
 def load_dotenv(dotenv_path: Union[str, Path] = ".env") -> None:

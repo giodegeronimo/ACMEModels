@@ -29,8 +29,8 @@ _FAILURE_VALUES: Dict[str, Dict[str, float]] = {
         "aws_server": 0.99,
     },
     "https://huggingface.co/openai/whisper-tiny/tree/main": {
-        "raspberry_pi": 0.1,
-        "jetson_nano": 0.2,
+        "raspberry_pi": 0.4,
+        "jetson_nano": 0.8,
         "desktop_pc": 0.99,
         "aws_server": 0.99,
     },

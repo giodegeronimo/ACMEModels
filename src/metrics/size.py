@@ -11,14 +11,14 @@ from src.utils.env import fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
 
-FAIL = False
+FAIL = True
 _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 
 # Stub mapping used when FAIL is active (deterministic behavior)
 _FAILURE_VALUES: Dict[str, Dict[str, float]] = {
     "https://huggingface.co/google-bert/bert-base-uncased": {
-        "raspberry_pi": 0.81,
-        "jetson_nano": 0.82,
+        "raspberry_pi": 0.1,
+        "jetson_nano": 0.2,
         "desktop_pc": 0.83,
         "aws_server": 0.84,
     },

@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Helpers for loading environment configuration."""
+
+from __future__ import annotations
 
 import logging
 import os

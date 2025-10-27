@@ -1,3 +1,5 @@
+"""Performance metric detecting explicit benchmark claims for models."""
+
 from __future__ import annotations
 
 import logging
@@ -6,6 +8,8 @@ import time
 from typing import Any, Dict, List, Optional, Protocol, Sequence
 
 from src.clients.hf_client import HFClient
+from src.config import (LLM_ANALYSIS_MODEL, LLM_EXTRACTION_MODEL,
+                        LLM_TEMPERATURE)
 from src.metrics.base import Metric, MetricOutput
 from src.utils.env import enable_readme_fallback, fail_stub_active
 
@@ -21,6 +25,27 @@ _FAILURE_VALUES: Dict[str, float] = {
     "https://huggingface.co/openai/whisper-tiny/tree/main": 0.0,
 }
 
+ANALYSIS_SYSTEM_PROMPT = (
+    "You are an AI assistant that analyses Hugging Face model cards for "
+    "evidence of performance claims. Reason aloud before answering."
+)
+ANALYSIS_USER_TEMPLATE = (
+    "Consider the model card below. Determine whether it contains "
+    "explicit evaluation results such as benchmark names, datasets, or "
+    "metrics with numeric values. Provide a step-by-step justification and "
+    "finish with 'Final answer: YES' or 'Final answer: NO'.\n\n"
+    "Model card:\n{readme}\n"
+)
+
+EXTRACTION_SYSTEM_PROMPT = (
+    "You read analyses and output a concise YES/NO decision."
+)
+EXTRACTION_USER_TEMPLATE = (
+    "Given the analysis below, respond with exactly 'YES' or 'NO' to "
+    "indicate whether performance claims are present. Return only the word."
+    "\n\nAnalysis:\n{analysis}\n"
+)
+
 
 class _HFClientProtocol(Protocol):
     def get_model_info(self, repo_id: str) -> Any: ...
@@ -31,10 +56,12 @@ class _HFClientProtocol(Protocol):
 class _PurdueClientProtocol(Protocol):
     def llm(
         self,
-        prompt: str,
+        prompt: Optional[str] = None,
         *,
-        model: str = "llama3.1:latest",
+        messages: Optional[Sequence[Dict[str, str]]] = None,
+        model: str = LLM_ANALYSIS_MODEL,
         stream: bool = False,
+        temperature: float = LLM_TEMPERATURE,
         **extra: Any,
     ) -> str: ...
 
@@ -133,23 +160,33 @@ class PerformanceMetric(Metric):
         if client is None:
             return False
 
-        analysis_prompt = (
-            "You are reviewing a Hugging Face model card. Determine whether "
-            "it contains explicit performance claims such as benchmark "
-            "names, datasets, or metrics with numeric results. Think "
-            "step-by-step and end with 'Final answer: YES' or 'Final answer: "
-            "NO'.\n\nModel card:\n"
-            f"{readme_text}\n"
-        )
-        extraction_prompt = (
-            "Based on the analysis, respond with only YES or NO to indicate "
-            "whether performance claims are present.\n\n"
-            "Analysis:\n{analysis}\n"
-        )
-
         try:
-            analysis = client.llm(analysis_prompt)
-            decision = client.llm(extraction_prompt.format(analysis=analysis))
+            analysis = client.llm(
+                messages=[
+                    {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": ANALYSIS_USER_TEMPLATE.format(
+                            readme=readme_text
+                        ),
+                    },
+                ],
+                model=LLM_ANALYSIS_MODEL,
+                temperature=LLM_TEMPERATURE,
+            )
+            decision = client.llm(
+                messages=[
+                    {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": EXTRACTION_USER_TEMPLATE.format(
+                            analysis=analysis
+                        ),
+                    },
+                ],
+                model=LLM_EXTRACTION_MODEL,
+                temperature=LLM_TEMPERATURE,
+            )
             match = re.search(r"\b(YES|NO)\b", decision.upper())
             if match:
                 return match.group(1) == "YES"

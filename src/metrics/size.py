@@ -1,3 +1,5 @@
+"""Model size metric computing deployability across hardware tiers."""
+
 from __future__ import annotations
 
 import logging

@@ -1,3 +1,5 @@
+"""Bus factor metric estimating contributor diversity and activity."""
+
 from __future__ import annotations
 
 import logging

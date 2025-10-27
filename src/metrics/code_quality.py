@@ -1,3 +1,5 @@
+"""Code quality metric assessing repository hygiene and signals."""
+
 from __future__ import annotations
 
 import logging

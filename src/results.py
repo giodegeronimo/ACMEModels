@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Utilities for transforming metric results into CLI output records."""
+
+from __future__ import annotations
 
 import json
 from decimal import ROUND_HALF_UP, Decimal

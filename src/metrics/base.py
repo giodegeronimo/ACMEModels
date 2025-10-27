@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Base class for metrics used in the ACME Models CLI."""
+
+from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import Dict, Mapping, Union

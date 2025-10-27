@@ -1,7 +1,9 @@
+"""Tests for test purdue client module."""
+
 from __future__ import annotations
 
 import importlib
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import pytest
 
@@ -75,12 +77,43 @@ def test_generate_completion_success() -> None:
     assert payload["stream"] is False
 
 
+def test_generate_completion_accepts_messages() -> None:
+    response = DummyResponse(200, {"id": "demo"})
+    session = DummySession(response)
+    client = PurdueClient(rate_limiter=DummyLimiter(), session=session)
+
+    result = client.generate_completion(
+        messages=[
+            {"role": "system", "content": "guide"},
+            {"role": "user", "content": "question"},
+        ]
+    )
+
+    assert result == {"id": "demo"}
+    payload = session.calls[0][2]
+    roles: List[str] = [message["role"] for message in payload["messages"]]
+    assert roles == ["system", "user"]
+
+
 def test_generate_completion_failure() -> None:
     session = DummySession(DummyResponse(500, {"error": "oops"}))
     client = PurdueClient(rate_limiter=DummyLimiter(), session=session)
 
     with pytest.raises(RuntimeError):
         client.generate_completion("hello")
+
+
+def test_generate_completion_rejects_mixed_arguments() -> None:
+    client = PurdueClient(
+        rate_limiter=DummyLimiter(),
+        session=DummySession(DummyResponse(200, {})),
+    )
+
+    with pytest.raises(ValueError):
+        client.generate_completion(
+            "hello",
+            messages=[{"role": "user", "content": "hi"}],
+        )
 
 
 def test_generate_completion_requires_token(
@@ -119,6 +152,35 @@ def test_llm_returns_text() -> None:
 
     assert content == "Hello!"
     assert session.calls[0][2]["messages"][0]["content"] == "Hi there"
+
+
+def test_llm_supports_message_payloads() -> None:
+    response = DummyResponse(
+        200,
+        {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "OK",
+                    }
+                }
+            ]
+        },
+    )
+    session = DummySession(response)
+    client = PurdueClient(rate_limiter=DummyLimiter(), session=session)
+
+    result = client.llm(
+        messages=[
+            {"role": "system", "content": "guide"},
+            {"role": "user", "content": "question"},
+        ]
+    )
+
+    assert result == "OK"
+    payload = session.calls[0][2]
+    assert payload["messages"][0]["role"] == "system"
 
 
 def test_llm_raises_on_missing_content() -> None:

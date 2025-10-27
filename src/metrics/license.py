@@ -1,3 +1,5 @@
+"""License compatibility metric for Hugging Face models."""
+
 from __future__ import annotations
 
 import json

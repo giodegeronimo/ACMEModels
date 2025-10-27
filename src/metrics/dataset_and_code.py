@@ -1,3 +1,5 @@
+"""Dataset-and-code availability metric for Hugging Face models."""
+
 from __future__ import annotations
 
 import logging

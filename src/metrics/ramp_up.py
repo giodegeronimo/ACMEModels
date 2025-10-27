@@ -1,12 +1,16 @@
+"""Ramp-up metric estimating documentation clarity for model adoption."""
+
 from __future__ import annotations
 
 import logging
 import math
 import re
-from typing import Any, Dict, Optional, Protocol
+from typing import Any, Dict, Optional, Protocol, Sequence
 
 from src.clients.hf_client import HFClient
 from src.clients.purdue_client import PurdueClient
+from src.config import (LLM_ANALYSIS_MODEL, LLM_EXTRACTION_MODEL,
+                        LLM_TEMPERATURE)
 from src.metrics.base import Metric, MetricOutput
 from src.utils.env import fail_stub_active
 
@@ -41,6 +45,27 @@ USAGE_WEIGHT = 0.30
 ARTIFACT_WEIGHT = 0.20
 EXTERNAL_LINK_WEIGHT = 0.10
 
+ANALYSIS_SYSTEM_PROMPT = (
+    "You are an expert technical writer tasked with evaluating machine "
+    "learning model documentation. Provide thoughtful reasoning before "
+    "issuing the final rating."
+)
+ANALYSIS_USER_TEMPLATE = (
+    "Evaluate the following model README for clarity, setup instructions, "
+    "usage examples, troubleshooting guidance, and overall completeness. "
+    "Reason step-by-step and conclude with a single line formatted exactly "
+    "as 'Final rating: <number between 0 and 1>'.\n\nREADME:\n{readme}\n"
+)
+
+EXTRACTION_SYSTEM_PROMPT = (
+    "You extract numeric ratings from analyses. Respond with digits only."
+)
+EXTRACTION_USER_TEMPLATE = (
+    "Given the analysis below, return only the numeric rating (between 0 "
+    "and 1) that appears after the phrase 'Final rating:'. Do not include "
+    "any other text.\n\nAnalysis:\n{analysis}\n"
+)
+
 
 class _HFClientProtocol(Protocol):
     def get_model_info(self, repo_id: str) -> Any: ...
@@ -51,10 +76,12 @@ class _HFClientProtocol(Protocol):
 class _PurdueClientProtocol(Protocol):
     def llm(
         self,
-        prompt: str,
+        prompt: Optional[str] = None,
         *,
-        model: str = "llama3.1:latest",
+        messages: Optional[Sequence[Dict[str, str]]] = None,
+        model: str = LLM_ANALYSIS_MODEL,
         stream: bool = False,
+        temperature: float = LLM_TEMPERATURE,
         **extra: Any,
     ) -> str: ...
 
@@ -145,24 +172,32 @@ class RampUpMetric(Metric):
             )
             return None
 
-        analysis_prompt = (
-            "You are evaluating the documentation quality of a machine "
-            "learning model README. Think step-by-step about clarity, setup "
-            "instructions, usage examples, troubleshooting, and completeness. "
-            "Rate quality between 0 and 1 inclusive. Provide detailed "
-            "reasoning and end with a line 'Final rating: <number>'.\n\n"
-            "README:\n"
-            f"{readme_text}\n"
-        )
-        extraction_prompt = (
-            "Extract the numeric rating (between 0 and 1) from the analysis. "
-            "Reply with only the number.\n\nAnalysis:\n{analysis}\n"
-        )
-
         try:
-            analysis = client.llm(analysis_prompt)
+            analysis = client.llm(
+                messages=[
+                    {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": ANALYSIS_USER_TEMPLATE.format(
+                            readme=readme_text
+                        ),
+                    },
+                ],
+                model=LLM_ANALYSIS_MODEL,
+                temperature=LLM_TEMPERATURE,
+            )
             extraction = client.llm(
-                extraction_prompt.format(analysis=analysis)
+                messages=[
+                    {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": EXTRACTION_USER_TEMPLATE.format(
+                            analysis=analysis
+                        ),
+                    },
+                ],
+                model=LLM_EXTRACTION_MODEL,
+                temperature=LLM_TEMPERATURE,
             )
             match = re.search(r"([01](?:\.\d+)?)", extraction)
             if match:

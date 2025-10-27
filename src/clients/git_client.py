@@ -1,6 +1,6 @@
-from __future__ import annotations
+"""Git service client with rate-limited HTTP access to repository APIs."""
 
-"""Git service client with rate limiting support."""
+from __future__ import annotations
 
 import logging
 from typing import Any, Optional, Protocol, cast

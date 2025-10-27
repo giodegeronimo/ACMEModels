@@ -1,3 +1,5 @@
+"""Dataset quality metric focusing on documentation and freshness."""
+
 from __future__ import annotations
 
 import logging

@@ -226,8 +226,6 @@ def run_pytest(additional_args: Optional[Sequence[str]] = None) -> int:
 
 def dispatch(argv: Sequence[str]) -> int:
     """Route ./run invocations to the appropriate helper."""
-    validate_runtime_environment()
-    configure_logging()
     if len(argv) < 2:
         print("Usage: ./run <install|test|pytest|URL_FILE>", file=sys.stderr)
         return 1
@@ -235,8 +233,12 @@ def dispatch(argv: Sequence[str]) -> int:
     command = argv[1]
 
     if command == "install":
+        configure_logging()
         requirements_path = Path("requirements.txt")
         return install_dependencies(requirements_path)
+
+    validate_runtime_environment()
+    configure_logging()
 
     if command == "test":
         return run_tests()

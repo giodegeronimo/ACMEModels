@@ -14,6 +14,7 @@ from typing import (Any, Callable, Iterable, Mapping, Optional, Sequence,
                     Tuple, Union)
 
 from .logging_config import configure_logging
+from .utils.env import validate_runtime_environment
 
 _CLI_MAIN: Optional[Callable[[Optional[Sequence[str]]], int]] = None
 PYTHON_BIN = "python3"
@@ -225,6 +226,7 @@ def run_pytest(additional_args: Optional[Sequence[str]] = None) -> int:
 
 def dispatch(argv: Sequence[str]) -> int:
     """Route ./run invocations to the appropriate helper."""
+    validate_runtime_environment()
     configure_logging()
     if len(argv) < 2:
         print("Usage: ./run <install|test|pytest|URL_FILE>", file=sys.stderr)

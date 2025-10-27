@@ -237,14 +237,16 @@ def dispatch(argv: Sequence[str]) -> int:
         requirements_path = Path("requirements.txt")
         return install_dependencies(requirements_path)
 
-    validate_runtime_environment()
-    configure_logging()
-
     if command == "test":
+        configure_logging()
         return run_tests()
 
     if command == "pytest":
+        configure_logging()
         return run_pytest(argv[2:])
+
+    validate_runtime_environment()
+    configure_logging()
 
     url_file = Path(command)
     return run_parser(url_file)

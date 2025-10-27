@@ -99,14 +99,33 @@ def test_validate_runtime_environment_logfile_error(
     tmp_path: Path,
 ) -> None:
     existing_dir = tmp_path / "logs"
-    existing_dir.mkdir()
+    log_path = existing_dir / "app.log"
+    log_path.mkdir(parents=True)
 
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_test_token")
-    # Point LOG_FILE at the directory itself so opening it fails.
-    monkeypatch.setenv("LOG_FILE", str(existing_dir))
+    # Point LOG_FILE at a directory with .log suffix so open() fails.
+    monkeypatch.setenv("LOG_FILE", str(log_path))
     _reset_env_module(monkeypatch)
 
     with pytest.raises(SystemExit) as excinfo:
         env.validate_runtime_environment()
 
     assert excinfo.value.code == 1
+
+
+def test_validate_runtime_environment_logfile_extension(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    log_file = tmp_path / "logs" / "app.txt"
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_test_token")
+    monkeypatch.setenv("LOG_FILE", str(log_file))
+    _reset_env_module(monkeypatch)
+
+    with pytest.raises(SystemExit) as excinfo:
+        env.validate_runtime_environment()
+
+    assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert "LOG_FILE must end with .log" in captured.err

@@ -115,14 +115,11 @@ def validate_runtime_environment() -> None:
         _fail("LOG_FILE is empty or unset")
 
     log_path = Path(log_path_raw)
+    if log_path.suffix.lower() != ".log":
+        _fail("LOG_FILE must end with .log")
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "a", encoding="utf-8"):
             pass
     except Exception as error:  # noqa: BLE001 - convert to friendly message
         _fail(f"LOG_FILE is not writable: {error}")
-
-    if not log_path.suffix:
-        _LOGGER.warning(
-            "LOG_FILE has no extension; continuing but consider using .log",
-        )

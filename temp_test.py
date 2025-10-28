@@ -11,8 +11,8 @@ from src.metrics.tree_score import TreeScoreMetric
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 os.environ.setdefault("LOG_LEVEL", "2")
-os.environ.setdefault("GEN_AI_STUDIO_API_KEY", "AIzaSyDUgg_XoEdry3pFusXVpUKptE-JMZD1qQE")
-os.environ['ACME_IGNORE_FAIL'] = '1'
+os.environ.setdefault("GEN_AI_STUDIO_API_KEY", "sk-b5ca04224763414fb0a732d3e407428b")
+# os.environ['ACME_IGNORE_FAIL'] = '1'
 os.environ["LOG_FILE"] = str(BASE_DIR / "data" / "acme.log")
 print(f"[temp_test] LOG_LEVEL={os.environ.get('LOG_LEVEL')} -> file={os.environ['LOG_FILE']}")
 configure_logging()
@@ -26,8 +26,8 @@ print(f"[temp_test] ACME_IGNORE_FAIL={os.environ.get('ACME_IGNORE_FAIL')}")
 
 # after testing, the biggest issue is that the dataset quality metric will
 # always return 0.0 for since they don't have datasets attached.
-# Also, the bus_factor and performance metrics always return 0.5 since
-# they are just placehodlers right now.
+
+# search by readme not by versioning
 
 metric = TreeScoreMetric()
 

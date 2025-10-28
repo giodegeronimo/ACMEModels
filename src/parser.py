@@ -1,3 +1,5 @@
+"""Manifest parser for newline-delimited model URL files."""
+
 from __future__ import annotations
 
 import logging

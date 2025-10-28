@@ -1,7 +1,9 @@
+"""Tests for test ramp up metric module."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import pytest
 
@@ -54,13 +56,18 @@ class _FakePurdueClient:
 
     def llm(
         self,
-        prompt: str,
+        prompt: Optional[str] = None,
         *,
+        messages: Optional[Sequence[Dict[str, str]]] = None,
         model: str = "llama3.1:latest",
         stream: bool = False,
+        temperature: float = 0.0,
         **extra: Any,
     ) -> str:
-        self.calls.append(prompt)
+        if messages is not None:
+            self.calls.append(messages[-1]["content"])
+        else:
+            self.calls.append(prompt or "")
         if self._fail:
             raise RuntimeError("LLM failure")
         if not self._responses:

@@ -1,3 +1,5 @@
+"""Code quality metric assessing repository hygiene and signals."""
+
 from __future__ import annotations
 
 import logging
@@ -9,17 +11,17 @@ from typing import Any, Dict, Iterable, List, Optional, Protocol, Sequence
 from src.clients.git_client import GitClient
 from src.clients.hf_client import HFClient
 from src.metrics.base import Metric, MetricOutput
-from src.utils.env import fail_stub_active
+from src.utils.env import enable_readme_fallback, fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
 
-FAIL = True
+FAIL = False
 _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 
 _FAILURE_VALUES: Dict[str, float] = {
-    "https://huggingface.co/google-bert/bert-base-uncased": 0.8,
+    "https://huggingface.co/google-bert/bert-base-uncased": 0.2,
     "https://huggingface.co/parvk11/audience_classifier_model": 0.8,
-    "https://huggingface.co/openai/whisper-tiny/tree/main": 0.2,
+    "https://huggingface.co/openai/whisper-tiny/tree/main": 0.8,
 }
 
 CORE_HYGIENE_WEIGHT = 0.6
@@ -96,23 +98,26 @@ class CodeQualityMetric(Metric):
             repo_metadata = self._safe_repo_metadata(repo_url)
             repo_files = self._safe_repo_files(repo_url, repo_metadata)
 
-        hygiene_score = self._hygiene_score(repo_files)
-        docs_score = self._docs_score(readme_text, repo_files)
+        hygiene_score, hygiene_details = self._hygiene_score(repo_files)
+        docs_score, docs_details = self._docs_score(readme_text, repo_files)
         base_score = (
             CORE_HYGIENE_WEIGHT * hygiene_score
             + DOCS_WEIGHT * docs_score
         )
 
-        activity_bonus = self._activity_bonus(repo_metadata)
+        activity_bonus, activity_details = self._activity_bonus(repo_metadata)
         final_score = min(1.0, base_score + activity_bonus)
 
         _LOGGER.info(
-            "Code quality metrics for %s: hygiene=%.2f docs=%.2f "
-            "activity=%.2f",
+            "Code quality metrics for %s: hygiene=%.2f details=%s docs=%.2f "
+            "details=%s activity_bonus=%.2f details=%s",
             hf_url,
             hygiene_score,
+            hygiene_details,
             docs_score,
+            docs_details,
             activity_bonus,
+            activity_details,
         )
 
         return final_score
@@ -125,6 +130,13 @@ class CodeQualityMetric(Metric):
         git_url = (url_record.get("git_url") or "").strip()
         if git_url:
             return _normalize_github_url(git_url)
+
+        if not enable_readme_fallback():
+            _LOGGER.info(
+                "Code quality: README repo fallback disabled for %s",
+                url_record.get("hf_url"),
+            )
+            return None
 
         for match in _GITHUB_URL_PATTERN.finditer(readme_text or ""):
             candidate = f"https://github.com/{match.group(1)}/{match.group(2)}"
@@ -171,7 +183,9 @@ class CodeQualityMetric(Metric):
             )
             return []
 
-    def _hygiene_score(self, repo_files: Sequence[str]) -> float:
+    def _hygiene_score(
+        self, repo_files: Sequence[str]
+    ) -> tuple[float, Dict[str, float]]:
         repo_files = list(repo_files)
         tests_present = any(
             _is_test_path(path) for path in repo_files
@@ -198,12 +212,21 @@ class CodeQualityMetric(Metric):
             1.0 if type_present else 0.0,
             code_ratio,
         ]
-        return sum(signals) / len(signals)
+        score = sum(signals) / len(signals)
+        details = {
+            "tests": float(tests_present),
+            "ci": float(ci_present),
+            "lint": float(lint_present),
+            "types": float(type_present),
+            "code_ratio": round(code_ratio, 2),
+        }
+        return score, details
 
     def _docs_score(
         self, readme_text: str, repo_files: Sequence[str]
-    ) -> float:
+    ) -> tuple[float, Dict[str, float]]:
         signals: List[float] = []
+        detail_flags: Dict[str, float] = {}
         if readme_text:
             headings = {
                 heading.strip().lower()
@@ -215,33 +238,43 @@ class CodeQualityMetric(Metric):
             }
             if any("install" in heading for heading in headings):
                 signals.append(1.0)
+                detail_flags["install_section"] = 1.0
             if any(
                 "usage" in heading or "quickstart" in heading
                 for heading in headings
             ):
                 signals.append(1.0)
+                detail_flags["usage_section"] = 1.0
             if any("test" in heading for heading in headings):
                 signals.append(1.0)
+                detail_flags["test_section"] = 1.0
             if any("contribut" in heading for heading in headings):
                 signals.append(1.0)
+                detail_flags["contrib_section"] = 1.0
             length_bonus = min(1.0, len(readme_text) / 1000.0)
             signals.append(length_bonus)
+            detail_flags["readme_length"] = round(length_bonus, 2)
 
         repo_lower = [path.lower() for path in repo_files]
         if any(path.startswith("docs/") for path in repo_lower):
             signals.append(1.0)
+            detail_flags["docs_folder"] = 1.0
         if any(
             path.endswith("contributing.md") for path in repo_lower
         ):
             signals.append(1.0)
+            detail_flags["contrib_file"] = 1.0
 
         if not signals:
-            return 0.0
-        return sum(signals) / len(signals)
+            return 0.0, detail_flags
+        score = sum(signals) / len(signals)
+        return score, detail_flags
 
-    def _activity_bonus(self, metadata: Optional[Dict[str, Any]]) -> float:
+    def _activity_bonus(
+        self, metadata: Optional[Dict[str, Any]]
+    ) -> tuple[float, Dict[str, Any]]:
         if not metadata:
-            return 0.0
+            return 0.0, {"reason": "no_metadata"}
 
         bonus = 0.0
         is_archived = bool(metadata.get("archived"))
@@ -272,7 +305,14 @@ class CodeQualityMetric(Metric):
         elif popularity >= 10:
             bonus += 0.02
 
-        return min(ACTIVITY_MAX_BONUS, bonus)
+        capped = min(ACTIVITY_MAX_BONUS, bonus)
+        details = {
+            "archived": float(is_archived),
+            "raw_bonus": round(bonus, 3),
+            "capped_bonus": round(capped, 3),
+            "popularity": popularity,
+        }
+        return capped, details
 
 
 def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:

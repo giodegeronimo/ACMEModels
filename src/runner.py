@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Helper routines for the top-level `run` launcher."""
+
+from __future__ import annotations
 
 import contextlib
 import io
@@ -14,6 +14,7 @@ from typing import (Any, Callable, Iterable, Mapping, Optional, Sequence,
                     Tuple, Union)
 
 from .logging_config import configure_logging
+from .utils.env import validate_runtime_environment
 
 _CLI_MAIN: Optional[Callable[[Optional[Sequence[str]]], int]] = None
 PYTHON_BIN = "python3"
@@ -225,7 +226,6 @@ def run_pytest(additional_args: Optional[Sequence[str]] = None) -> int:
 
 def dispatch(argv: Sequence[str]) -> int:
     """Route ./run invocations to the appropriate helper."""
-    configure_logging()
     if len(argv) < 2:
         print("Usage: ./run <install|test|pytest|URL_FILE>", file=sys.stderr)
         return 1
@@ -233,14 +233,20 @@ def dispatch(argv: Sequence[str]) -> int:
     command = argv[1]
 
     if command == "install":
+        configure_logging()
         requirements_path = Path("requirements.txt")
         return install_dependencies(requirements_path)
 
     if command == "test":
+        configure_logging()
         return run_tests()
 
     if command == "pytest":
+        configure_logging()
         return run_pytest(argv[2:])
+
+    validate_runtime_environment()
+    configure_logging()
 
     url_file = Path(command)
     return run_parser(url_file)

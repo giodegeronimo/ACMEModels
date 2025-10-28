@@ -1,3 +1,5 @@
+"""Tests for test cli app module."""
+
 
 from __future__ import annotations
 

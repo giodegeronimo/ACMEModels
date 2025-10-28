@@ -1,14 +1,15 @@
-from __future__ import annotations
-
 """Client for Purdue Gen AI Studio APIs with rate limiting."""
+
+from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Optional, Protocol, cast
+from typing import Any, Dict, Optional, Protocol, Sequence, cast
 
 import requests  # type: ignore[import]
 
 from src.clients.base_client import BaseClient
+from src.config import LLM_ANALYSIS_MODEL, LLM_TEMPERATURE
 from src.net.rate_limiter import RateLimiter
 from src.utils.env import load_dotenv
 
@@ -62,25 +63,32 @@ class PurdueClient(BaseClient[Dict[str, Any]]):
 
     def generate_completion(
         self,
-        prompt: str,
+        prompt: Optional[str] = None,
         *,
-        model: str = "llama3.1:latest",
+        messages: Optional[Sequence[Dict[str, str]]] = None,
+        model: str = LLM_ANALYSIS_MODEL,
         stream: bool = False,
+        temperature: float = LLM_TEMPERATURE,
         **extra: Any,
     ) -> Dict[str, Any]:
         """Request a text completion from the Purdue GenAI Studio service."""
 
+        if messages is not None and prompt is not None:
+            raise ValueError("Specify either prompt or messages, not both.")
+        if messages is None and prompt is None:
+            raise ValueError("Either prompt or messages must be provided.")
+
+        if messages is None:
+            payload_messages = [{"role": "user", "content": prompt or ""}]
+        else:
+            payload_messages = [dict(message) for message in messages]
+
         url = f"{self._base_url}{CHAT_COMPLETIONS_PATH}"
         payload: Dict[str, Any] = {
             "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
+            "messages": payload_messages,
             "stream": stream,
-            "temperature": 0.0,
+            "temperature": temperature,
         }
         payload.update(extra)
 
@@ -106,18 +114,22 @@ class PurdueClient(BaseClient[Dict[str, Any]]):
 
     def llm(
         self,
-        prompt: str,
+        prompt: Optional[str] = None,
         *,
-        model: str = "llama3.1:latest",
+        messages: Optional[Sequence[Dict[str, str]]] = None,
+        model: str = LLM_ANALYSIS_MODEL,
         stream: bool = False,
+        temperature: float = LLM_TEMPERATURE,
         **extra: Any,
     ) -> str:
         """Return the assistant's text response for a prompt."""
 
         completion = self.generate_completion(
             prompt,
+            messages=messages,
             model=model,
             stream=stream,
+            temperature=temperature,
             **extra,
         )
 

@@ -1,3 +1,5 @@
+"""Tests for test base client module."""
+
 from __future__ import annotations
 
 import logging

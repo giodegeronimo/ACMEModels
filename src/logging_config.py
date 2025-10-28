@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Central logging configuration aligned with project requirements."""
+
+from __future__ import annotations
 
 import logging
 import os

@@ -1,6 +1,6 @@
-from __future__ import annotations
+"""Hugging Face Hub client that wraps HfApi with rate limiting."""
 
-"""Hugging Face Hub client with rate limiting."""
+from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any, Optional, Protocol, cast

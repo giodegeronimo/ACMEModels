@@ -1,6 +1,8 @@
+"""Tests for test git client module."""
+
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, List
 
 import pytest
 
@@ -18,11 +20,11 @@ class DummyLimiter(RateLimiter):
 
 
 class DummyResponse:
-    def __init__(self, status_code: int, payload: Dict[str, Any]) -> None:
+    def __init__(self, status_code: int, payload: Any) -> None:
         self.status_code = status_code
         self._payload = payload
 
-    def json(self) -> Dict[str, Any]:
+    def json(self) -> Any:
         return self._payload
 
 
@@ -123,6 +125,32 @@ def test_list_repo_files_respects_branch() -> None:
         (
             "https://api.github.com/repos/user/repo/git/trees/develop"
             "?recursive=1",
+            10,
+        )
+    ]
+
+
+def test_list_repo_contributors() -> None:
+    contributors = DummyResponse(
+        200,
+        [
+            {"login": "alice", "contributions": 120},
+            {"login": "bob", "contributions": 30},
+        ],
+    )
+    session = SequenceSession([contributors])
+    client = GitClient(rate_limiter=DummyLimiter(), session=session)
+
+    result = client.list_repo_contributors("https://github.com/org/repo")
+
+    assert result == [
+        {"login": "alice", "contributions": 120},
+        {"login": "bob", "contributions": 30},
+    ]
+    assert session.calls == [
+        (
+            "https://api.github.com/repos/org/repo/contributors"
+            "?per_page=100&anon=1",
             10,
         )
     ]

@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Base class for rate-limited service clients."""
+
+from __future__ import annotations
 
 import logging
 import time

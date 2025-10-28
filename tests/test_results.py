@@ -1,3 +1,5 @@
+"""Tests for test results module."""
+
 from __future__ import annotations
 
 from types import MappingProxyType

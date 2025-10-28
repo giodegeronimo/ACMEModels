@@ -1,3 +1,5 @@
+"""Tests for test env module."""
+
 from __future__ import annotations
 
 import os
@@ -46,3 +48,86 @@ def test_parse_line_helpers() -> None:
     assert env._parse_line("   # comment") is None
     assert env._parse_line("   ") is None
     assert env._parse_line("INVALID") is None
+
+
+def _reset_env_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(env, "_ENV_LOADED", False)
+
+
+def test_validate_runtime_environment_succeeds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_file = tmp_path / "logs" / "app.log"
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_valid_token")
+    monkeypatch.setenv("LOG_FILE", str(log_file))
+    _reset_env_module(monkeypatch)
+
+    # Should not raise.
+    env.validate_runtime_environment()
+
+    assert log_file.exists()
+
+
+@pytest.mark.parametrize(
+    ("token", "expected"),
+    [
+        ("", "GITHUB_TOKEN is empty or unset"),
+        ("short", "GITHUB_TOKEN format appears invalid"),
+    ],
+)
+def test_validate_runtime_environment_token_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    token: str,
+    expected: str,
+) -> None:
+    log_file = tmp_path / "app.log"
+    monkeypatch.setenv("GITHUB_TOKEN", token)
+    monkeypatch.setenv("LOG_FILE", str(log_file))
+    _reset_env_module(monkeypatch)
+
+    with pytest.raises(SystemExit) as excinfo:
+        env.validate_runtime_environment()
+
+    assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert expected in captured.err
+
+
+def test_validate_runtime_environment_logfile_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    existing_dir = tmp_path / "logs"
+    log_path = existing_dir / "app.log"
+    log_path.mkdir(parents=True)
+
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_test_token")
+    # Point LOG_FILE at a directory with .log suffix so open() fails.
+    monkeypatch.setenv("LOG_FILE", str(log_path))
+    _reset_env_module(monkeypatch)
+
+    with pytest.raises(SystemExit) as excinfo:
+        env.validate_runtime_environment()
+
+    assert excinfo.value.code == 1
+
+
+def test_validate_runtime_environment_logfile_extension(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    log_file = tmp_path / "logs" / "app.txt"
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_test_token")
+    monkeypatch.setenv("LOG_FILE", str(log_file))
+    _reset_env_module(monkeypatch)
+
+    with pytest.raises(SystemExit) as excinfo:
+        env.validate_runtime_environment()
+
+    assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert "LOG_FILE must end with .log" in captured.err

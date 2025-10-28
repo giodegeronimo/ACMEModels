@@ -1,3 +1,5 @@
+"""Model size metric computing deployability across hardware tiers."""
+
 from __future__ import annotations
 
 import logging
@@ -11,28 +13,28 @@ from src.utils.env import fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
 
-FAIL = True
+FAIL = False
 _DEFAULT_URL = "https://huggingface.co/google-bert/bert-base-uncased"
 
 # Stub mapping used when FAIL is active (deterministic behavior)
 _FAILURE_VALUES: Dict[str, Dict[str, float]] = {
     "https://huggingface.co/google-bert/bert-base-uncased": {
-        "raspberry_pi": 0.81,
-        "jetson_nano": 0.82,
-        "desktop_pc": 0.83,
-        "aws_server": 0.84,
+        "raspberry_pi": 0.99,
+        "jetson_nano": 0.99,
+        "desktop_pc": 0.00,
+        "aws_server": 0.00,
     },
     "https://huggingface.co/parvk11/audience_classifier_model": {
-        "raspberry_pi": 0.99,
-        "jetson_nano": 0.99,
-        "desktop_pc": 0.99,
-        "aws_server": 0.99,
+        "raspberry_pi": 0.0,
+        "jetson_nano": 0.0,
+        "desktop_pc": 0.00,
+        "aws_server": 0.00,
     },
     "https://huggingface.co/openai/whisper-tiny/tree/main": {
-        "raspberry_pi": 0.99,
-        "jetson_nano": 0.99,
+        "raspberry_pi": 0.4,
+        "jetson_nano": 0.8,
         "desktop_pc": 0.99,
-        "aws_server": 0.99,
+        "aws_server": 0.0,
     },
 }
 
@@ -125,16 +127,42 @@ class SizeMetric(Metric):
         if not variants:
             return _zero_scores()
 
-        # For each device, compute max score across variants
+        variant_details = {
+            name: total_bytes / (1024.0 ** 3)
+            for name, total_bytes in variants.items()
+        }
+
+        _LOGGER.info(
+            "Size metric: evaluated %d variant(s) for %s -> %s",
+            len(variant_details),
+            hf_url,
+            {k: f"{v:.2f} GB" for k, v in variant_details.items()},
+        )
+
+        # For each device, compute average score across variants
         scores: Dict[str, float] = {}
         for device, (ideal, hard) in _DEVICE_BINS.items():
-            best = 0.0
-            for _variant, total_bytes in variants.items():
-                total_gb = total_bytes / (1024.0 ** 3)
-                score = _piecewise_linear_score(total_gb, ideal, hard)
-                if score > best:
-                    best = score
-            scores[device] = float(best)
+            device_scores: Dict[str, float] = {}
+            for variant_name, total_gb in variant_details.items():
+                device_scores[variant_name] = _piecewise_linear_score(
+                    total_gb,
+                    ideal,
+                    hard,
+                )
+            if device_scores:
+                average = sum(device_scores.values()) / len(device_scores)
+            else:
+                average = 0.0
+            scores[device] = float(average)
+            _LOGGER.info(
+                "Size metric: device=%s ideal<=%.2fGB hard<=%.2fGB "
+                "variant_scores=%s average=%.2f",
+                device,
+                ideal,
+                hard,
+                {k: f"{v:.2f}" for k, v in device_scores.items()},
+                average,
+            )
 
         return scores
 

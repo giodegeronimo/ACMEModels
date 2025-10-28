@@ -164,8 +164,10 @@ class ReproducibilityMetric(Metric):
 
         has_import = any(line.startswith(("from ",
                                           "import ")) for line in lines)
-        has_call = any(re.search(r"\b[A-Za-z_][A-Za-z0-9_]\
-                                 *\s*\(", line) for line in lines)
+        has_call = any(
+            re.search(r"\b[A-Za-z_][A-Za-z0-9_]*\s*\(", line)
+            for line in lines
+        )
         has_keyword = any(keyword in combined for keyword in _DEMO_KEYWORDS)
         has_string_model = bool(
             re.search(r"\b(model|pipeline)\s*=\s*['\"][^'\"]+['\"]", combined)

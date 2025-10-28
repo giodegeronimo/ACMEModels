@@ -1,4 +1,5 @@
 
+"""CLI wiring that parses manifests and emits scored NDJSON records."""
 
 from __future__ import annotations
 

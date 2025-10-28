@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Aggregate metric for computing the overall net score."""
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable, List

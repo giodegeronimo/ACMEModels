@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Canonical result object returned by metric computations."""
+
+from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from typing import Any, Mapping, Optional

@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Simple token-bucket rate limiter for external service clients."""
+
+from __future__ import annotations
 
 import threading
 import time

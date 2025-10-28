@@ -1,3 +1,5 @@
+"""Tests for test rate limiter module."""
+
 from __future__ import annotations
 
 from typing import List

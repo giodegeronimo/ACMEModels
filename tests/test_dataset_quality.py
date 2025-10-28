@@ -1,3 +1,5 @@
+"""Tests for test dataset quality module."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

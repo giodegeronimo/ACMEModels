@@ -76,7 +76,6 @@ class ReproducibilityMetric(Metric):
             return 0.0
 
         readme = self._safe_readme(hf_url)
-        print(readme)
         if not readme.strip():
             _LOGGER.info(
                 "README missing or empty for %s; reproducibility score is 0.0",

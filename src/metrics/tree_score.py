@@ -44,7 +44,8 @@ class TreeScoreMetric(Metric):
       and README hints (e.g., "base model", "fine-tuned from").
     - Computes each parent's total score by averaging the standard metrics
       (excluding TreeScore itself) and returns the mean across parents.
-    - If no parents are found or scores are unavailable, returns 0.5.
+    - If no parents are found or scores are unavailable, returns the target
+      model's own net score.
     """
 
     def __init__(self, hf_client: Optional[HFClient] = None) -> None:
@@ -70,15 +71,16 @@ class TreeScoreMetric(Metric):
 
         hf_url = _extract_hf_url(url_record)
         if not hf_url:
-            _LOGGER.info("No hf_url provided; tree score is 0.5")
-            return 0.5
+            return self._fallback_to_model_score(
+                None, "No hf_url provided for tree_score"
+            )
 
         # Identify parent repo ids like "owner/name".
         parents = _discover_parents(self._hf, hf_url)
         if not parents:
-            _LOGGER.info("No parents discovered for %s; "
-                         "tree score is 0.5", hf_url)
-            return 0.5
+            return self._fallback_to_model_score(
+                hf_url, f"No parents discovered for {hf_url}"
+            )
         _LOGGER.info(
             "Discovered %d top-level parent(s) for %s: %s",
             len(parents),
@@ -101,8 +103,9 @@ class TreeScoreMetric(Metric):
                     ancestors_depth[slug] = depth
 
         if not ancestors_depth:
-            _LOGGER.info("No ancestors collected; tree score is 0.5")
-            return 0.5
+            return self._fallback_to_model_score(
+                hf_url, f"No ancestors collected for {hf_url}"
+            )
 
         _LOGGER.info(
             "Collected %d unique ancestor(s) up to depth %d",
@@ -130,9 +133,47 @@ class TreeScoreMetric(Metric):
                 score,
             )
 
-        final = (weighted_total / weight_sum) if weight_sum > 0 else 0.5
+        if weight_sum <= 0.0:
+            return self._fallback_to_model_score(
+                hf_url,
+                f"No ancestor scores produced for {hf_url}",
+            )
+
+        final = weighted_total / weight_sum
         _LOGGER.info("Tree score for %s computed as %.2f", hf_url, final)
         return final
+
+    def _fallback_to_model_score(
+        self,
+        hf_url: Optional[str],
+        reason: str,
+    ) -> float:
+        _LOGGER.info(
+            "%s; falling back to target model net score",
+            reason,
+        )
+        if not hf_url:
+            _LOGGER.info("Missing hf_url; defaulting tree score to 0.5")
+            return 0.5
+        slug = _to_repo_slug(hf_url)
+        if not slug:
+            _LOGGER.info(
+                "Could not derive repo slug from %s; defaulting to 0.5",
+                hf_url,
+            )
+            return 0.5
+        self_score = _compute_parent_net_score(slug)
+        if self_score is None:
+            _LOGGER.info(
+                "Target model net score unavailable for %s; defaulting to 0.5",
+                hf_url,
+            )
+            return 0.5
+        _LOGGER.info(
+            "Tree score fallback set to %.2f using target model net score",
+            self_score,
+        )
+        return self_score
 
 
 def _extract_hf_url(record: Mapping[str, Any]) -> Optional[str]:
@@ -346,7 +387,7 @@ def _compute_parent_net_score(repo_slug: str) -> Optional[float]:
                      metric_name, repo_slug, value)
         if numeric is not None:
             numeric_values.append(numeric)
-        print(f"  --{metric.name} for {repo_slug}: {value}")
+        print(f"[tree_score] {metric.name} for {repo_slug}: {value}")
 
     if not numeric_values:
         _LOGGER.info("No metric values available for %s; skipping", repo_slug)

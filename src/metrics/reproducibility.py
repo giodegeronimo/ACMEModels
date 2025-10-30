@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
-from typing import Dict, Optional, Pattern, Protocol
+import subprocess
+import sys
+import tempfile
+import textwrap
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Optional, Pattern, Protocol, Sequence
 
 from src.clients.hf_client import HFClient
+from src.config import LLM_ANALYSIS_MODEL, LLM_TEMPERATURE
 from src.metrics.base import Metric, MetricOutput
 from src.utils.env import fail_stub_active
 
@@ -18,8 +26,48 @@ _FAILURE_VALUES: Dict[str, float] = {
     "https://huggingface.co/openai/whisper-tiny/tree/main": 1.0,
 }
 
+_EXECUTION_TIMEOUT_SECONDS = 20
+_LLM_MAX_ATTEMPTS = 3
+_LLM_FIX_SYSTEM_PROMPT = (
+    "You repair short Python scripts copied from README files so they run "
+    "successfully without manual edits. Always return the full corrected "
+    "Python script and nothing else."
+)
+_LLM_INITIAL_USER_PROMPT = (
+    "Here is Python code from a README and the error it produced when "
+    "executed.\n\n"
+    "Code:\n```python\n{code}\n```\n\n"
+    "Error output:\n{error}\n\n"
+    "Provide a corrected Python script that will run successfully. "
+    "Return only the code."
+)
+_LLM_RETRY_PROMPT = (
+    "That attempt still failed. The latest error output was:\n{error}\n\n"
+    "Please try again and return only the updated Python script."
+)
+
+
+@dataclass
+class _CodeBlock:
+    language: str
+    code: str
+
+
+class _PurdueClientProtocol(Protocol):
+    def llm(
+        self,
+        prompt: Optional[str] = None,
+        *,
+        messages: Optional[Sequence[Dict[str, str]]] = None,
+        model: str = ...,
+        stream: bool = ...,
+        temperature: float = ...,
+        **extra: object,
+    ) -> str: ...
+
+
 _CODE_BLOCK_PATTERN = re.compile(
-    r"```(?:[a-zA-Z0-9_+-]*)\s*\n(.*?)```",
+    r"```(?P<lang>[a-zA-Z0-9_+-]*)\s*\n(?P<code>.*?)```",
     re.DOTALL,
 )
 _PLACEHOLDER_PATTERNS: tuple[Pattern[str], ...] = (
@@ -52,9 +100,14 @@ class _HFClientProtocol(Protocol):
 class ReproducibilityMetric(Metric):
     """Evaluate whether the README demo code runs without extra fixes."""
 
-    def __init__(self, hf_client: Optional[_HFClientProtocol] = None) -> None:
+    def __init__(
+        self,
+        hf_client: Optional[_HFClientProtocol] = None,
+        purdue_client: Optional[_PurdueClientProtocol] = None,
+    ) -> None:
         super().__init__(name="Reproducibility", key="reproducibility")
         self._hf_client: _HFClientProtocol = hf_client or HFClient()
+        self._purdue_client: Optional[_PurdueClientProtocol] = purdue_client
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
         hf_url = _extract_hf_url(url_record)
@@ -91,6 +144,153 @@ class ReproducibilityMetric(Metric):
         )
         return score
 
+    def _extract_code_blocks(self, readme_text: str) -> list[_CodeBlock]:
+        blocks: list[_CodeBlock] = []
+        for match in _CODE_BLOCK_PATTERN.finditer(readme_text):
+            language = (match.group("lang") or "").strip().lower()
+            code = match.group("code") or ""
+            if code.strip():
+                blocks.append(_CodeBlock(language=language, code=code))
+        return blocks
+
+    def _run_code_block(self, code_block: str) -> tuple[bool, str]:
+        dedented = textwrap.dedent(code_block).strip()
+        if not dedented:
+            return False, "Code block is empty after dedent"
+
+        tmp_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                suffix=".py",
+                delete=False,
+                encoding="utf-8",
+            ) as handle:
+                tmp_path = Path(handle.name)
+                handle.write(dedented)
+
+            completed = subprocess.run(
+                [sys.executable, str(tmp_path)],
+                capture_output=True,
+                text=True,
+                timeout=_EXECUTION_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            return False, (
+                f"Execution timed out after {_EXECUTION_TIMEOUT_SECONDS} "
+                "seconds"
+            )
+        except Exception as exc:  # pragma: no cover - defensive guard
+            return False, f"Execution failed: {exc}"
+        finally:
+            if tmp_path is not None:
+                with contextlib.suppress(OSError):
+                    tmp_path.unlink(missing_ok=True)
+
+        if completed.returncode == 0:
+            return True, ""
+
+        stdout = completed.stdout.strip()
+        stderr = completed.stderr.strip()
+        if stdout and stderr:
+            error_output = f"{stdout}\n{stderr}"
+        else:
+            error_output = stdout or stderr or (
+                f"Process exited with status {completed.returncode}"
+            )
+        return False, error_output
+
+    def _attempt_llm_fix(self, code_block: str, error_output: str) -> bool:
+        client = self._get_purdue_client()
+        if client is None:
+            _LOGGER.debug("Purdue client unavailable; skipping LLM fixes")
+            return False
+
+        error_text = error_output or "Process failed without error output."
+        messages: list[Dict[str, str]] = [
+            {"role": "system", "content": _LLM_FIX_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": _LLM_INITIAL_USER_PROMPT.format(
+                    code=textwrap.dedent(code_block).strip(),
+                    error=error_text,
+                ),
+            },
+        ]
+
+        current_error = error_text
+        for attempt in range(1, _LLM_MAX_ATTEMPTS + 1):
+            try:
+                response = client.llm(
+                    messages=list(messages),
+                    model=LLM_ANALYSIS_MODEL,
+                    temperature=LLM_TEMPERATURE,
+                )
+            except Exception as exc:  # pragma: no cover - external service
+                _LOGGER.debug(
+                    "LLM fix attempt %d failed to complete: %s",
+                    attempt,
+                    exc,
+                )
+                return False
+
+            messages.append({"role": "assistant", "content": response})
+            candidate = self._extract_candidate_code(response)
+            if not candidate:
+                _LOGGER.debug(
+                    "LLM fix attempt %d returned no code; retrying", attempt
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": _LLM_RETRY_PROMPT.format(error=current_error),
+                    }
+                )
+                continue
+
+            success, current_error = self._run_code_block(candidate)
+            if success:
+                _LOGGER.info(
+                    "LLM fix succeeded on attempt %d", attempt
+                )
+                return True
+
+            messages.append(
+                {
+                    "role": "user",
+                    "content": _LLM_RETRY_PROMPT.format(error=current_error),
+                }
+            )
+
+        _LOGGER.debug("LLM unable to repair code after %d attempts", _LLM_MAX_ATTEMPTS)
+        return False
+
+    def _extract_candidate_code(self, llm_response: str) -> str:
+        match = re.search(
+            r"```(?:python)?\s*\n(?P<code>.*?)```",
+            llm_response,
+            re.DOTALL,
+        )
+        if match:
+            return match.group("code").strip()
+        return llm_response.strip()
+
+    def _get_purdue_client(self) -> Optional[_PurdueClientProtocol]:
+        if self._purdue_client is not None:
+            return self._purdue_client
+
+        try:
+            from src.clients.purdue_client import PurdueClient
+
+            self._purdue_client = PurdueClient()
+        except Exception as exc:
+            _LOGGER.info(
+                "Purdue client unavailable for reproducibility fixes: %s",
+                exc,
+            )
+            self._purdue_client = None
+        return self._purdue_client
+
     def _safe_readme(self, hf_url: str) -> str:
         try:
             return self._hf_client.get_model_readme(hf_url)
@@ -99,21 +299,33 @@ class ReproducibilityMetric(Metric):
             return ""
 
     def _score_readme(self, readme_text: str) -> float:
-        code_blocks = _CODE_BLOCK_PATTERN.findall(readme_text)
-        if not code_blocks:
+        blocks = self._extract_code_blocks(readme_text)
+        if not blocks:
             _LOGGER.debug("No code blocks detected in README text")
             return 0.0
 
-        has_demo = False
-        for block in code_blocks:
-            if not self._looks_like_demo(block):
-                continue
-            has_demo = True
-            if self._is_out_of_box(block):
-                return 1.0
+        demo_blocks: list[_CodeBlock] = [
+            block
+            for block in blocks
+            if self._looks_like_demo(block.code)
+            and block.language in {"", "python", "py"}
+        ]
 
-        if has_demo:
-            return 0.5
+        if not demo_blocks:
+            _LOGGER.debug("No runnable demo blocks detected in README")
+            return 0.0
+
+        for block in demo_blocks:
+            success, error_output = self._run_code_block(block.code)
+            if success:
+                return 1.0
+            if self._has_placeholders(block.code):
+                _LOGGER.debug("Skipping LLM fix due to placeholders in block")
+                continue
+            if self._attempt_llm_fix(block.code, error_output):
+                return 0.5
+
+        _LOGGER.debug("All demo blocks failed to run after LLM attempts")
         return 0.0
 
     def _looks_like_demo(self, code_block: str) -> bool:
@@ -143,36 +355,6 @@ class ReproducibilityMetric(Metric):
         if ">>>" in combined:
             return True
         return False
-
-    def _is_out_of_box(self, code_block: str) -> bool:
-        lines = [
-            line.strip()
-            for line in code_block.splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        ]
-        if not lines:
-            return False
-
-        lower_lines = [line.lower() for line in lines]
-        if any(line.startswith("pip install") for line in lower_lines):
-            return False
-
-        combined = "\n".join(lines)
-        if self._has_placeholders(combined):
-            return False
-
-        has_import = any(line.startswith(("from ",
-                                          "import ")) for line in lines)
-        has_call = any(
-            re.search(r"\b[A-Za-z_][A-Za-z0-9_]*\s*\(", line)
-            for line in lines
-        )
-        has_keyword = any(keyword in combined for keyword in _DEMO_KEYWORDS)
-        has_string_model = bool(
-            re.search(r"\b(model|pipeline)\s*=\s*['\"][^'\"]+['\"]", combined)
-        )
-
-        return has_call and (has_import or has_keyword or has_string_model)
 
     def _has_placeholders(self, text: str) -> bool:
         return any(pattern.search(text) for pattern in _PLACEHOLDER_PATTERNS)

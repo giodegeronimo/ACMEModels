@@ -29,8 +29,18 @@ _EXECUTION_TIMEOUT_SECONDS = 20
 _LLM_MAX_ATTEMPTS = 3
 _LLM_FIX_SYSTEM_PROMPT = (
     "You repair short Python scripts copied from README files so they run "
-    "successfully without manual edits. Always return the full corrected "
-    "Python script and nothing else."
+    "successfully without manual edits. If there is a signfigant amount of "
+    "unknown imports, "
+    "create your own mock inputs to test the code and remove the imports of"
+    " datasets. "
+    "Always return the full corrected Python script. Append a final "
+    "line comment "
+    "of the form '# SCORE: 1.0' when you only remove placeholders, "
+    "environment "
+    "configuration, "
+    "or dataset import issues. Use '# SCORE: 0.5' when you modify executable "
+    "logic. "
+    "Return nothing but the Python code with that trailing score comment."
 )
 _LLM_INITIAL_USER_PROMPT = (
     "Here is Python code from a README and the error it produced when "
@@ -38,11 +48,18 @@ _LLM_INITIAL_USER_PROMPT = (
     "Code:\n```python\n{code}\n```\n\n"
     "Error output:\n{error}\n\n"
     "Provide a corrected Python script that will run successfully. "
-    "Return only the code."
+    "Remember to end with '# SCORE: 1.0' if the fix only addresses"
+    " placeholders "
+    "or dataset "
+    "imports, otherwise end with '# SCORE: 0.5'. Return only the code."
 )
 _LLM_RETRY_PROMPT = (
     "That attempt still failed. The latest error output was:\n{error}\n\n"
-    "Please try again and return only the updated Python script."
+    "Please try again and return only the updated Python script. Remove "
+    "imports"
+    "of datasets if necessary so the code can run independently. Remember to"
+    " include a "
+    "trailing '# SCORE: 1.0' or '# SCORE: 0.5' line as instructed."
 )
 
 
@@ -189,11 +206,13 @@ class ReproducibilityMetric(Metric):
             )
         return False, error_output
 
-    def _attempt_llm_fix(self, code_block: str, error_output: str) -> bool:
+    def _attempt_llm_fix(
+        self, code_block: str, error_output: str
+    ) -> tuple[bool, Optional[float]]:
         client = self._get_purdue_client()
         if client is None:
             _LOGGER.debug("Purdue client unavailable; skipping LLM fixes")
-            return False
+            return False, None
 
         error_text = error_output or "Process failed without error output."
         messages: list[Dict[str, str]] = [
@@ -221,7 +240,7 @@ class ReproducibilityMetric(Metric):
                     attempt,
                     exc,
                 )
-                return False
+                return False, None
 
             messages.append({"role": "assistant", "content": response})
             candidate = self._extract_candidate_code(response)
@@ -243,7 +262,13 @@ class ReproducibilityMetric(Metric):
                 _LOGGER.info(
                     "LLM fix succeeded on attempt %d", attempt
                 )
-                return True
+                score = self._extract_llm_score(candidate)
+                if score is None:
+                    _LOGGER.debug(
+                        "LLM fix missing score comment; defaulting to "
+                        "logic score"
+                    )
+                return True, score
 
             messages.append(
                 {
@@ -254,7 +279,7 @@ class ReproducibilityMetric(Metric):
 
         _LOGGER.debug("LLM unable to repair code after %d attempts",
                       _LLM_MAX_ATTEMPTS)
-        return False
+        return False, None
 
     def _extract_candidate_code(self, llm_response: str) -> str:
         match = re.search(
@@ -312,8 +337,14 @@ class ReproducibilityMetric(Metric):
                 return 1.0
             if self._has_placeholders(block.code):
                 _LOGGER.debug("Skipping LLM fix due to placeholders in block")
-                continue
-            if self._attempt_llm_fix(block.code, error_output):
+                return 1.0
+            llm_success, classification = self._attempt_llm_fix(
+                block.code,
+                error_output,
+            )
+            if llm_success:
+                if classification in {1.0, 0.5}:
+                    return classification
                 return 0.5
 
         _LOGGER.debug("All demo blocks failed to run after LLM attempts")
@@ -349,6 +380,17 @@ class ReproducibilityMetric(Metric):
 
     def _has_placeholders(self, text: str) -> bool:
         return any(pattern.search(text) for pattern in _PLACEHOLDER_PATTERNS)
+
+    def _extract_llm_score(self, candidate_code: str) -> Optional[float]:
+        for line in reversed(candidate_code.splitlines()):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            match = re.search(r"#\s*SCORE\s*[:=]\s*(1\.0|0\.5)\s*$", stripped)
+            if match:
+                return float(match.group(1))
+            break
+        return None
 
 
 def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:

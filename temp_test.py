@@ -33,21 +33,21 @@ metric = TreeScoreMetric()
 
 print()
 print(f"DeepSeek-OCR Test")
-url_record = {"hf_url": "https://huggingface.co/deepseek-ai/DeepSeek-OCR"}
+url_record = {"hf_url": "https://huggingface.co/deepseek-ai/DeepSeek-V3.2-Exp"}
 score = metric.compute(url_record)
 _LOGGER.info("TreeScore for %s: %.3f", url_record.get("hf_url"), float(score))
 print(f"TreeScore for {url_record['hf_url']}: {score}")
 print()
 
-print(f"Google BERT Test")
-url_record = {"hf_url": "https://huggingface.co/google-bert/bert-base-uncased"}
-score = metric.compute(url_record)
-_LOGGER.info("TreeScore for %s: %.3f", url_record.get("hf_url"), float(score))
-print(f"TreeScore for {url_record['hf_url']}: {score}")
-print()
+# print(f"Google BERT Test")
+# url_record = {"hf_url": "https://huggingface.co/google-bert/bert-base-uncased"}
+# score = metric.compute(url_record)
+# _LOGGER.info("TreeScore for %s: %.3f", url_record.get("hf_url"), float(score))
+# print(f"TreeScore for {url_record['hf_url']}: {score}")
+# print()
 
-print(f"Nanonets OCR2 3B Test")
-url_record = {"hf_url": "https://huggingface.co/nanonets/Nanonets-OCR2-3B"}
-score = metric.compute(url_record)
-_LOGGER.info("TreeScore for %s: %.3f", url_record.get("hf_url"), float(score))
-print(f"TreeScore for {url_record['hf_url']}: {score}")
+# print(f"Nanonets OCR2 3B Test")
+# url_record = {"hf_url": "https://huggingface.co/nanonets/Nanonets-OCR2-3B"}
+# score = metric.compute(url_record)
+# _LOGGER.info("TreeScore for %s: %.3f", url_record.get("hf_url"), float(score))
+# print(f"TreeScore for {url_record['hf_url']}: {score}")

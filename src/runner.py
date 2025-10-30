@@ -227,7 +227,7 @@ def run_pytest(additional_args: Optional[Sequence[str]] = None) -> int:
 def dispatch(argv: Sequence[str]) -> int:
     """Route ./run invocations to the appropriate helper."""
     if len(argv) < 2:
-        print("Usage: ./run <install|test|pytest|URL_FILE>", file=sys.stderr)
+        print("Usage: ./run <install|test|pytest|web|URL_FILE>", file=sys.stderr)
         return 1
 
     command = argv[1]
@@ -244,6 +244,23 @@ def dispatch(argv: Sequence[str]) -> int:
     if command == "pytest":
         configure_logging()
         return run_pytest(argv[2:])
+
+    if command == "web":
+        from .webapp import create_app
+
+        host = os.environ.get("ACME_WEB_HOST", "127.0.0.1")
+        port_raw = os.environ.get("ACME_WEB_PORT", "5000")
+        debug_mode = os.environ.get("FLASK_DEBUG") == "1"
+        try:
+            port = int(port_raw)
+        except ValueError:
+            print(f"Invalid ACME_WEB_PORT value: {port_raw}", file=sys.stderr)
+            return 1
+
+        configure_logging()
+        app = create_app()
+        app.run(host=host, port=port, debug=debug_mode)
+        return 0
 
     validate_runtime_environment()
     configure_logging()

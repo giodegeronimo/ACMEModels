@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" aria-labelledby="license-heading">
+    <div class="panel-header">
+        <h2 id="license-heading">License Compatibility</h2>
+        <p>Evaluate whether fine-tuning is permissible for a model and repository pair.</p>
+    </div>
+    <form id="license-form" aria-describedby="license-help">
+        <p id="license-help" class="form-help">
+            Provide either a model ID or an explicit model license in SPDX format.
+        </p>
+        <label for="repo-license">GitHub project license (SPDX)</label>
+        <input id="repo-license" name="repo_license" type="text" required placeholder="e.g. mit">
+
+        <label for="model-id">Model ID (optional)</label>
+        <input id="model-id" name="model_id" type="text" placeholder="acme/solar-safeguard">
+
+        <label for="model-license">Model license override (optional)</label>
+        <input id="model-license" name="model_license" type="text" placeholder="e.g. apache-2.0">
+
+        <button type="submit">Check compatibility</button>
+        <p id="license-status" role="status" aria-live="polite" class="status-message" hidden></p>
+    </form>
+</section>
+{% endblock %}

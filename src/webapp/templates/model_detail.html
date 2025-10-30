@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" aria-labelledby="model-heading" data-model-id="{{ model.id }}">
+    <div class="panel-header">
+        <h2 id="model-heading">{{ model.name }}</h2>
+        <p>{{ model.description }}</p>
+    </div>
+    <dl class="detail-grid">
+        <div>
+            <dt>Model ID</dt>
+            <dd><code>{{ model.id }}</code></dd>
+        </div>
+        <div>
+            <dt>Owner</dt>
+            <dd>{{ model.owner }}</dd>
+        </div>
+        <div>
+            <dt>Vetted Status</dt>
+            <dd>
+                {% if model.vetted %}
+                    <span class="status status--success" role="status">Vetted</span>
+                {% else %}
+                    <span class="status status--warning" role="status">Pending review</span>
+                {% endif %}
+            </dd>
+        </div>
+        <div>
+            <dt>License</dt>
+            <dd>{{ model.license|upper }}</dd>
+        </div>
+        <div>
+            <dt>Model Card</dt>
+            <dd><a href="{{ model.card_url }}" rel="noopener" target="_blank">Open card</a></dd>
+        </div>
+        <div>
+            <dt>Artifact Size</dt>
+            <dd>{{ "%.1f"|format(model.size_mb) }} MB</dd>
+        </div>
+        <div>
+            <dt>Tags</dt>
+            <dd>
+                {% for tag in model.tags %}
+                    <span class="chip">{{ tag }}</span>
+                {% endfor %}
+            </dd>
+        </div>
+        <div>
+            <dt>Updated</dt>
+            <dd>{{ model.updated_at | datetimeformat }}</dd>
+        </div>
+    </dl>
+</section>
+
+<section class="panel" aria-labelledby="metrics-heading">
+    <div class="panel-header">
+        <h2 id="metrics-heading">Quality Metrics</h2>
+    </div>
+    <table class="data-table" aria-describedby="metrics-heading">
+        <thead>
+            <tr>
+                <th scope="col">Metric</th>
+                <th scope="col">Score</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for metric, value in model.metrics.items() %}
+            <tr>
+                <td>{{ metric }}</td>
+                <td>{{ "%.2f"|format(value) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="panel" aria-labelledby="lineage-heading">
+    <div class="panel-header">
+        <h2 id="lineage-heading">Lineage Graph</h2>
+        <p>Relationships are derived from config metadata and ingestion history.</p>
+    </div>
+    <div id="lineage-container" class="lineage" aria-live="polite">
+        <p class="status-message">Loading lineage…</p>
+    </div>
+</section>
+
+<section class="panel" aria-labelledby="size-heading">
+    <div class="panel-header">
+        <h2 id="size-heading">Size Cost Estimate</h2>
+    </div>
+    <div id="size-cost-container" class="size-cost" aria-live="polite">
+        <p class="status-message">Calculating download footprint…</p>
+    </div>
+</section>
+{% endblock %}

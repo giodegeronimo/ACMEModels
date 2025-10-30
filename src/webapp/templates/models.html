@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" aria-labelledby="models-heading">
+    <div class="panel-header">
+        <h2 id="models-heading">Model Directory</h2>
+        <p>Browse ACME-approved and third-party models side-by-side.</p>
+    </div>
+    <form id="model-search-form" class="form-inline" role="search" aria-label="Model search">
+        <label for="search-query" class="visually-hidden">Search by name or card regex</label>
+        <input id="search-query" name="q" type="search" placeholder="Regex search (e.g. .*safeguard)" aria-describedby="search-help">
+        <button type="submit">Search</button>
+        <p id="search-help" class="form-help">
+            Supports case-insensitive regular expressions across model names and cards.
+        </p>
+    </form>
+    <div class="table-container" role="region" aria-live="polite">
+        <table class="data-table" aria-describedby="models-heading">
+            <thead>
+                <tr>
+                    <th scope="col">Model</th>
+                    <th scope="col">Owner</th>
+                    <th scope="col">License</th>
+                    <th scope="col">Vetted</th>
+                    <th scope="col">Size (MB)</th>
+                    <th scope="col">Updated</th>
+                </tr>
+            </thead>
+            <tbody id="model-table-body">
+            </tbody>
+        </table>
+        <p id="models-status" role="status" aria-live="polite" class="status-message">Loading models…</p>
+        <div class="pagination-controls">
+            <button type="button" id="load-more" disabled>Load more</button>
+        </div>
+    </div>
+    <noscript>
+        <p class="alert alert--warning" role="alert">JavaScript is required to load model listings dynamically.</p>
+    </noscript>
+</section>
+{% endblock %}

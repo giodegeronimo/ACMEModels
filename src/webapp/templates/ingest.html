@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" aria-labelledby="ingest-heading">
+    <div class="panel-header">
+        <h2 id="ingest-heading">Request Model Ingestion</h2>
+        <p>Submit a public HuggingFace model for review. Scores must be ≥ 0.5.</p>
+    </div>
+    <form id="ingest-form" novalidate aria-describedby="ingest-desc">
+        <p id="ingest-desc" class="form-help">
+            Provide a summary for reviewers and the scores exported from the CLI.
+        </p>
+        <fieldset>
+            <legend>Model Details</legend>
+            <label for="model-name">Model name</label>
+            <input id="model-name" name="name" type="text" required placeholder="e.g. openai/whisper-tiny">
+
+            <label for="model-url">HuggingFace URL</label>
+            <input id="model-url" name="source_url" type="url" inputmode="url" required placeholder="https://huggingface.co/...">
+
+            <label for="submitted-by">Submitted by</label>
+            <input id="submitted-by" name="submitted_by" type="text" placeholder="Your ACME username">
+        </fieldset>
+
+        <fieldset>
+            <legend>Quality Metrics (0.00 – 1.00)</legend>
+            {% set metrics = [
+                ("net_score", "Net score"),
+                ("ramp_up_time", "Ramp up time"),
+                ("bus_factor", "Bus factor"),
+                ("performance_claims", "Performance claims"),
+                ("license", "License compliance"),
+                ("size_score", "Size score"),
+                ("dataset_and_code_score", "Dataset & code score"),
+            ] %}
+            {% for metric_id, label in metrics %}
+                <label for="{{ metric_id }}">{{ label }}</label>
+                <input id="{{ metric_id }}" name="metrics[{{ metric_id }}]" type="number" min="0" max="1" step="0.01" required>
+            {% endfor %}
+        </fieldset>
+
+        <button type="submit">Submit request</button>
+        <p id="ingest-status" role="status" aria-live="polite" class="status-message" hidden></p>
+    </form>
+</section>
+{% endblock %}

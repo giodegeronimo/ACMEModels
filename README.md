@@ -67,6 +67,26 @@ The CLI writes one NDJSON line per model. A representative record looks like:
 
 Fields absent from a manifest remain unspecified in the output. Numerical values fall within `[0, 1]`, and latencies are reported in milliseconds.
 
+## Web UI (Prototype)
+
+A Flask-powered prototype user interface is available for browsing the registry and exercising the REST endpoints.
+
+```bash
+LOG_FILE=/tmp/acme-web.log ./run web
+```
+
+By default the server listens on `http://127.0.0.1:5000`. Override with the environment variables `ACME_WEB_HOST` and `ACME_WEB_PORT`. The UI surfaces the following REST resources:
+
+- `/api/models` – paginated directory with optional regex filtering (`q` parameter).
+- `/api/models/<model_id>` – detailed model metadata.
+- `/api/models/<model_id>/lineage` – simplified lineage graph derived from config metadata.
+- `/api/models/<model_id>/size-cost` – download footprint heuristics.
+- `/api/models/ingest` – submit a HuggingFace model for ingestion (requires all non-latency metrics ≥ 0.5).
+- `/api/license-check` – evaluate GitHub and model license compatibility for fine-tuning plus inference.
+- `/api/reset` – restore the registry to its default, empty state.
+
+The HTML templates follow WCAG 2.1 AA guidance, include skip links, and are keyboard navigable. Front-end scripts populate dynamic content and degrade gracefully if JavaScript is disabled.
+
 ## Running Tests
 
 Execute the curated test suite with coverage summary:
@@ -80,6 +100,10 @@ For full pytest output, use:
 ```bash
 GITHUB_TOKEN=ghp_your_token LOG_FILE=/tmp/acme-test.log ./run pytest -k "pattern"
 ```
+
+### Web UI Tests
+
+Unit tests for the Flask views and API live under `tests/web`. A Selenium smoke test is included; enable it by setting `SELENIUM_BROWSER` (e.g., `chrome` or `firefox`) and ensuring the corresponding WebDriver binary is on `PATH`.
 
 ## Logging
 

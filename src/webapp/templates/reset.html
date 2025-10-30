@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" aria-labelledby="reset-heading">
+    <div class="panel-header">
+        <h2 id="reset-heading">Reset Environment</h2>
+        <p>Restore the registry to a pristine state with default ACME models.</p>
+    </div>
+    <p class="alert alert--info" role="alert">
+        This action clears transient ingestion requests and reloads baseline models.
+        Use only for demos and local testing.
+    </p>
+    <button id="reset-button" type="button" aria-describedby="reset-feedback">Reset registry</button>
+    <p id="reset-feedback" role="status" aria-live="assertive" class="status-message" hidden></p>
+</section>
+{% endblock %}

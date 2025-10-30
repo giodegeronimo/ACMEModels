@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" aria-labelledby="dashboard-heading">
+    <div class="panel-header">
+        <h2 id="dashboard-heading">Registry Overview</h2>
+        <p class="lead-text">Monitor vetted assets, ingestion pipelines, and license guardrails.</p>
+    </div>
+    <div class="grid grid--stats" role="list" aria-label="Summary statistics">
+        <article class="stat-card" role="listitem">
+            <h3>Total Models</h3>
+            <p class="stat-value" data-testid="total-models">{{ stats.total_models }}</p>
+        </article>
+        <article class="stat-card" role="listitem">
+            <h3>Vetted</h3>
+            <p class="stat-value" data-testid="vetted-count">{{ stats.vetted }}</p>
+        </article>
+        <article class="stat-card" role="listitem">
+            <h3>Unvetted</h3>
+            <p class="stat-value" data-testid="unvetted-count">{{ stats.unvetted }}</p>
+        </article>
+        <article class="stat-card" role="listitem">
+            <h3>Proprietary</h3>
+            <p class="stat-value" data-testid="proprietary-count">{{ stats.proprietary }}</p>
+        </article>
+        <article class="stat-card" role="listitem">
+            <h3>Public</h3>
+            <p class="stat-value" data-testid="public-count">{{ stats.public }}</p>
+        </article>
+    </div>
+</section>
+
+<section class="panel" aria-labelledby="ingest-heading">
+    <div class="panel-header">
+        <h2 id="ingest-heading">Recent Ingestion Requests</h2>
+        <p>Requests must meet minimum metric thresholds before packaging.</p>
+    </div>
+    {% if ingest_requests %}
+    <table class="data-table" aria-describedby="ingest-heading">
+        <thead>
+            <tr>
+                <th scope="col">Model Name</th>
+                <th scope="col">Submitted By</th>
+                <th scope="col">Status</th>
+                <th scope="col">Submitted</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for request_item in ingest_requests %}
+            <tr>
+                <td>{{ request_item.name }}</td>
+                <td>{{ request_item.submitted_by }}</td>
+                <td><span class="status status--queued">{{ request_item.status }}</span></td>
+                <td>{{ request_item.submitted_at | datetimeformat }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p role="status" aria-live="polite">No ingestion requests submitted yet.</p>
+    {% endif %}
+</section>
+
+<section class="panel" aria-labelledby="quick-actions-heading">
+    <div class="panel-header">
+        <h2 id="quick-actions-heading">Quick Actions</h2>
+    </div>
+    <div class="grid grid--actions">
+        <a class="action-card" href="{{ url_for('ui.models_directory') }}">
+            <h3>Explore Registry</h3>
+            <p>Search and filter all models. Supports regex over names and cards.</p>
+        </a>
+        <a class="action-card" href="{{ url_for('ui.request_ingest') }}">
+            <h3>Request Ingestion</h3>
+            <p>Submit HuggingFace models that meet our minimum quality thresholds.</p>
+        </a>
+        <a class="action-card" href="{{ url_for('ui.license_check_form') }}">
+            <h3>License Compatibility</h3>
+            <p>Verify GitHub and model licenses for fine-tuning and inference use.</p>
+        </a>
+    </div>
+</section>
+{% endblock %}

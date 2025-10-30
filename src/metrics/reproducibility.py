@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import logging
 import re
 import subprocess
@@ -158,23 +157,17 @@ class ReproducibilityMetric(Metric):
         if not dedented:
             return False, "Code block is empty after dedent"
 
-        tmp_path: Optional[Path] = None
         try:
-            with tempfile.NamedTemporaryFile(
-                "w",
-                suffix=".py",
-                delete=False,
-                encoding="utf-8",
-            ) as handle:
-                tmp_path = Path(handle.name)
-                handle.write(dedented)
+            with tempfile.TemporaryDirectory() as tmpdir:
+                snippet_path = Path(tmpdir) / "readme_demo.py"
+                snippet_path.write_text(dedented, encoding="utf-8")
 
-            completed = subprocess.run(
-                [sys.executable, str(tmp_path)],
-                capture_output=True,
-                text=True,
-                timeout=_EXECUTION_TIMEOUT_SECONDS,
-            )
+                completed = subprocess.run(
+                    [sys.executable, str(snippet_path)],
+                    capture_output=True,
+                    text=True,
+                    timeout=_EXECUTION_TIMEOUT_SECONDS,
+                )
         except subprocess.TimeoutExpired:
             return False, (
                 f"Execution timed out after {_EXECUTION_TIMEOUT_SECONDS} "
@@ -182,10 +175,6 @@ class ReproducibilityMetric(Metric):
             )
         except Exception as exc:  # pragma: no cover - defensive guard
             return False, f"Execution failed: {exc}"
-        finally:
-            if tmp_path is not None:
-                with contextlib.suppress(OSError):
-                    tmp_path.unlink(missing_ok=True)
 
         if completed.returncode == 0:
             return True, ""
@@ -243,7 +232,8 @@ class ReproducibilityMetric(Metric):
                 messages.append(
                     {
                         "role": "user",
-                        "content": _LLM_RETRY_PROMPT.format(error=current_error),
+                        "content":
+                            _LLM_RETRY_PROMPT.format(error=current_error),
                     }
                 )
                 continue
@@ -262,7 +252,8 @@ class ReproducibilityMetric(Metric):
                 }
             )
 
-        _LOGGER.debug("LLM unable to repair code after %d attempts", _LLM_MAX_ATTEMPTS)
+        _LOGGER.debug("LLM unable to repair code after %d attempts",
+                      _LLM_MAX_ATTEMPTS)
         return False
 
     def _extract_candidate_code(self, llm_response: str) -> str:

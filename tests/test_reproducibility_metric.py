@@ -21,7 +21,7 @@ class _FakePurdueClient:
         self._responses: List[str] = list(responses)
         self._call_count = 0
 
-    def llm(self, prompt=None, *, messages=None, **kwargs) -> str:  # type: ignore[override]
+    def llm(self, prompt=None, *, messages=None, **kwargs) -> str:
         if not self._responses:
             return ""
         index = min(self._call_count, len(self._responses) - 1)

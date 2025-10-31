@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional, cast
 
 import pytest
 
+from src.clients.hf_client import HFClient
 from src.metrics import tree_score
 
 
@@ -51,7 +52,8 @@ class _FakeHFClient:
 
 
 def _metric(hf: Optional[_FakeHFClient] = None) -> tree_score.TreeScoreMetric:
-    return tree_score.TreeScoreMetric(hf_client=hf or _FakeHFClient())
+    client = cast(HFClient, hf or _FakeHFClient())
+    return tree_score.TreeScoreMetric(hf_client=client)
 
 
 def test_tree_score_fail_stub_returns_known_value(
@@ -89,7 +91,11 @@ def test_tree_score_no_parents_falls_back_to_target_score(
         return 0.42
 
     monkeypatch.setattr(tree_score, "_discover_parents", lambda *_, **__: [])
-    monkeypatch.setattr(tree_score, "_compute_parent_net_score", _fake_parent_score)
+    monkeypatch.setattr(
+        tree_score,
+        "_compute_parent_net_score",
+        _fake_parent_score,
+    )
     metric = _metric()
 
     value = metric.compute({"hf_url": "https://huggingface.co/org/model"})
@@ -118,7 +124,11 @@ def test_tree_score_no_ancestor_scores_falls_back_to_default(
     monkeypatch.setattr(
         tree_score, "_discover_parents", lambda *_: ["parent/model"]
     )
-    monkeypatch.setattr(tree_score, "_collect_ancestors_with_depth", _fake_collect)
+    monkeypatch.setattr(
+        tree_score,
+        "_collect_ancestors_with_depth",
+        _fake_collect,
+    )
     monkeypatch.setattr(tree_score, "_compute_parent_net_score", _fake_score)
     metric = _metric()
 
@@ -165,7 +175,11 @@ def test_tree_score_success_weights_ancestors(
         "_discover_parents",
         lambda *_: ["owner/base", "owner/alt"],
     )
-    monkeypatch.setattr(tree_score, "_collect_ancestors_with_depth", _fake_collect)
+    monkeypatch.setattr(
+        tree_score,
+        "_collect_ancestors_with_depth",
+        _fake_collect,
+    )
     monkeypatch.setattr(tree_score, "_compute_parent_net_score", _fake_score)
     metric = _metric()
 
@@ -195,7 +209,10 @@ def test_collect_ancestors_with_depth_handles_cycles(
     visited = {"seed/model"}
 
     result = tree_score._collect_ancestors_with_depth(
-        _FakeHFClient(), "root/base", max_depth=2, visited=visited
+        cast(HFClient, _FakeHFClient()),
+        "root/base",
+        max_depth=2,
+        visited=visited,
     )
 
     assert result == {
@@ -224,7 +241,8 @@ def test_discover_parents_aggregates_metadata_and_readme() -> None:
     hf = _FakeHFClient(info=info, readme=readme)
 
     parents = tree_score._discover_parents(
-        hf, "https://huggingface.co/org/model"
+        cast(HFClient, hf),
+        "https://huggingface.co/org/model",
     )
 
     assert parents == [
@@ -245,7 +263,8 @@ def test_discover_parents_handles_failures() -> None:
     )
 
     parents = tree_score._discover_parents(
-        hf, "https://huggingface.co/org/model"
+        cast(HFClient, hf),
+        "https://huggingface.co/org/model",
     )
 
     assert parents == []
@@ -300,10 +319,14 @@ def test_extract_hf_url_and_slug_helpers() -> None:
 
 def test_to_numeric_metric_variants() -> None:
     assert tree_score._to_numeric_metric(1) == 1.0
-    assert tree_score._to_numeric_metric({"desktop_pc": 0.9, "edge": 0.4}) == 0.9
+    assert tree_score._to_numeric_metric(
+        {"desktop_pc": 0.9, "edge": 0.4}
+    ) == 0.9
     assert tree_score._to_numeric_metric({"mobile": 0.3, "tablet": 0.7}) == 0.5
-    assert tree_score._to_numeric_metric({"mobile": "n/a"}) is None
-    assert tree_score._to_numeric_metric("not numeric") is None
+    assert tree_score._to_numeric_metric(
+        cast(Any, {"mobile": "n/a"})
+    ) is None
+    assert tree_score._to_numeric_metric(cast(Any, "not numeric")) is None
 
 
 def test_compute_parent_net_score_averages_metrics(

@@ -331,8 +331,7 @@ class ReviewednessMetric(Metric):
             z = 2.576
         else:
             # Approximate using normal distribution
-            from math import sqrt
-            z = sqrt(2) * 1.96  # Fallback
+            z = math.sqrt(2) * 1.96  # Fallback
 
         # Wilson score interval formula
         denominator = 1 + (z * z) / n_eff

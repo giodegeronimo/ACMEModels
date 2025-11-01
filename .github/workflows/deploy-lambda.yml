@@ -85,8 +85,10 @@ jobs:
           APPSTR=$(jq -Rs . < appspec.json)
 
           # 3) Build the --revision payload using the encoded string
-          jq -n --arg content "$APPSTR" '{AppSpecContent:{Content:($content|fromjson|tostring)}}' > revision.json
-          # The fromjson|tostring round-trip ensures a clean compact string
+          jq -n \
+            --arg content "$APPSTR" \
+            '{revisionType:"AppSpecContent", appSpecContent:{content:$content}}' \
+            > revision.json
 
           echo "AppSpec:"
           cat appspec.json
@@ -100,4 +102,3 @@ jobs:
             --deployment-group-name "${CD_DG}" \
             --deployment-config-name CodeDeployDefault.LambdaCanary10Percent5Minutes \
             --revision file://revision.json
-

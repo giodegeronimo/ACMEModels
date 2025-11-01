@@ -15,6 +15,7 @@ from src.metrics.metric_result import MetricResult
 from src.metrics.performance import PerformanceMetric
 from src.metrics.ramp_up import RampUpMetric
 from src.metrics.size import SizeMetric
+from src.metrics.tree_score import TreeScoreMetric
 
 
 class MetricDispatcher:
@@ -82,4 +83,5 @@ def default_metrics() -> List[Metric]:
         DatasetQualityMetric(),
         CodeQualityMetric(),
         PerformanceMetric(),
+        TreeScoreMetric(),
     ]

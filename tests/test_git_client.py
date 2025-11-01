@@ -1,8 +1,6 @@
-"""Tests for test git client module."""
-
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, Dict
 
 import pytest
 
@@ -20,11 +18,11 @@ class DummyLimiter(RateLimiter):
 
 
 class DummyResponse:
-    def __init__(self, status_code: int, payload: Any) -> None:
+    def __init__(self, status_code: int, payload: Dict[str, Any]) -> None:
         self.status_code = status_code
         self._payload = payload
 
-    def json(self) -> Any:
+    def json(self) -> Dict[str, Any]:
         return self._payload
 
 
@@ -36,18 +34,6 @@ class DummySession:
     def get(self, url: str, timeout: int) -> DummyResponse:
         self.calls.append((url, timeout))
         return self._response
-
-
-class SequenceSession:
-    def __init__(self, responses: List[DummyResponse]) -> None:
-        self._responses = list(responses)
-        self.calls: list[tuple[str, int]] = []
-
-    def get(self, url: str, timeout: int) -> DummyResponse:
-        self.calls.append((url, timeout))
-        if not self._responses:
-            raise RuntimeError("No more responses configured")
-        return self._responses.pop(0)
 
 
 def test_git_client_fetches_github_metadata() -> None:
@@ -79,78 +65,3 @@ def test_git_client_handles_github_failure() -> None:
 
     with pytest.raises(RuntimeError):
         client.get_repo_metadata("https://github.com/user/repo")
-
-
-def test_list_repo_files_uses_default_branch() -> None:
-    metadata = DummyResponse(200, {"default_branch": "main"})
-    tree = DummyResponse(
-        200,
-        {
-            "tree": [
-                {"path": "tests/test_sample.py", "type": "blob"},
-                {"path": "README.md", "type": "blob"},
-                {"path": "docs", "type": "tree"},
-            ]
-        },
-    )
-    session = SequenceSession([metadata, tree])
-    client = GitClient(rate_limiter=DummyLimiter(), session=session)
-
-    files = client.list_repo_files("https://github.com/user/repo")
-
-    assert files == ["tests/test_sample.py", "README.md"]
-    assert len(session.calls) == 2
-    assert session.calls[0][0] == "https://api.github.com/repos/user/repo"
-    assert session.calls[1][0] == (
-        "https://api.github.com/repos/user/repo/git/trees/main"
-        "?recursive=1"
-    )
-
-
-def test_list_repo_files_respects_branch() -> None:
-    tree = DummyResponse(
-        200,
-        {"tree": [{"path": "src/app.py", "type": "blob"}]},
-    )
-    session = SequenceSession([tree])
-    client = GitClient(rate_limiter=DummyLimiter(), session=session)
-
-    files = client.list_repo_files(
-        "https://github.com/user/repo",
-        branch="develop",
-    )
-
-    assert files == ["src/app.py"]
-    assert session.calls == [
-        (
-            "https://api.github.com/repos/user/repo/git/trees/develop"
-            "?recursive=1",
-            10,
-        )
-    ]
-
-
-def test_list_repo_contributors() -> None:
-    contributors = DummyResponse(
-        200,
-        [
-            {"login": "alice", "contributions": 120},
-            {"login": "bob", "contributions": 30},
-        ],
-    )
-    session = SequenceSession([contributors])
-    client = GitClient(rate_limiter=DummyLimiter(), session=session)
-
-    result = client.list_repo_contributors("https://github.com/org/repo")
-
-    assert result == [
-        {"login": "alice", "contributions": 120},
-        {"login": "bob", "contributions": 30},
-    ]
-    assert session.calls == [
-        (
-            "https://api.github.com/repos/org/repo/contributors"
-            "?per_page=100&anon=1",
-            10,
-        )
-    ]

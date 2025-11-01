@@ -1,5 +1,3 @@
-"""Tests for test metrics module."""
-
 from __future__ import annotations
 
 from typing import Dict

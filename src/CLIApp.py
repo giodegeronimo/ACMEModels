@@ -47,6 +47,17 @@ class CLIApp:
         return 0
 
 
+def handler(event, context):
+    """AWS Lambda handler function."""
+    # Extract the URL file path from the event
+    url_file_path = event.get('url_file_path')
+    if not url_file_path:
+        raise ValueError("url_file_path is required in the event")
+
+    app = CLIApp(Path(url_file_path))
+    return app.run()
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     argument_parser = argparse.ArgumentParser(
         description=(

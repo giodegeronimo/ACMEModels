@@ -25,10 +25,11 @@ class CLIApp:
     def __init__(self, url_file: Path) -> None:
         self._url_file = url_file
 
-    def run(self) -> int:
+    def run(self, parsed_urls=None) -> int:
         # Parse manifest first so errors surface quickly.
-        parser = Parser(self._url_file)
-        parsed_urls = parser.parse()
+        if not parsed_urls:
+            parser = Parser(self._url_file)
+            parsed_urls = parser.parse()
         dispatcher = MetricDispatcher()
         metric_results = dispatcher.compute(parsed_urls)
         net_score_calculator = NetScoreCalculator()
@@ -50,12 +51,16 @@ class CLIApp:
 def handler(event, context):
     """AWS Lambda handler function."""
     # Extract the URL file path from the event
-    url_file_path = event.get('url_file_path')
-    if not url_file_path:
-        raise ValueError("url_file_path is required in the event")
-
-    app = CLIApp(Path(url_file_path))
-    return app.run()
+    hf_url = event.get('hf_url')
+    ds_url = event.get('ds_url')
+    github_url = event.get('github_url')
+    if not hf_url:
+        raise ValueError("Hugging Face URL is required")
+    parsed_urls = [{'hf_url': hf_url,
+                    'ds_url': ds_url or '',
+                    'git_url': github_url or ''}]
+    app = CLIApp()
+    return app.run(parsed_urls=parsed_urls)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

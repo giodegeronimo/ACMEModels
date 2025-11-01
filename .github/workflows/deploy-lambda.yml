@@ -65,17 +65,39 @@ jobs:
           echo "TGT=$TGT" >> $GITHUB_OUTPUT
           echo "Current=$CUR  Target=$TGT"
 
-      - name: Trigger CodeDeploy canary
+      - name: Build AppSpec & revision JSON (proper escaping)
         run: |
-          APPSPEC=$(jq -n \
+          # 1) Build the AppSpec object (regular JSON)
+          jq -n \
             --arg fn "$LAMBDA_FUNCTION" \
             --arg al "$LAMBDA_ALIAS" \
             --arg cur "${{ steps.vers.outputs.CUR }}" \
             --arg tgt "${{ steps.vers.outputs.TGT }}" \
-            '{version:0.0,Resources:[{myLambdaFunction:{Type:"AWS::Lambda::Function",Properties:{Name:$fn,Alias:$al,CurrentVersion:$cur,TargetVersion:$tgt}}}]}')
+            '{version:0.0,
+              Resources:[
+                {myLambdaFunction:{
+                  Type:"AWS::Lambda::Function",
+                  Properties:{Name:$fn, Alias:$al, CurrentVersion:$cur, TargetVersion:$tgt}
+                }}
+              ]}' > appspec.json
 
+          # 2) Convert the AppSpec to a JSON *string* for the CLI
+          APPSTR=$(jq -Rs . < appspec.json)
+
+          # 3) Build the --revision payload using the encoded string
+          jq -n --arg content "$APPSTR" '{AppSpecContent:{Content:($content|fromjson|tostring)}}' > revision.json
+          # The fromjson|tostring round-trip ensures a clean compact string
+
+          echo "AppSpec:"
+          cat appspec.json
+          echo "Revision wrapper:"
+          cat revision.json
+
+      - name: Trigger CodeDeploy canary
+        run: |
           aws deploy create-deployment \
             --application-name "${CD_APP}" \
             --deployment-group-name "${CD_DG}" \
             --deployment-config-name CodeDeployDefault.LambdaCanary10Percent5Minutes \
-            --revision "{\"AppSpecContent\":{\"Content\":\"$APPSPEC\"}}"
+            --revision file://revision.json
+

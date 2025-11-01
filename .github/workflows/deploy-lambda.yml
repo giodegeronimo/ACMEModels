@@ -81,10 +81,10 @@ jobs:
                 }}
               ]}' > appspec.json
 
-          # 2) Convert the AppSpec to a JSON *string* for the CLI
-          APPSTR=$(jq -Rs . < appspec.json)
+          # 2) Convert the AppSpec to compact JSON for the CLI
+          APPSTR=$(jq -c . < appspec.json)
 
-          # 3) Build the --revision payload using the encoded string
+          # 3) Build the --revision payload using the encoded JSON string
           jq -n \
             --arg content "$APPSTR" \
             '{revisionType:"AppSpecContent", appSpecContent:{content:$content}}' \

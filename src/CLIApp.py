@@ -59,7 +59,7 @@ def handler(event, context):
     parsed_urls = [{'hf_url': hf_url,
                     'ds_url': ds_url or '',
                     'git_url': github_url or ''}]
-    app = CLIApp()
+    app = CLIApp('temp_file_placeholder')
     return app.run(parsed_urls=parsed_urls)
 
 

@@ -387,7 +387,6 @@ def _compute_parent_net_score(repo_slug: str) -> Optional[float]:
                      metric_name, repo_slug, value)
         if numeric is not None:
             numeric_values.append(numeric)
-        print(f"[tree_score] {metric.name} for {repo_slug}: {value}")
 
     if not numeric_values:
         _LOGGER.info("No metric values available for %s; skipping", repo_slug)

@@ -123,7 +123,7 @@ class CLIApp:
 
         for index, result in enumerate(final_results):
             if result is None:
-                # Should be unreachable but keeps typing strict.
+                # Should be unreachable but keeps typing stricty.
                 final_results[index] = formatted_results.pop(0)
 
         results_list: List[Dict[str, Any]] = []

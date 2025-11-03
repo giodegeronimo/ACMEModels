@@ -98,13 +98,17 @@ jobs:
                   Properties:{Name:$fn, Alias:$al, CurrentVersion:$cur, TargetVersion:$tgt}
                 }}
               ]}' > appspec.json
-
-          # Encode AppSpec for CodeDeploy using correct lowercase keys
+      
+          # Encode AppSpec as a JSON string for CodeDeploy
           APPSTR=$(jq -Rs . < appspec.json)
-          jq -n --argjson content "$APPSTR" '{appSpecContent:{content:$content}}' > revision.json
-
+      
+          # IMPORTANT: include revisionType = AppSpecContent (and lowercase keys inside)
+          jq -n --argjson content "$APPSTR" \
+            '{revisionType:"AppSpecContent", appSpecContent:{content:$content}}' > revision.json
+      
           echo "AppSpec:" && cat appspec.json
           echo "Revision wrapper:" && cat revision.json
+
 
       - name: Trigger CodeDeploy canary
         run: |

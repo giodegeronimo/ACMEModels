@@ -7,9 +7,18 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
+
+try:
+    import boto3  # type: ignore[import-untyped]
+    from botocore.exceptions import (  # type: ignore[import-untyped]
+        BotoCoreError, ClientError)
+except ImportError:  # pragma: no cover - optional dependency
+    boto3 = None  # type: ignore[assignment]
+    BotoCoreError = ClientError = Exception
 
 from .logging_config import configure_logging
 from .metrics.net_score import NetScoreCalculator
@@ -60,6 +69,70 @@ class CLIApp:
         for record in results:
             print(to_ndjson_line(record))
         return 0
+
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_RESULTS_BUCKET = "model-directory-30861"
+_S3_CLIENT: Optional[Any] = None
+
+
+def _sanitize_model_name(model_name: str) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "_", model_name.strip())
+    sanitized = sanitized.strip("_")
+    return sanitized or "model"
+
+
+def _get_s3_client() -> Any:
+    global _S3_CLIENT
+    if boto3 is None:
+        raise RuntimeError("boto3 is required to store model results in S3.")
+    if _S3_CLIENT is None:
+        _S3_CLIENT = boto3.client("s3")
+    return _S3_CLIENT
+
+
+def _store_results_in_s3(
+    results: Sequence[Mapping[str, Any]],
+    bucket_name: str,
+) -> List[str]:
+    if not bucket_name:
+        raise ValueError(
+            "S3 bucket name is required for storing model results."
+        )
+
+    client = _get_s3_client()
+    stored_keys: List[str] = []
+
+    for record in results:
+        model_name = record.get("name")
+        if not isinstance(model_name, str) or not model_name.strip():
+            logger.warning(
+                "Skipping record without valid model name: %s",
+                record,
+            )
+            continue
+
+        object_key = f"{_sanitize_model_name(model_name)}.json"
+        try:
+            client.put_object(
+                Bucket=bucket_name,
+                Key=object_key,
+                Body=json.dumps(record).encode("utf-8"),
+                ContentType="application/json",
+            )
+            stored_keys.append(object_key)
+        except (BotoCoreError, ClientError) as error:
+            logger.exception(
+                "Failed to store results for model '%s' in bucket '%s'.",
+                model_name,
+                bucket_name,
+            )
+            raise RuntimeError(
+                f"Unable to store results for model '{model_name}' in S3."
+            ) from error
+
+    return stored_keys
 
 
 def _extract_first_value(
@@ -141,6 +214,7 @@ def _apply_runtime_configuration(event: Mapping[str, Any]) -> None:
 
     os.environ.setdefault("LOG_FILE", "/tmp/acme_models_lambda.log")
     os.environ.setdefault("LOG_LEVEL", "1")
+    os.environ.setdefault("MODEL_RESULTS_BUCKET", DEFAULT_RESULTS_BUCKET)
 
 
 def handler(
@@ -172,7 +246,13 @@ def handler(
         app = CLIApp()
         results = app.generate_results(records)
 
-        response_payload = {"records": results}
+        bucket_name = os.environ.get(
+            "MODEL_RESULTS_BUCKET",
+            DEFAULT_RESULTS_BUCKET,
+        )
+        stored_keys = _store_results_in_s3(results, bucket_name)
+
+        response_payload = {"records": results, "stored_keys": stored_keys}
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},

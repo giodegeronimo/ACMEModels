@@ -10,7 +10,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, cast
 
 try:
     import boto3  # type: ignore[import-untyped]
@@ -32,12 +32,16 @@ class CLIApp:
 
     def __init__(self, url_file: Optional[Path] = None) -> None:
         self._url_file = Path(url_file) if url_file is not None else None
+        self._new_results: List[Dict[str, Any]] = []
+        self._cached_results: List[Dict[str, Any]] = []
 
     def generate_results(
         self,
         url_records: Optional[Sequence[Dict[str, str]]] = None,
     ) -> List[Dict[str, Any]]:
         """Compute formatted metric results for the provided URL records."""
+        self._new_results = []
+        self._cached_results = []
         if url_records is None:
             if self._url_file is None:
                 raise ValueError(
@@ -48,20 +52,85 @@ class CLIApp:
 
         normalized_records = [dict(record) for record in url_records]
 
+        formatter = ResultsFormatter()
+        bucket_name = os.environ.get("MODEL_RESULTS_BUCKET")
+
+        cached_results: Dict[int, Dict[str, Any]] = {}
+        records_to_compute: List[Dict[str, str]] = []
+        compute_indices: List[int] = []
+
+        if bucket_name and boto3 is not None:
+            for index, record in enumerate(normalized_records):
+                hf_url = record.get("hf_url")
+                if not hf_url:
+                    compute_indices.append(index)
+                    records_to_compute.append(record)
+                    continue
+                model_name = formatter._resolve_model_name(hf_url)
+                try:
+                    cached = _fetch_result_from_s3(model_name, bucket_name)
+                except RuntimeError:
+                    logger.warning(
+                        "Falling back to recomputing metrics for model '%s'.",
+                        model_name,
+                    )
+                    cached = None
+                if cached is not None:
+                    cached_results[index] = cached
+                else:
+                    compute_indices.append(index)
+                    records_to_compute.append(record)
+        else:
+            records_to_compute = list(normalized_records)
+            compute_indices = list(range(len(normalized_records)))
+
         dispatcher = MetricDispatcher()
-        metric_results = dispatcher.compute(normalized_records)
+        metric_results: Sequence[Sequence[Any]] = []
+        if records_to_compute:
+            metric_results = dispatcher.compute(records_to_compute)
 
         net_score_calculator = NetScoreCalculator()
-        augmented_results = [
-            net_score_calculator.with_net_score(results)
-            for results in metric_results
-        ]
+        augmented_results: Sequence[Sequence[Any]] = []
+        if records_to_compute:
+            augmented_results = [
+                net_score_calculator.with_net_score(results)
+                for results in metric_results
+            ]
 
-        formatter = ResultsFormatter()
-        return formatter.format_records(
-            normalized_records,
-            augmented_results,
+        formatted_results = formatter.format_records(
+            records_to_compute if records_to_compute else normalized_records,
+            augmented_results if records_to_compute else metric_results,
         )
+
+        final_results: List[Optional[Dict[str, Any]]] = [None] * len(
+            normalized_records
+        )
+
+        for index, cached in cached_results.items():
+            final_results[index] = cached
+
+        if records_to_compute:
+            for index, record in zip(compute_indices, formatted_results):
+                final_results[index] = record
+                self._new_results.append(record)
+
+        if cached_results:
+            self._cached_results = [
+                cast(Dict[str, Any], final_results[index])
+                for index in sorted(cached_results.keys())
+                if final_results[index] is not None
+            ]
+
+        for index, result in enumerate(final_results):
+            if result is None:
+                # Should be unreachable but keeps typing strict.
+                final_results[index] = formatted_results.pop(0)
+
+        results_list: List[Dict[str, Any]] = []
+        for result in final_results:
+            if result is not None:
+                results_list.append(cast(Dict[str, Any], result))
+        return results_list
 
     def run(self) -> int:
         """Execute the CLI workflow and emit NDJSON to stdout."""
@@ -69,6 +138,14 @@ class CLIApp:
         for record in results:
             print(to_ndjson_line(record))
         return 0
+
+    @property
+    def new_results(self) -> Sequence[Dict[str, Any]]:
+        return list(self._new_results)
+
+    @property
+    def cached_results(self) -> Sequence[Dict[str, Any]]:
+        return list(self._cached_results)
 
 
 logger = logging.getLogger(__name__)
@@ -133,6 +210,58 @@ def _store_results_in_s3(
             ) from error
 
     return stored_keys
+
+
+def _fetch_result_from_s3(
+    model_name: str,
+    bucket_name: str,
+) -> Optional[Dict[str, Any]]:
+    if not bucket_name:
+        return None
+
+    client = _get_s3_client()
+    object_key = f"{_sanitize_model_name(model_name)}.json"
+
+    try:
+        response = client.get_object(Bucket=bucket_name, Key=object_key)
+    except (BotoCoreError, ClientError) as error:
+        if isinstance(error, ClientError):
+            error_code = error.response.get("Error", {}).get("Code")
+            if error_code in {"NoSuchKey", "404"}:
+                return None
+        logger.exception(
+            "Failed to fetch results for model '%s' from bucket '%s'.",
+            model_name,
+            bucket_name,
+        )
+        raise RuntimeError(
+            f"Unable to fetch results for model '{model_name}' from S3."
+        ) from error
+
+    body = response.get("Body")
+    if body is None:
+        logger.warning(
+            "S3 object for model '%s' in bucket '%s' has no body.",
+            model_name,
+            bucket_name,
+        )
+        return None
+
+    data = body.read()
+    if hasattr(body, "close"):
+        body.close()
+
+    try:
+        return json.loads(data.decode("utf-8"))
+    except json.JSONDecodeError as error:
+        logger.exception(
+            "Stored JSON for model '%s' in bucket '%s' is invalid.",
+            model_name,
+            bucket_name,
+        )
+        raise RuntimeError(
+            f"Stored JSON for model '{model_name}' could not be parsed."
+        ) from error
 
 
 def _extract_first_value(
@@ -250,9 +379,17 @@ def handler(
             "MODEL_RESULTS_BUCKET",
             DEFAULT_RESULTS_BUCKET,
         )
-        stored_keys = _store_results_in_s3(results, bucket_name)
+        stored_keys: List[str] = []
+        if app.new_results:
+            stored_keys = _store_results_in_s3(app.new_results, bucket_name)
 
-        response_payload = {"records": results, "stored_keys": stored_keys}
+        response_payload = {
+            "records": results,
+            "stored_keys": stored_keys,
+            "cache_hits": [
+                record.get("name") for record in app.cached_results
+            ],
+        }
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},
@@ -263,6 +400,91 @@ def handler(
         logging.getLogger(__name__).warning("Validation error: %s", error)
         return {
             "statusCode": 400,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": str(error)}),
+        }
+    except Exception as error:  # pragma: no cover - defensive guard
+        logging.getLogger(__name__).exception(
+            "Unhandled error during Lambda execution."
+        )
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": str(error)}),
+        }
+
+
+def get_model_handler(
+    event: Optional[Mapping[str, Any]],
+    context: Any,
+) -> Dict[str, Any]:
+    """AWS Lambda handler that returns cached model results from S3."""
+    del context
+    raw_event = event or {}
+
+    try:
+        if not isinstance(raw_event, Mapping):
+            raise ValueError("Event payload must be a JSON object.")
+
+        event_payload = dict(raw_event)
+
+        _apply_runtime_configuration(event_payload)
+        configure_logging()
+
+        bucket_name = os.environ.get(
+            "MODEL_RESULTS_BUCKET",
+            DEFAULT_RESULTS_BUCKET,
+        )
+
+        model_name = event_payload.get("model_name")
+        if isinstance(model_name, str):
+            model_name = model_name.strip()
+
+        resolved_name: Optional[str] = model_name if model_name else None
+        if not resolved_name:
+            records = _extract_records(event_payload)
+            if not records:
+                raise ValueError("model_name or hf_url is required.")
+            record = records[0]
+            hf_url = record.get("hf_url")
+            if not hf_url:
+                raise ValueError("model_name or hf_url is required.")
+            formatter = ResultsFormatter()
+            resolved_name = formatter._resolve_model_name(hf_url)
+
+        assert resolved_name is not None
+
+        cached = _fetch_result_from_s3(resolved_name, bucket_name)
+        if cached is None:
+            message = f"No stored results for model '{resolved_name}'."
+            return {
+                "statusCode": 404,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"error": message}),
+            }
+
+        response_payload = {
+            "record": cached,
+            "model_name": resolved_name,
+            "bucket": bucket_name,
+        }
+        return {
+            "statusCode": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps(response_payload),
+        }
+
+    except ValueError as error:
+        logging.getLogger(__name__).warning("Validation error: %s", error)
+        return {
+            "statusCode": 400,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": str(error)}),
+        }
+    except RuntimeError as error:
+        logging.getLogger(__name__).warning("Cache retrieval error: %s", error)
+        return {
+            "statusCode": 502,
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": str(error)}),
         }

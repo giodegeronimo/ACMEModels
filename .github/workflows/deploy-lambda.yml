@@ -1,23 +1,40 @@
-name: Deploy Lambda via CodeDeploy (Python 3.11)
+name: Deploy Lambdas via CodeDeploy (Python 3.11)
 
 on:
   push:
     branches: [ main ]
+
+# Avoid overlapping deploys to the same env
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   id-token: write
   contents: read
 
 env:
-  AWS_REGION: us-east-2                         # change if needed
-  LAMBDA_FUNCTION: putModel                     # exact Lambda name
+  AWS_REGION: us-east-2
+  ROLE_ARN: arn:aws:iam::963604113709:role/GitHubActionsDeployRole
   LAMBDA_ALIAS: live
-  CD_APP: acmemodels-lambda-app                 # your CodeDeploy application name
-  CD_DG: acmemodels-lambda-dg                   # your deployment group name
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Keep this if you also want to continue deploying putModel
+          - function: putModel
+            cd_app: acmemodels-lambda-app
+            cd_dg: acmemodels-lambda-dg
+          # New Lambda
+          - function: getModel
+            cd_app: acmemodels-getmodel-app
+            cd_dg: acmemodels-getmodel-dg
+
     steps:
       - uses: actions/checkout@v4
 
@@ -28,38 +45,44 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      # If you have requirements.txt, we'll vendor deps into the zip
-      - name: Install dependencies (if any)
+      # If you keep dev tools out of the function bundle, add a slim file like requirements-deploy.txt
+      - name: Install dependencies (vendor into zip)
         run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt -t .lambda_pkgs; fi
+            python -m pip install --upgrade pip
+            if [ -f requirements-deploy.txt ]; then
+              pip install -r requirements-deploy.txt -t .lambda_pkgs
+            elif [ -f requirements.txt ]; then
+              # fallback (may include dev deps; consider splitting)
+              pip install -r requirements.txt -t .lambda_pkgs
+            fi
 
-      # Bundle: site-packages first, then your src/ (so handler src.CLIApp.handler works)
       - name: Create deployment zip
         run: |
-          rm -f build/function.zip
           mkdir -p build
-          if [ -d .lambda_pkgs ]; then (cd .lambda_pkgs && zip -r ../build/function.zip . -x "*/__pycache__/*" "*.dist-info/*" ".DS_Store"); fi
-          zip -gr build/function.zip src -x "*/__pycache__/*" "*.pyc" ".DS_Store"
+          ZIP="build/${{ matrix.function }}.zip"
+          rm -f "$ZIP"
+          if [ -d .lambda_pkgs ]; then (cd .lambda_pkgs && zip -r "../${ZIP}" . -x "*/__pycache__/*" "*.dist-info/*" ".DS_Store"); fi
+          zip -gr "$ZIP" src -x "*/__pycache__/*" "*.pyc" ".DS_Store"
 
       - name: Configure AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::963604113709:role/GitHubActionsDeployRole
+          role-to-assume: ${{ env.ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Update Lambda code (publishes new version)
+      - name: Update Lambda code (publish new version)
         id: update
         run: |
           aws lambda update-function-code \
-            --function-name "${LAMBDA_FUNCTION}" \
-            --zip-file fileb://build/function.zip \
+            --function-name "${{ matrix.function }}" \
+            --zip-file "fileb://build/${{ matrix.function }}.zip" \
             --publish > update.json
+          cat update.json
 
       - name: Get current & target versions
         id: vers
         run: |
-          CUR=$(aws lambda get-alias --function-name "${LAMBDA_FUNCTION}" --name "${LAMBDA_ALIAS}" --query 'FunctionVersion' --output text)
+          CUR=$(aws lambda get-alias --function-name "${{ matrix.function }}" --name "${{ env.LAMBDA_ALIAS }}" --query 'FunctionVersion' --output text)
           TGT=$(jq -r '.Version' update.json)
           echo "CUR=$CUR" >> $GITHUB_OUTPUT
           echo "TGT=$TGT" >> $GITHUB_OUTPUT
@@ -67,10 +90,10 @@ jobs:
 
       - name: Build AppSpec & revision JSON (proper escaping)
         run: |
-          # 1) Build the AppSpec object (regular JSON)
+          # Build the AppSpec as an object
           jq -n \
-            --arg fn "$LAMBDA_FUNCTION" \
-            --arg al "$LAMBDA_ALIAS" \
+            --arg fn "${{ matrix.function }}" \
+            --arg al "${{ env.LAMBDA_ALIAS }}" \
             --arg cur "${{ steps.vers.outputs.CUR }}" \
             --arg tgt "${{ steps.vers.outputs.TGT }}" \
             '{version:0.0,
@@ -81,24 +104,17 @@ jobs:
                 }}
               ]}' > appspec.json
 
-          # 2) Convert the AppSpec to compact JSON for the CLI
-          APPSTR=$(jq -c . < appspec.json)
+          # Encode for CodeDeploy
+          jq -Rs . < appspec.json > appspec_str.json
+          jq -n --argjson content "$(cat appspec_str.json)" '{AppSpecContent:{Content:$content}}' > revision.json
 
-          # 3) Build the --revision payload using the encoded JSON string
-          jq -n \
-            --arg content "$APPSTR" \
-            '{revisionType:"AppSpecContent", appSpecContent:{content:$content}}' \
-            > revision.json
-
-          echo "AppSpec:"
-          cat appspec.json
-          echo "Revision wrapper:"
-          cat revision.json
+          echo "AppSpec:" && cat appspec.json
+          echo "Revision wrapper:" && cat revision.json
 
       - name: Trigger CodeDeploy canary
         run: |
           aws deploy create-deployment \
-            --application-name "${CD_APP}" \
-            --deployment-group-name "${CD_DG}" \
+            --application-name "${{ matrix.cd_app }}" \
+            --deployment-group-name "${{ matrix.cd_dg }}" \
             --deployment-config-name CodeDeployDefault.LambdaCanary10Percent5Minutes \
             --revision file://revision.json

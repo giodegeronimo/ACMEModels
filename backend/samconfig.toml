@@ -4,10 +4,8 @@ version = 0.1
 stack_name = "acmemodels-backend"
 region = "us-east-2"
 
-# Use YOUR bucket (stop using the SAM-managed bucket)
-resolve_s3 = false
-s3_bucket = "sam-artifacts-giodegeronimo"
-s3_prefix = "acmemodels-backend"
+# Let SAM manage per-account artifact buckets automatically
+resolve_s3 = true
 
 # Capabilities
 capabilities = ["CAPABILITY_NAMED_IAM"]

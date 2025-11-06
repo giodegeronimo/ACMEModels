@@ -88,3 +88,21 @@ Logs are written to `LOG_FILE` when `LOG_LEVEL` is greater than zero. Debug logg
 ## LLM Configuration
 
 Model identifiers, temperature, and other LLM-related defaults are centralized in `src/config.py`. Update those constants if you need to target a different Purdue GenAI Studio model or adjust sampling parameters.
+
+## Deploying the Backend API
+
+The serverless API that backs the CLI lives in `backend/` and is built with the AWS SAM CLI targeting Python 3.9. To prepare a local machine for deployments:
+
+```bash
+./scripts/bootstrap-sam.sh
+```
+
+The bootstrap script verifies that the AWS CLI and SAM CLI are installed, confirms your credentials via `aws sts get-caller-identity`, and runs `sam validate` against the current template. If everything passes it prints the next commands to build and deploy.
+
+Daily workflow:
+
+1. Make sure your AWS credentials target the account that owns the stack (`acmemodels-backend` by default).
+2. From `backend/`, run `sam build --parallel` for local builds.
+3. Deploy with `sam deploy` (uses defaults from `backend/samconfig.toml`; SAM now manages artifact buckets automatically).
+
+The GitHub Actions workflow `.github/workflows/deploy.yml` performs the same steps on `main` using OIDC credentials, so you only need to run these commands locally when you want to test changes before merging.

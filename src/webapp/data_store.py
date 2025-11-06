@@ -19,6 +19,24 @@ SUPPORTED_ARTIFACT_TYPES = {"model", "dataset", "code"}
 IMPLEMENTED_ARTIFACT_TYPES = {"model"}
 
 
+def _normalize_metrics_payload(metrics: Mapping[str, Any]) -> Dict[str, Any]:
+    """Convert metric payloads into JSON-serialisable primitives with floats."""
+
+    def _normalize(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            return _normalize_metrics_payload(value)
+        if isinstance(value, list):
+            return [_normalize(item) for item in value]
+        if isinstance(value, bool) or value is None:
+            return value
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return value
+        return numeric
+
+    return {key: _normalize(value) for key, value in metrics.items()}
+
 @dataclass
 class ModelRecord:
     """Representation of a model in the registry prototype."""
@@ -37,11 +55,25 @@ class ModelRecord:
     card_url: str
     parents: List[str] = field(default_factory=list)
     children: List[str] = field(default_factory=list)
-    metrics: Dict[str, float] = field(default_factory=dict)
+    metrics: Dict[str, Any] = field(default_factory=dict)
+
+    def metric_scalar(self, key: str) -> Optional[float]:
+        """Return a metric as a float if possible, otherwise None."""
+        value = self.metrics.get(key)
+        if isinstance(value, bool):
+            return float(value)
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                return None
+        return None
 
     def to_metadata(self) -> Dict[str, Any]:
         """Return artifact metadata compatible with the OpenAPI spec."""
-        return {
+        payload = {
             "name": self.name,
             "id": self.model_id,
             "type": "model",
@@ -52,6 +84,10 @@ class ModelRecord:
             "size_mb": self.size_mb,
             "tags": list(self.tags),
         }
+        score = self.metric_scalar("net_score")
+        if score is not None:
+            payload["net_score"] = score
+        return payload
 
     def to_model_payload(self) -> Dict[str, Any]:
         """Return the legacy model payload used by the UI templates."""
@@ -447,7 +483,10 @@ class DataStore:
         tags = list(data.get("tags") or [])
         parents = list(data.get("parents") or [])
         children = list(data.get("children") or [])
-        metrics = dict(data.get("metrics") or {})
+        metrics_raw = data.get("metrics") or {}
+        if not isinstance(metrics_raw, Mapping):
+            raise ValueError("metrics must be an object.")
+        metrics = _normalize_metrics_payload(metrics_raw)
         try:
             size_mb = float(data.get("size_mb") or 0.0)
         except (TypeError, ValueError) as exc:
@@ -520,7 +559,10 @@ class DataStore:
         if "card_excerpt" in data:
             record.card_excerpt = str(data["card_excerpt"])
         if "metrics" in data:
-            record.metrics = dict(data["metrics"] or {})
+            metrics_payload = data.get("metrics") or {}
+            if not isinstance(metrics_payload, Mapping):
+                raise ValueError("metrics must be an object.")
+            record.metrics = _normalize_metrics_payload(metrics_payload)
         if "parents" in data:
             record.parents = list(data["parents"] or [])
         if "children" in data:
@@ -541,51 +583,86 @@ class DataStore:
 
         metrics = record.metrics or {}
 
-        def metric_value(key: str, default: float) -> float:
-            try:
-                return float(metrics.get(key, default))
-            except (TypeError, ValueError):
-                return float(default)
+        def scalar(key: str, fallback: float = 0.0) -> float:
+            value = metrics.get(key, fallback)
+            if isinstance(value, bool):
+                return float(value)
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, str):
+                try:
+                    return float(value)
+                except ValueError:
+                    return float(fallback)
+            return float(fallback)
 
-        size_score_value = metric_value("size_score", 0.72)
-        dataset_score = metric_value("dataset_and_code_score", 0.7)
-        latency = 0.05
+        def latency_value(key: str, fallback: float = 0.0) -> float:
+            latency_key = f"{key}_latency"
+            value = metrics.get(latency_key, fallback)
+            if isinstance(value, bool):
+                return float(value)
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, str):
+                try:
+                    return float(value)
+                except ValueError:
+                    return float(fallback)
+            return float(fallback)
 
-        size_score = {
-            "raspberry_pi": max(0.0, min(1.0, size_score_value)),
-            "jetson_nano": max(0.0, min(1.0, size_score_value * 0.95 + 0.03)),
-            "desktop_pc": max(0.0, min(1.0, size_score_value * 0.9 + 0.05)),
-            "aws_server": max(0.0, min(1.0, size_score_value * 0.85 + 0.07)),
-        }
+        size_metric = metrics.get("size_score")
+        if isinstance(size_metric, Mapping):
+            size_score: Dict[str, float] = {}
+            for device, value in size_metric.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    size_score[str(device)] = float(value)
+                elif isinstance(value, str):
+                    try:
+                        size_score[str(device)] = float(value)
+                    except ValueError:
+                        size_score[str(device)] = scalar("size_score", 0.0)
+                else:
+                    size_score[str(device)] = scalar("size_score", 0.0)
+        else:
+            size_score_value = scalar("size_score", 0.72)
+            size_score = {
+                "raspberry_pi": max(0.0, min(1.0, size_score_value)),
+                "jetson_nano": max(0.0, min(1.0, size_score_value * 0.95 + 0.03)),
+                "desktop_pc": max(0.0, min(1.0, size_score_value * 0.9 + 0.05)),
+                "aws_server": max(0.0, min(1.0, size_score_value * 0.85 + 0.07)),
+            }
 
-        return {
+        dataset_and_code = scalar("dataset_and_code_score", 0.7)
+
+        payload = {
             "name": record.name,
             "category": next(iter(record.tags), "model"),
-            "net_score": metric_value("net_score", 0.75),
-            "net_score_latency": latency,
-            "ramp_up_time": metric_value("ramp_up_time", 0.8),
-            "ramp_up_time_latency": latency,
-            "bus_factor": metric_value("bus_factor", 0.7),
-            "bus_factor_latency": latency,
-            "performance_claims": metric_value("performance_claims", 0.7),
-            "performance_claims_latency": latency,
-            "license": metric_value("license", 0.8),
-            "license_latency": latency,
-            "dataset_and_code_score": dataset_score,
-            "dataset_and_code_score_latency": latency,
-            "dataset_quality": dataset_score,
-            "dataset_quality_latency": latency,
-            "code_quality": dataset_score,
-            "code_quality_latency": latency,
-            "reproducibility": metric_value("net_score", 0.75),
-            "reproducibility_latency": latency,
-            "reviewedness": metric_value("performance_claims", 0.7),
-            "reviewedness_latency": latency,
-            "tree_score": metric_value("bus_factor", 0.7),
-            "tree_score_latency": latency,
+            "net_score": scalar("net_score", 0.0),
+            "net_score_latency": latency_value("net_score"),
+            "ramp_up_time": scalar("ramp_up_time", 0.0),
+            "ramp_up_time_latency": latency_value("ramp_up_time"),
+            "bus_factor": scalar("bus_factor", 0.0),
+            "bus_factor_latency": latency_value("bus_factor"),
+            "performance_claims": scalar("performance_claims", 0.0),
+            "performance_claims_latency": latency_value("performance_claims"),
+            "license": scalar("license", 0.0),
+            "license_latency": latency_value("license"),
+            "dataset_and_code_score": dataset_and_code,
+            "dataset_and_code_score_latency": latency_value("dataset_and_code_score"),
+            "dataset_quality": scalar("dataset_quality", dataset_and_code),
+            "dataset_quality_latency": latency_value("dataset_quality"),
+            "code_quality": scalar("code_quality", dataset_and_code),
+            "code_quality_latency": latency_value("code_quality"),
+            "reproducibility": scalar("reproducibility", scalar("net_score", 0.0)),
+            "reproducibility_latency": latency_value("reproducibility"),
+            "reviewedness": scalar("reviewedness", scalar("performance_claims", 0.0)),
+            "reviewedness_latency": latency_value("reviewedness"),
+            "tree_score": scalar("tree_score", scalar("bus_factor", 0.0)),
+            "tree_score_latency": latency_value("tree_score"),
             "size_score": size_score,
-            "size_score_latency": latency,
+            "size_score_latency": latency_value("size_score"),
         }
+        return payload
 
     def artifact_cost(
         self,
@@ -667,7 +744,13 @@ class DataStore:
 
         matches: List[Dict[str, Any]] = []
         for record in self._iter_models():
-            haystack = "\n".join((record.name, record.description, record.card_excerpt))
+            fields = [
+                record.name,
+                record.model_id,
+                record.description if isinstance(record.description, str) else str(record.description),
+                record.card_excerpt if isinstance(record.card_excerpt, str) else str(record.card_excerpt),
+            ]
+            haystack = "\n".join(str(field or "") for field in fields)
             if compiled.search(haystack):
                 matches.append(record.to_metadata())
         return matches

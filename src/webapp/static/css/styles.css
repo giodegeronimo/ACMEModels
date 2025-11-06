@@ -248,7 +248,8 @@ form {
 input[type="text"],
 input[type="url"],
 input[type="number"],
-input[type="search"] {
+input[type="search"],
+textarea {
     padding: 0.75rem;
     border: 1px solid #b9c3d4;
     border-radius: 8px;
@@ -290,6 +291,24 @@ button[disabled] {
 .status-message {
     margin-top: 1rem;
     color: var(--color-muted);
+}
+
+.metric-highlight {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 1.15rem;
+    font-weight: 600;
+}
+
+.metric-list {
+    margin: 0.25rem 0;
+    padding-left: 1.25rem;
+}
+
+.form-help--error {
+    color: var(--color-danger);
+    font-weight: 600;
 }
 
 .alert {

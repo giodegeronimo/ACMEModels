@@ -22,20 +22,14 @@
         </fieldset>
 
         <fieldset>
-            <legend>Quality Metrics (0.00 – 1.00)</legend>
-            {% set metrics = [
-                ("net_score", "Net score"),
-                ("ramp_up_time", "Ramp up time"),
-                ("bus_factor", "Bus factor"),
-                ("performance_claims", "Performance claims"),
-                ("license", "License compliance"),
-                ("size_score", "Size score"),
-                ("dataset_and_code_score", "Dataset & code score"),
-            ] %}
-            {% for metric_id, label in metrics %}
-                <label for="{{ metric_id }}">{{ label }}</label>
-                <input id="{{ metric_id }}" name="metrics[{{ metric_id }}]" type="number" min="0" max="1" step="0.01" required>
-            {% endfor %}
+            <legend>CLI Evaluation Results</legend>
+            <p class="form-help">
+                Paste the NDJSON line(s) emitted by the CLI after running your evaluation.
+                We will auto-populate all metric scores and latencies from that output.
+            </p>
+            <label for="cli-results">CLI output</label>
+            <textarea id="cli-results" name="cli_results" rows="6" required placeholder='{"name":"my-model","net_score":0.92,...}'></textarea>
+            <p id="cli-preview" class="form-help" aria-live="polite"></p>
         </fieldset>
 
         <button type="submit">Submit request</button>

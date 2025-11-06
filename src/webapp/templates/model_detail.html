@@ -29,6 +29,10 @@
             <dd>{{ model.license|upper }}</dd>
         </div>
         <div>
+            <dt>Net Score</dt>
+            <dd><span id="headline-net-score" class="metric-highlight">—</span></dd>
+        </div>
+        <div>
             <dt>Model Card</dt>
             <dd><a href="{{ model.card_url }}" rel="noopener" target="_blank">Open card</a></dd>
         </div>
@@ -60,15 +64,13 @@
             <tr>
                 <th scope="col">Metric</th>
                 <th scope="col">Score</th>
+                <th scope="col">Latency</th>
             </tr>
         </thead>
-        <tbody>
-            {% for metric, value in model.metrics.items() %}
+        <tbody id="metrics-table-body">
             <tr>
-                <td>{{ metric }}</td>
-                <td>{{ "%.2f"|format(value) }}</td>
+                <td colspan="3" id="metrics-status">Loading metrics…</td>
             </tr>
-            {% endfor %}
         </tbody>
     </table>
 </section>

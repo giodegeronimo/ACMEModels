@@ -28,6 +28,108 @@ function formatTimestamp(epochSeconds) {
     });
 }
 
+function formatScore(value) {
+    if (value === null || value === undefined || value === "") {
+        return "—";
+    }
+    const numeric = Number.parseFloat(value);
+    if (Number.isNaN(numeric)) {
+        return String(value);
+    }
+    return numeric.toFixed(2);
+}
+
+function formatLatency(value) {
+    if (value === null || value === undefined || value === "") {
+        return "—";
+    }
+    const numeric = Number.parseFloat(value);
+    if (Number.isNaN(numeric)) {
+        return String(value);
+    }
+    return `${Math.round(numeric)} ms`;
+}
+
+function normalizeMetricValue(value) {
+    if (value === null || value === undefined) {
+        return value;
+    }
+    if (Array.isArray(value)) {
+        return value.map(normalizeMetricValue);
+    }
+    if (typeof value === "object") {
+        const normalized = {};
+        for (const [key, nestedValue] of Object.entries(value)) {
+            normalized[key] = normalizeMetricValue(nestedValue);
+        }
+        return normalized;
+    }
+    if (typeof value === "boolean") {
+        return value;
+    }
+    const numeric = Number(value);
+    if (!Number.isNaN(numeric) && Number.isFinite(numeric)) {
+        return numeric;
+    }
+    return value;
+}
+
+function parseCliResults(rawText, preferredName) {
+    if (!rawText) {
+        throw new Error("CLI output is required.");
+    }
+    const lines = rawText
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    if (!lines.length) {
+        throw new Error("CLI output is required.");
+    }
+
+    const records = [];
+    for (const line of lines) {
+        try {
+            const parsed = JSON.parse(line);
+            if (parsed && typeof parsed === "object") {
+                records.push(parsed);
+            }
+        } catch (error) {
+            throw new Error("CLI output must be valid JSON (NDJSON).");
+        }
+    }
+    if (!records.length) {
+        throw new Error("No valid records found in CLI output.");
+    }
+
+    let selected = null;
+    const normalizedPreference = preferredName ? preferredName.trim().toLowerCase() : "";
+    if (normalizedPreference) {
+        selected = records.find(
+            (record) => typeof record.name === "string"
+                && record.name.trim().toLowerCase() === normalizedPreference
+        );
+    }
+    if (!selected) {
+        [selected] = records;
+    }
+
+    if (!selected || typeof selected !== "object") {
+        throw new Error("Unable to determine which CLI record to use.");
+    }
+
+    const metrics = {};
+    for (const [key, value] of Object.entries(selected)) {
+        if (key === "name" || key === "category") continue;
+        metrics[key] = normalizeMetricValue(value);
+    }
+
+    return {
+        record: selected,
+        metrics,
+        totalRecords: records.length,
+    };
+}
+
 function initModelDirectory() {
     const form = document.getElementById("model-search-form");
     const tableBody = document.getElementById("model-table-body");
@@ -53,6 +155,7 @@ function initModelDirectory() {
             row.innerHTML = `
                 <td><a href="/models/${encodeURIComponent(item.id)}">${item.name}</a></td>
                 <td>${item.owner ?? "—"}</td>
+                <td>${formatScore(item.net_score)}</td>
                 <td>${item.license?.toUpperCase?.() ?? "—"}</td>
                 <td>${item.vetted ? "Yes" : "No"}</td>
                 <td>${item.size_mb != null ? Number.parseFloat(item.size_mb).toFixed(1) : "—"}</td>
@@ -162,6 +265,83 @@ function initModelDetail() {
     const modelId = panel.getAttribute("data-model-id");
     const lineageContainer = document.getElementById("lineage-container");
     const sizeContainer = document.getElementById("size-cost-container");
+    const metricsTableBody = document.getElementById("metrics-table-body");
+    const metricsStatusCell = document.getElementById("metrics-status");
+    const netScoreHighlight = document.getElementById("headline-net-score");
+
+    const METRIC_ORDER = [
+        ["net_score", "Net Score"],
+        ["ramp_up_time", "Ramp Up Time"],
+        ["bus_factor", "Bus Factor"],
+        ["performance_claims", "Performance Claims"],
+        ["license", "License Compliance"],
+        ["dataset_and_code_score", "Dataset & Code Score"],
+        ["dataset_quality", "Dataset Quality"],
+        ["code_quality", "Code Quality"],
+        ["reproducibility", "Reproducibility"],
+        ["reviewedness", "Reviewedness"],
+        ["tree_score", "Tree Score"],
+        ["size_score", "Size Suitability"],
+    ];
+
+    const renderMetrics = (payload) => {
+        if (!metricsTableBody) return;
+        metricsTableBody.innerHTML = "";
+
+        if (!payload || typeof payload !== "object") {
+            const row = document.createElement("tr");
+            const cell = document.createElement("td");
+            cell.colSpan = 3;
+            cell.textContent = "No metric details available.";
+            row.appendChild(cell);
+            metricsTableBody.appendChild(row);
+            return;
+        }
+
+        if (netScoreHighlight) {
+            netScoreHighlight.textContent = formatScore(payload.net_score);
+        }
+
+        for (const [key, label] of METRIC_ORDER) {
+            const value = payload[key];
+            const latency = payload[`${key}_latency`];
+
+            const row = document.createElement("tr");
+            const nameCell = document.createElement("td");
+            const valueCell = document.createElement("td");
+            const latencyCell = document.createElement("td");
+
+            nameCell.textContent = label;
+
+            if (value && typeof value === "object" && !Array.isArray(value)) {
+                const list = document.createElement("ul");
+                list.className = "metric-list";
+                for (const [subKey, subValue] of Object.entries(value)) {
+                    const item = document.createElement("li");
+                    const prettyKey = subKey.replace(/_/g, " ");
+                    const strong = document.createElement("strong");
+                    strong.textContent = `${prettyKey}:`;
+                    item.appendChild(strong);
+                    item.append(` ${formatScore(subValue)}`);
+                    list.appendChild(item);
+                }
+                valueCell.appendChild(list);
+            } else {
+                valueCell.textContent = formatScore(value);
+            }
+
+            latencyCell.textContent = formatLatency(latency);
+
+            row.appendChild(nameCell);
+            row.appendChild(valueCell);
+            row.appendChild(latencyCell);
+            metricsTableBody.appendChild(row);
+        }
+    };
+
+    if (metricsStatusCell) {
+        metricsStatusCell.textContent = "Loading metrics…";
+    }
 
     const renderLineage = (payload) => {
         if (!lineageContainer) return;
@@ -254,6 +434,23 @@ function initModelDetail() {
         sizeContainer.appendChild(grid);
     };
 
+    fetchJson(`/api/artifact/model/${encodeURIComponent(modelId)}/rate`)
+        .then(renderMetrics)
+        .catch(() => {
+            if (metricsTableBody) {
+                metricsTableBody.innerHTML = "";
+                const row = document.createElement("tr");
+                const cell = document.createElement("td");
+                cell.colSpan = 3;
+                cell.textContent = "Failed to load metrics.";
+                row.appendChild(cell);
+                metricsTableBody.appendChild(row);
+            }
+            if (netScoreHighlight) {
+                netScoreHighlight.textContent = "—";
+            }
+        });
+
     fetchJson(`/api/artifact/model/${encodeURIComponent(modelId)}/lineage`)
         .then(renderLineage)
         .catch(() => {
@@ -276,28 +473,99 @@ function initIngestForm() {
     const statusEl = document.getElementById("ingest-status");
     if (!form || !statusEl) return;
 
-    const metricInputs = form.querySelectorAll("input[name^='metrics']");
+    const cliField = document.getElementById("cli-results");
+    const previewEl = document.getElementById("cli-preview");
+    let cachedCli = null;
+
+    const renderCliPreview = () => {
+        if (!previewEl) return;
+        if (!cliField || !cliField.value.trim()) {
+            previewEl.textContent = "Paste CLI output to populate metric scores automatically.";
+            previewEl.classList.remove("form-help--error");
+            cachedCli = null;
+            return;
+        }
+
+        try {
+            const parsed = parseCliResults(cliField.value, form.name.value);
+            cachedCli = parsed;
+
+            const summaryParts = [];
+            if (parsed.record.name) {
+                summaryParts.push(`Loaded metrics for ${parsed.record.name}.`);
+            }
+            if (typeof parsed.metrics.net_score !== "undefined") {
+                summaryParts.push(`Net score ${formatScore(parsed.metrics.net_score)}.`);
+            }
+            if (parsed.totalRecords > 1) {
+                summaryParts.push(`(${parsed.totalRecords} records detected; using the best match.)`);
+            }
+            previewEl.textContent = summaryParts.join(" ");
+            previewEl.classList.remove("form-help--error");
+        } catch (error) {
+            cachedCli = null;
+            previewEl.textContent = error.message;
+            previewEl.classList.add("form-help--error");
+        }
+    };
+
+    if (cliField) {
+        cliField.addEventListener("input", renderCliPreview);
+    }
+    const nameField = form.querySelector("input[name='name']");
+    if (nameField) {
+        nameField.addEventListener("input", () => {
+            if (cliField && cliField.value.trim()) {
+                renderCliPreview();
+            }
+        });
+    }
 
     form.addEventListener("submit", async (event) => {
         event.preventDefault();
         statusEl.hidden = false;
         statusEl.textContent = "Submitting request…";
 
-        const metrics = {};
-        metricInputs.forEach((input) => {
-            const key = input.name.replace("metrics[", "").replace("]", "");
-            metrics[key] = Number.parseFloat(input.value);
-        });
+        const cliText = cliField ? cliField.value : "";
+        let parsedCli = cachedCli;
+        if (!parsedCli) {
+            try {
+                parsedCli = parseCliResults(cliText, form.name.value);
+            } catch (error) {
+                statusEl.textContent = `Unable to read CLI output. ${error.message}`;
+                return;
+            }
+        }
 
         const submittedBy = form.submitted_by.value.trim();
+        let modelName = form.name.value.trim();
+        if (!modelName && parsedCli.record.name) {
+            modelName = parsedCli.record.name;
+            form.name.value = modelName;
+        }
+        if (!modelName) {
+            statusEl.textContent = "Model name is required.";
+            return;
+        }
+
+        const sourceUrl = form.source_url.value.trim();
+        if (!sourceUrl) {
+            statusEl.textContent = "HuggingFace URL is required.";
+            return;
+        }
+
         const payload = {
-            name: form.name.value.trim(),
-            url: form.source_url.value.trim(),
-            download_url: form.source_url.value.trim(),
+            name: modelName,
+            url: sourceUrl,
+            download_url: sourceUrl,
             owner: submittedBy || "external",
             submitted_by: submittedBy || undefined,
-            metrics
+            metrics: parsedCli.metrics || {},
         };
+
+        if (parsedCli.record.category) {
+            payload.tags = [parsedCli.record.category];
+        }
 
         try {
             const response = await fetchJson("/api/artifact/model", {
@@ -307,10 +575,17 @@ function initIngestForm() {
             const artifactId = response?.metadata?.id ?? "unknown";
             statusEl.textContent = `Artifact registered. ID: ${artifactId}`;
             form.reset();
+            cachedCli = null;
+            if (previewEl) {
+                previewEl.textContent = "Paste CLI output to populate metric scores automatically.";
+                previewEl.classList.remove("form-help--error");
+            }
         } catch (error) {
             statusEl.textContent = `Unable to submit request. ${error.message}`;
         }
     });
+
+    renderCliPreview();
 }
 
 function initLicenseForm() {

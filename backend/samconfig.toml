@@ -5,7 +5,6 @@ stack_name = "acmemodels-backend"
 resolve_s3 = true
 s3_prefix = "acmemodels-backend"
 region = "us-east-2"
-profile = "sam-human"
 capabilities = "CAPABILITY_IAM"
 image_repositories = []
 

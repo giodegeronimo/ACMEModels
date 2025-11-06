@@ -2,11 +2,18 @@ version = 0.1
 
 [default.deploy.parameters]
 stack_name = "acmemodels-backend"
-resolve_s3 = true
-s3_prefix = "acmemodels-backend"
 region = "us-east-2"
-capabilities = "CAPABILITY_IAM"
-image_repositories = []
 
-[default.global.parameters]
-region = "us-east-2"
+# Use YOUR bucket (stop using the SAM-managed bucket)
+resolve_s3 = false
+s3_bucket = "sam-artifacts-giodegeronimo"
+s3_prefix = "acmemodels-backend"
+
+# Capabilities
+capabilities = ["CAPABILITY_NAMED_IAM"]
+
+# CI quality-of-life: don't require interactive confirms
+confirm_changeset = false
+
+# Leave empty if you’re not deploying container images
+image_repositories = []

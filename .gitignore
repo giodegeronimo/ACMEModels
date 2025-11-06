@@ -33,7 +33,3 @@ dist/
 
 # Local environment files
 .env
-
-# SAM build artifacts
-backend/.aws-sam/
-

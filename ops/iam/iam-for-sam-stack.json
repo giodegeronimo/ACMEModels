@@ -1,0 +1,25 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ManageStackRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole","iam:DeleteRole","iam:GetRole",
+        "iam:UpdateAssumeRolePolicy","iam:AttachRolePolicy",
+        "iam:DetachRolePolicy","iam:PutRolePolicy","iam:DeleteRolePolicy"
+      ],
+      "Resource": "arn:aws:iam::963604113709:role/acmemodels-backend-*"
+    },
+    {
+      "Sid": "ManageStackManagedPolicies",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreatePolicy","iam:CreatePolicyVersion","iam:DeletePolicy",
+        "iam:DeletePolicyVersion","iam:ListPolicyVersions","iam:GetPolicy",
+        "iam:GetPolicyVersion","iam:AttachRolePolicy","iam:DetachRolePolicy"
+      ],
+      "Resource": "arn:aws:iam::963604113709:policy/acmemodels-backend-*"
+    }
+  ]
+}

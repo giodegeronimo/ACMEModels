@@ -14,7 +14,7 @@
         },
         "StringLike": {
           "token.actions.githubusercontent.com:sub": [
-            "repo:giodegeronimo/ACMEModels:ref:refs/heads/main",
+            "repo:giodegeronimo/ACMEModels:ref:refs/heads/*",
             "repo:giodegeronimo/ACMEModels:ref:refs/tags/*",
             "repo:giodegeronimo/ACMEModels:pull_request"
           ]

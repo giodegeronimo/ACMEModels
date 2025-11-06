@@ -1,0 +1,85 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CloudFormationCore",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:CreateChangeSet",
+        "cloudformation:ExecuteChangeSet",
+        "cloudformation:CreateStack",
+        "cloudformation:UpdateStack",
+        "cloudformation:DeleteStack",
+        "cloudformation:Describe*",
+        "cloudformation:List*",
+        "cloudformation:GetTemplate",
+        "cloudformation:ValidateTemplate",
+        "cloudformation:TagResource",
+        "cloudformation:UntagResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3Artifacts",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::sam-artifacts-*",
+        "arn:aws:s3:::sam-artifacts-*/*"
+      ]
+    },
+    {
+      "Sid": "LambdaAndLogs",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:*Function",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:PublishVersion",
+        "lambda:CreateAlias",
+        "lambda:UpdateAlias",
+        "lambda:Get*",
+        "lambda:List*",
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:Describe*",
+        "logs:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EventsAndAPIGW",
+      "Effect": "Allow",
+      "Action": [
+        "events:*Rule",
+        "events:PutTargets",
+        "events:RemoveTargets",
+        "events:Describe*",
+        "events:List*",
+        "apigateway:*",
+        "apigatewayv2:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "IAMPassRoleTightenLater",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PassRole",
+        "iam:GetRole",
+        "iam:CreateRole",
+        "iam:AttachRolePolicy",
+        "iam:PutRolePolicy"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

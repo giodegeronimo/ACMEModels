@@ -1,0 +1,13 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "acmemodels-backend"
+resolve_s3 = true
+s3_prefix = "acmemodels-backend"
+region = "us-east-2"
+profile = "sam-human"
+capabilities = "CAPABILITY_IAM"
+image_repositories = []
+
+[default.global.parameters]
+region = "us-east-2"

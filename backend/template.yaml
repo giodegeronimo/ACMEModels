@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Minimal Artifact API (dummy endpoint)
+
+Globals:
+  Function:
+    Runtime: python3.9
+    Timeout: 300
+    MemorySize: 128
+
+Resources:
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: ['*']
+        AllowMethods: ['GET','POST','OPTIONS']
+        AllowHeaders: ['*']
+
+  ArtifactCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/artifact_create/
+      Handler: app.lambda_handler
+      Events:
+        CreateArtifact:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: POST
+            Path: /artifact/{artifact_type}
+
+Outputs:
+  ApiUrl:
+    Description: Base URL for testing
+    Value: !Sub "https://${Api}.execute-api.${AWS::Region}.amazonaws.com"

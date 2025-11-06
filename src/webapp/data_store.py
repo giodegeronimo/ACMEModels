@@ -8,11 +8,15 @@ import math
 import re
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from urllib.parse import urlparse
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+SUPPORTED_ARTIFACT_TYPES = {"model", "dataset", "code"}
+IMPLEMENTED_ARTIFACT_TYPES = {"model"}
 
 
 @dataclass
@@ -34,6 +38,66 @@ class ModelRecord:
     parents: List[str] = field(default_factory=list)
     children: List[str] = field(default_factory=list)
     metrics: Dict[str, float] = field(default_factory=dict)
+
+    def to_metadata(self) -> Dict[str, Any]:
+        """Return artifact metadata compatible with the OpenAPI spec."""
+        return {
+            "name": self.name,
+            "id": self.model_id,
+            "type": "model",
+            "owner": self.owner,
+            "vetted": self.vetted,
+            "license": self.license_id,
+            "updated_at": self.updated_at,
+            "size_mb": self.size_mb,
+            "tags": list(self.tags),
+        }
+
+    def to_model_payload(self) -> Dict[str, Any]:
+        """Return the legacy model payload used by the UI templates."""
+        return {
+            "id": self.model_id,
+            "name": self.name,
+            "description": self.description,
+            "card_excerpt": self.card_excerpt,
+            "owner": self.owner,
+            "vetted": self.vetted,
+            "tags": list(self.tags),
+            "license": self.license_id,
+            "updated_at": self.updated_at,
+            "size_mb": self.size_mb,
+            "download_url": self.download_url,
+            "card_url": self.card_url,
+            "parents": list(self.parents),
+            "children": list(self.children),
+            "metrics": dict(self.metrics),
+        }
+
+    def to_artifact_envelope(self) -> Dict[str, Any]:
+        """Return an artifact envelope aligning with the OpenAPI schema."""
+        metadata = self.to_metadata()
+        metadata.pop("updated_at", None)
+        metadata.pop("size_mb", None)
+        metadata.pop("tags", None)
+        return {
+            "metadata": {
+                **metadata,
+                "updated_at": self.updated_at,
+                "size_mb": self.size_mb,
+                "tags": list(self.tags),
+            },
+            "data": {
+                "url": self.card_url,
+                "download_url": self.download_url,
+                "description": self.description,
+                "card_excerpt": self.card_excerpt,
+                "owner": self.owner,
+                "vetted": self.vetted,
+                "metrics": dict(self.metrics),
+                "parents": list(self.parents),
+                "children": list(self.children),
+            },
+        }
 
 
 _DEFAULT_MODELS: Tuple[ModelRecord, ...] = (
@@ -249,23 +313,486 @@ class DataStore:
         if record is None:
             return None
 
-        return {
-            "id": record.model_id,
-            "name": record.name,
-            "description": record.description,
-            "card_excerpt": record.card_excerpt,
-            "owner": record.owner,
-            "vetted": record.vetted,
-            "tags": record.tags,
-            "license": record.license_id,
-            "updated_at": record.updated_at,
-            "size_mb": record.size_mb,
-            "download_url": record.download_url,
-            "card_url": record.card_url,
-            "parents": record.parents,
-            "children": record.children,
-            "metrics": record.metrics,
+        return record.to_model_payload()
+
+    # ------------------------------------------------------------------
+    # Artifact API helpers (Phase 2 spec alignment)
+    # ------------------------------------------------------------------
+    def _normalize_type(self, artifact_type: str) -> str:
+        normalized = str(artifact_type or "").strip().lower()
+        if not normalized:
+            raise ValueError("artifact_type is required.")
+        if normalized not in SUPPORTED_ARTIFACT_TYPES:
+            raise ValueError(f"Unsupported artifact type '{artifact_type}'.")
+        return normalized
+
+    def _require_model_type(self, artifact_type: str) -> str:
+        normalized = self._normalize_type(artifact_type)
+        if normalized not in IMPLEMENTED_ARTIFACT_TYPES:
+            raise NotImplementedError(
+                f"Artifact type '{artifact_type}' is not implemented in this prototype."
+            )
+        return normalized
+
+    def _iter_models(self) -> Iterable[ModelRecord]:
+        return self._models.values()
+
+    def _wildcard_to_regex(self, pattern: str) -> re.Pattern:
+        escaped = re.escape(pattern)
+        escaped = escaped.replace(r"\*", ".*").replace(r"\?", ".")
+        return re.compile(f"^{escaped}$", re.IGNORECASE)
+
+    def list_artifacts(
+        self,
+        queries: Sequence[Mapping[str, Any]],
+        *,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> Tuple[List[Dict[str, Any]], Optional[int], int]:
+        if not queries:
+            raise ValueError("At least one artifact query must be provided.")
+
+        try:
+            limit_val = int(limit)
+        except (TypeError, ValueError):
+            limit_val = 50
+        limit_val = max(1, min(limit_val, 100))
+
+        try:
+            offset_val = int(offset)
+        except (TypeError, ValueError):
+            offset_val = 0
+        offset_val = max(0, offset_val)
+
+        matched: Dict[str, ModelRecord] = {}
+        models = list(self._iter_models())
+
+        for query in queries:
+            name_raw = str(query.get("name", "")).strip()
+            if not name_raw:
+                raise ValueError("Each artifact query must include a non-empty name.")
+
+            type_filters = query.get("types") or []
+            normalized_types = {
+                self._normalize_type(artifact_type)
+                for artifact_type in type_filters
+                if artifact_type is not None
+            }
+            if normalized_types and IMPLEMENTED_ARTIFACT_TYPES.isdisjoint(normalized_types):
+                continue
+
+            candidates = models if (not normalized_types or "model" in normalized_types) else []
+
+            if name_raw == "*":
+                for record in candidates:
+                    matched[record.model_id] = record
+                continue
+
+            matcher: re.Pattern | None = None
+            if any(ch in name_raw for ch in "*?"):
+                try:
+                    matcher = self._wildcard_to_regex(name_raw)
+                except re.error as exc:
+                    raise ValueError("Invalid wildcard expression supplied.") from exc
+
+            for record in candidates:
+                if matcher and matcher.search(record.name):
+                    matched[record.model_id] = record
+                elif not matcher and record.name.lower() == name_raw.lower():
+                    matched[record.model_id] = record
+
+        ordered = sorted(
+            matched.values(),
+            key=lambda record: (record.name.lower(), record.model_id),
+        )
+        total = len(ordered)
+        slice_end = min(offset_val + limit_val, total)
+        page = [record.to_metadata() for record in ordered[offset_val:slice_end]]
+        next_offset = slice_end if slice_end < total else None
+        return page, next_offset, total
+
+    def get_artifact(self, artifact_type: str, artifact_id: str) -> Optional[Dict[str, Any]]:
+        self._require_model_type(artifact_type)
+        record = self._models.get(artifact_id)
+        if record is None:
+            return None
+        return record.to_artifact_envelope()
+
+    def create_artifact(self, artifact_type: str, data: Mapping[str, Any]) -> Dict[str, Any]:
+        self._require_model_type(artifact_type)
+        if not isinstance(data, Mapping):
+            raise ValueError("Artifact data must be an object.")
+
+        url = str(data.get("url", "")).strip()
+        if not url:
+            raise ValueError("url is required.")
+        download_url = str(data.get("download_url") or url).strip()
+
+        name = str(data.get("name") or "").strip()
+        parsed = urlparse(url)
+        slug = Path(parsed.path.rstrip("/") or "/").name
+        if not slug:
+            slug = parsed.path.strip("/").split("/")[-1] if parsed.path else ""
+        if not name:
+            name = slug or f"{artifact_type}-{uuid.uuid4().hex[:8]}"
+
+        artifact_id = str(data.get("id") or uuid.uuid4().hex)
+        if artifact_id in self._models:
+            raise FileExistsError("Artifact exists already.")
+
+        description = str(data.get("description") or f"Ingested artifact for {name}.")
+        card_excerpt = str(data.get("card_excerpt") or "Ingested via ArtifactCreate API.")
+        owner = str(data.get("owner") or "external")
+        license_id = str(data.get("license") or "unknown")
+        tags = list(data.get("tags") or [])
+        parents = list(data.get("parents") or [])
+        children = list(data.get("children") or [])
+        metrics = dict(data.get("metrics") or {})
+        try:
+            size_mb = float(data.get("size_mb") or 0.0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("size_mb must be numeric.") from exc
+
+        record = ModelRecord(
+            model_id=artifact_id,
+            name=name,
+            description=description,
+            card_excerpt=card_excerpt,
+            owner=owner,
+            vetted=False,
+            tags=tags,
+            license_id=license_id,
+            updated_at=time.time(),
+            size_mb=size_mb,
+            download_url=download_url,
+            card_url=url,
+            parents=parents,
+            children=children,
+            metrics=metrics,
+        )
+        self._models[artifact_id] = record
+        return record.to_artifact_envelope()
+
+    def update_artifact(
+        self,
+        artifact_type: str,
+        artifact_id: str,
+        artifact: Mapping[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        self._require_model_type(artifact_type)
+        record = self._models.get(artifact_id)
+        if record is None:
+            return None
+        if not isinstance(artifact, Mapping):
+            raise ValueError("Artifact payload must be an object.")
+
+        metadata = artifact.get("metadata") or {}
+        data = artifact.get("data") or {}
+        if not isinstance(metadata, Mapping) or not isinstance(data, Mapping):
+            raise ValueError("Artifact payload must include metadata and data objects.")
+
+        incoming_id = metadata.get("id")
+        if incoming_id and incoming_id != artifact_id:
+            raise ValueError("metadata.id must match the artifact id.")
+
+        if "name" in metadata:
+            record.name = str(metadata["name"])
+        if "owner" in metadata:
+            record.owner = str(metadata["owner"])
+        if "vetted" in metadata:
+            record.vetted = bool(metadata["vetted"])
+        if "license" in metadata:
+            record.license_id = str(metadata["license"])
+        if "tags" in metadata:
+            record.tags = list(metadata["tags"] or [])
+        if "size_mb" in metadata:
+            try:
+                record.size_mb = float(metadata["size_mb"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("size_mb must be numeric.") from exc
+
+        if "url" in data:
+            record.card_url = str(data["url"])
+        if "download_url" in data:
+            record.download_url = str(data["download_url"])
+        if "description" in data:
+            record.description = str(data["description"])
+        if "card_excerpt" in data:
+            record.card_excerpt = str(data["card_excerpt"])
+        if "metrics" in data:
+            record.metrics = dict(data["metrics"] or {})
+        if "parents" in data:
+            record.parents = list(data["parents"] or [])
+        if "children" in data:
+            record.children = list(data["children"] or [])
+
+        record.updated_at = time.time()
+        self._models[artifact_id] = record
+        return record.to_artifact_envelope()
+
+    def delete_artifact(self, artifact_type: str, artifact_id: str) -> bool:
+        self._require_model_type(artifact_type)
+        return self._models.pop(artifact_id, None) is not None
+
+    def artifact_rating(self, artifact_id: str) -> Optional[Dict[str, Any]]:
+        record = self._models.get(artifact_id)
+        if record is None:
+            return None
+
+        metrics = record.metrics or {}
+
+        def metric_value(key: str, default: float) -> float:
+            try:
+                return float(metrics.get(key, default))
+            except (TypeError, ValueError):
+                return float(default)
+
+        size_score_value = metric_value("size_score", 0.72)
+        dataset_score = metric_value("dataset_and_code_score", 0.7)
+        latency = 0.05
+
+        size_score = {
+            "raspberry_pi": max(0.0, min(1.0, size_score_value)),
+            "jetson_nano": max(0.0, min(1.0, size_score_value * 0.95 + 0.03)),
+            "desktop_pc": max(0.0, min(1.0, size_score_value * 0.9 + 0.05)),
+            "aws_server": max(0.0, min(1.0, size_score_value * 0.85 + 0.07)),
         }
+
+        return {
+            "name": record.name,
+            "category": next(iter(record.tags), "model"),
+            "net_score": metric_value("net_score", 0.75),
+            "net_score_latency": latency,
+            "ramp_up_time": metric_value("ramp_up_time", 0.8),
+            "ramp_up_time_latency": latency,
+            "bus_factor": metric_value("bus_factor", 0.7),
+            "bus_factor_latency": latency,
+            "performance_claims": metric_value("performance_claims", 0.7),
+            "performance_claims_latency": latency,
+            "license": metric_value("license", 0.8),
+            "license_latency": latency,
+            "dataset_and_code_score": dataset_score,
+            "dataset_and_code_score_latency": latency,
+            "dataset_quality": dataset_score,
+            "dataset_quality_latency": latency,
+            "code_quality": dataset_score,
+            "code_quality_latency": latency,
+            "reproducibility": metric_value("net_score", 0.75),
+            "reproducibility_latency": latency,
+            "reviewedness": metric_value("performance_claims", 0.7),
+            "reviewedness_latency": latency,
+            "tree_score": metric_value("bus_factor", 0.7),
+            "tree_score_latency": latency,
+            "size_score": size_score,
+            "size_score_latency": latency,
+        }
+
+    def artifact_cost(
+        self,
+        artifact_type: str,
+        artifact_id: str,
+        include_dependencies: bool,
+    ) -> Optional[Dict[str, Any]]:
+        self._require_model_type(artifact_type)
+        record = self._models.get(artifact_id)
+        if record is None:
+            return None
+
+        result: Dict[str, Dict[str, float]] = {
+            artifact_id: {"total_cost": float(record.size_mb)}
+        }
+
+        if include_dependencies:
+            related_ids = set(record.parents + record.children)
+            total_cost = float(record.size_mb)
+            for related_id in related_ids:
+                related = self._models.get(related_id)
+                if not related:
+                    continue
+                result[related.model_id] = {
+                    "standalone_cost": float(related.size_mb),
+                    "total_cost": float(related.size_mb),
+                }
+                total_cost += float(related.size_mb)
+            result[artifact_id]["standalone_cost"] = float(record.size_mb)
+            result[artifact_id]["total_cost"] = total_cost
+
+        return result
+
+    def artifact_audit(self, artifact_type: str, artifact_id: str) -> Optional[List[Dict[str, Any]]]:
+        self._require_model_type(artifact_type)
+        record = self._models.get(artifact_id)
+        if record is None:
+            return None
+
+        now = datetime.now(timezone.utc)
+        earlier = (now - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+        now_iso = now.isoformat().replace("+00:00", "Z")
+        metadata = record.to_metadata()
+
+        return [
+            {
+                "user": {"name": "registry-daemon", "is_admin": True},
+                "date": earlier,
+                "artifact": metadata,
+                "action": "CREATE",
+            },
+            {
+                "user": {"name": "qa-automation", "is_admin": False},
+                "date": now_iso,
+                "artifact": metadata,
+                "action": "RATE",
+            },
+        ]
+
+    def search_by_name(self, name: str) -> List[Dict[str, Any]]:
+        target = str(name or "").strip().lower()
+        if not target:
+            raise ValueError("name is required.")
+
+        return [
+            record.to_metadata()
+            for record in self._iter_models()
+            if record.name.lower() == target
+        ]
+
+    def search_by_regex(self, pattern: str) -> List[Dict[str, Any]]:
+        regex_text = str(pattern or "").strip()
+        if not regex_text:
+            raise ValueError("regex is required.")
+        try:
+            compiled = re.compile(regex_text, re.IGNORECASE)
+        except re.error as exc:
+            raise ValueError("Invalid regular expression supplied.") from exc
+
+        matches: List[Dict[str, Any]] = []
+        for record in self._iter_models():
+            haystack = "\n".join((record.name, record.description, record.card_excerpt))
+            if compiled.search(haystack):
+                matches.append(record.to_metadata())
+        return matches
+
+    def component_health(self, window_minutes: int = 60, include_timeline: bool = False) -> Dict[str, Any]:
+        if window_minutes < 5 or window_minutes > 1440:
+            raise ValueError("windowMinutes must be between 5 and 1440.")
+
+        stats = self.stats()
+        now = datetime.now(timezone.utc)
+        observed = now.isoformat().replace("+00:00", "Z")
+
+        components: List[Dict[str, Any]] = [
+            {
+                "id": "artifact-store",
+                "display_name": "Artifact Store",
+                "status": "ok",
+                "observed_at": observed,
+                "description": "Stores artifact metadata and bundles.",
+                "issue_count": 0,
+                "last_event_at": observed,
+                "metrics": {
+                    "total_artifacts": stats["total_models"],
+                    "vetted": stats["vetted"],
+                    "unvetted": stats["unvetted"],
+                },
+                "issues": [],
+                "logs": [
+                    {
+                        "name": "store.log",
+                        "url": "s3://acme-artifacts/logs/store.log",
+                    }
+                ],
+            },
+            {
+                "id": "evaluation-service",
+                "display_name": "Evaluation Service",
+                "status": "ok" if stats["vetted"] >= stats["unvetted"] else "degraded",
+                "observed_at": observed,
+                "description": "Calculates model quality scores.",
+                "issue_count": 0,
+                "last_event_at": observed,
+                "metrics": {
+                    "queued_requests": len(self._ingest_requests),
+                },
+                "issues": [],
+                "logs": [
+                    {
+                        "name": "metrics.log",
+                        "url": "s3://acme-artifacts/logs/metrics.log",
+                    }
+                ],
+            },
+        ]
+
+        if include_timeline:
+            start_bucket = (now - timedelta(minutes=window_minutes)).isoformat().replace("+00:00", "Z")
+            end_bucket = now.isoformat().replace("+00:00", "Z")
+            for component in components:
+                component["timeline"] = [
+                    {
+                        "bucket": start_bucket,
+                        "value": stats["total_models"],
+                        "unit": "artifacts",
+                    },
+                    {
+                        "bucket": end_bucket,
+                        "value": stats["total_models"],
+                        "unit": "artifacts",
+                    },
+                ]
+
+        return {
+            "generated_at": observed,
+            "window_minutes": window_minutes,
+            "components": components,
+        }
+
+    def planned_tracks(self) -> Dict[str, List[str]]:
+        return {
+            "plannedTracks": [
+                "Performance track",
+                "Access control track",
+                "High assurance track",
+            ]
+        }
+
+    def simple_license_check(self, artifact_id: str, github_url: str) -> Optional[bool]:
+        record = self._models.get(artifact_id)
+        if record is None:
+            return None
+        if not github_url:
+            raise ValueError("github_url is required.")
+
+        normalized = record.license_id.lower()
+        return normalized in {"apache-2.0", "mit", "bsd-3-clause", "acme-proprietary"}
+
+    def artifact_lineage_graph(self, artifact_id: str) -> Optional[Dict[str, Any]]:
+        graph = self.lineage(artifact_id)
+        if graph is None:
+            return None
+
+        nodes = [
+            {
+                "artifact_id": node["id"],
+                "name": node["name"],
+                "source": "registry",
+                "metadata": {
+                    "license": node.get("license"),
+                    "vetted": node.get("vetted"),
+                },
+            }
+            for node in graph["nodes"]
+        ]
+
+        edges = [
+            {
+                "from_node_artifact_id": edge["from"],
+                "to_node_artifact_id": edge["to"],
+                "relationship": "derived_from",
+            }
+            for edge in graph["edges"]
+        ]
+
+        return {"nodes": nodes, "edges": edges}
 
     # ------------------------------------------------------------------
     # Ingestion

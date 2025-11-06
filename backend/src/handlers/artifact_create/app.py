@@ -1,5 +1,6 @@
 import json
 
+
 def lambda_handler(event, context):
     # Just echo the path parameter and body
     artifact_type = event.get("pathParameters", {}).get("artifact_type")
@@ -7,7 +8,7 @@ def lambda_handler(event, context):
 
     try:
         parsed = json.loads(body) if body else {}
-    except:
+    except (json.JSONDecodeError, TypeError):
         parsed = {"error": "body was not valid JSON"}
 
     return {

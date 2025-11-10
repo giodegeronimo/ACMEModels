@@ -30,6 +30,19 @@ Resources:
             Method: POST
             Path: /artifact/{artifact_type}
 
+  HealthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/health/
+      Handler: app.lambda_handler
+      Events:
+        HealthCheck:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: GET
+            Path: /health
+
 Outputs:
   ApiUrl:
     Description: Base URL for testing

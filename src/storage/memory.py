@@ -70,7 +70,7 @@ class InMemoryArtifactRepository(ArtifactRepository):
         artifacts = list(self._artifacts.values())
         matched: List[Artifact]
         if not queries:
-            matched = list(artifacts)
+            matched = artifacts
         else:
             seen_ids: set[str] = set()
             matched = []

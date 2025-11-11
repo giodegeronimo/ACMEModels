@@ -1,0 +1,8 @@
+[flake8]
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    build,
+    dist,
+    backend/.aws-sam

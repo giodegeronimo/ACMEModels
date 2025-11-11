@@ -69,12 +69,11 @@ def _download_huggingface_repo(
 
     temp_dir = Path(tempfile.mkdtemp(prefix="hf_repo_"))
     try:
-        snapshot_path = snapshot_download(  # type: ignore[arg-type]
+        snapshot_path = snapshot_download(
             repo_id=repo_id,
             repo_type="model",
             local_dir=temp_dir / "repo",
             cache_dir=temp_dir / "cache",
-            local_dir_use_symlinks=False,
         )
     except Exception as exc:  # noqa: BLE001
         shutil.rmtree(temp_dir, ignore_errors=True)

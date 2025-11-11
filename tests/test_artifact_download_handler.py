@@ -40,22 +40,23 @@ class _FakeStore:
 
 def _event(
     artifact_id: str = "1234abcd",
+    *,
+    query: Dict[str, str] | None = None,
 ) -> Dict[str, Any]:
     return {
         "pathParameters": {
             "id": artifact_id,
         },
         "headers": {"X-Authorization": "token"},
+        "queryStringParameters": query,
     }
 
 
 def test_download_success() -> None:
     handler._BLOB_STORE = _FakeStore()  # type: ignore[attr-defined]
     response = handler.lambda_handler(_event(), context={})
-    assert response["statusCode"] == 200
-    body = json.loads(response["body"])
-    assert body["download_url"].startswith("https://downloads/")
-    assert body["artifact_id"] == "1234abcd"
+    assert response["statusCode"] == 302
+    assert response["headers"]["Location"].startswith("https://downloads/")
 
 
 def test_download_invalid_id() -> None:
@@ -80,3 +81,13 @@ def test_download_blob_failure() -> None:
     )  # type: ignore[attr-defined]
     response = handler.lambda_handler(_event(), context={})
     assert response["statusCode"] == 502
+
+
+def test_download_json_format() -> None:
+    handler._BLOB_STORE = _FakeStore()  # type: ignore[attr-defined]
+    response = handler.lambda_handler(
+        _event(query={"format": "json"}), context={}
+    )
+    assert response["statusCode"] == 200
+    body = json.loads(response["body"])
+    assert body["artifact_id"] == "1234abcd"

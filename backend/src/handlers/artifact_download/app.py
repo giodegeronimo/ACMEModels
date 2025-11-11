@@ -39,12 +39,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "Internal server error",
         )
 
-    body = {
-        "artifact_id": artifact_id,
-        "download_url": link.url,
-        "expires_in": link.expires_in,
-    }
-    return _json_response(HTTPStatus.OK, body)
+    if _wants_json(event):
+        body = {
+            "artifact_id": artifact_id,
+            "download_url": link.url,
+            "expires_in": link.expires_in,
+        }
+        return _json_response(HTTPStatus.OK, body)
+
+    return _redirect_response(link.url, link.expires_in)
 
 
 def _parse_artifact_id(event: Dict[str, Any]) -> str:
@@ -67,11 +70,28 @@ def _extract_auth_token(event: Dict[str, Any]) -> str | None:
     return token
 
 
+def _wants_json(event: Dict[str, Any]) -> bool:
+    params = event.get("queryStringParameters") or {}
+    fmt = (params.get("format") or "").lower()
+    return fmt == "json"
+
+
 def _json_response(status: HTTPStatus, body: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "statusCode": status.value,
         "headers": {"Content-Type": "application/json"},
         "body": json.dumps(body),
+    }
+
+
+def _redirect_response(location: str, expires_in: int) -> Dict[str, Any]:
+    return {
+        "statusCode": HTTPStatus.FOUND.value,
+        "headers": {
+            "Location": location,
+            "Cache-Control": f"max-age={expires_in}",
+        },
+        "body": "",
     }
 
 

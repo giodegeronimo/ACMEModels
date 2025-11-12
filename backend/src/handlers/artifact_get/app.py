@@ -24,7 +24,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         artifact_id = _parse_artifact_id(event)
         _extract_auth_token(event)
         artifact = _METADATA_STORE.load(artifact_id)
-        if artifact.metadata.type is not artifact_type:
+        if artifact.metadata.type != artifact_type:
             raise ArtifactNotFound(
                 f"Artifact '{artifact_id}' not found for type "
                 f"'{artifact_type.value}'"

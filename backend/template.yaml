@@ -28,6 +28,8 @@ Resources:
     Properties:
       CodeUri: ..
       Handler: backend/src/handlers/artifact_create/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
       Events:
         CreateArtifact:
           Type: HttpApi
@@ -43,10 +45,16 @@ Resources:
               - s3:GetObject
               - s3:HeadObject
             Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+            Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-ArtifactCreateFunction*"
       Environment:
         Variables:
           ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
           ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
           ARTIFACT_DOWNLOAD_BASE_URL: !Sub "https://${ArtifactBucket}.s3.${AWS::Region}.amazonaws.com"
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
@@ -56,6 +64,8 @@ Resources:
     Properties:
       CodeUri: ..
       Handler: backend/src/handlers/artifact_download/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
       Events:
         DownloadArtifact:
           Type: HttpApi
@@ -74,6 +84,7 @@ Resources:
         Variables:
           ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
           ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
           ARTIFACT_DOWNLOAD_BASE_URL: !Sub "https://${ArtifactBucket}.s3.${AWS::Region}.amazonaws.com"
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache

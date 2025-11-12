@@ -12,48 +12,67 @@ import json
 import logging
 import os
 import shutil
+import time
 from http import HTTPStatus
-from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse
 from uuid import uuid4
 
+import requests
+
+try:  # pragma: no cover - boto3 present in production
+    import boto3
+except ImportError:  # pragma: no cover
+    boto3 = None  # type: ignore[assignment]
+
 from src.models import Artifact, ArtifactData, ArtifactMetadata, ArtifactType
-from src.storage.artifact_ingest import (ArtifactDownloadError,
+from src.storage.artifact_ingest import (ArtifactBundle, ArtifactDownloadError,
                                          prepare_artifact_bundle)
-from src.storage.blob_store import (ArtifactBlobStore, BlobStoreError,
-                                    StoredArtifact, build_blob_store_from_env)
-from src.storage.errors import RepositoryError, ValidationError
+from src.storage.blob_store import (ArtifactBlobStore, BlobNotFoundError,
+                                    BlobStoreError, StoredArtifact,
+                                    build_blob_store_from_env)
+from src.storage.errors import ArtifactNotFound, ValidationError
 from src.storage.memory import InMemoryArtifactRepository
 
 _LOGGER = logging.getLogger(__name__)
 _REPO = InMemoryArtifactRepository()
 _BLOB_STORE: ArtifactBlobStore
+_LAMBDA_CLIENT = None
+
+ASYNC_TASK_FIELD = "task"
+ASYNC_TASK_INGEST = "ingest"
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point compatible with AWS Lambda."""
+
+    if event.get(ASYNC_TASK_FIELD) == ASYNC_TASK_INGEST:
+        return _process_async_ingest(event)
 
     try:
         artifact_type = _parse_artifact_type(event)
         _extract_auth_token(event)  # placeholder – no auth enforcement yet
         payload = _parse_body(event)
         artifact = _build_artifact(artifact_type, payload)
-        _store_artifact_blob(artifact)
-        stored = _store_artifact(artifact)
+        source_url = payload["url"]
+        if _can_process_synchronously(source_url):
+            _store_artifact_blob(artifact)
+            stored = _store_artifact(artifact)
+            response_body = _serialize_artifact(stored, event)
+            return _json_response(HTTPStatus.CREATED, response_body)
+        _store_artifact(artifact)
+        _enqueue_async_ingest(context, artifact, source_url)
+        if _wait_for_download_ready(
+            artifact.metadata.id, event, context
+        ):
+            ready_body = _serialize_artifact(artifact, event)
+            return _json_response(HTTPStatus.CREATED, ready_body)
     except ValueError as error:
         return _error_response(HTTPStatus.BAD_REQUEST, str(error))
     except ValidationError as error:
-        # Repository-level validation is only triggered for duplicates.
         return _error_response(HTTPStatus.CONFLICT, str(error))
     except BlobStoreError as error:
         return _error_response(HTTPStatus.BAD_GATEWAY, str(error))
-    except RepositoryError as error:
-        _LOGGER.exception("Storage error during artifact create: %s", error)
-        return _error_response(
-            HTTPStatus.INTERNAL_SERVER_ERROR,
-            "Failed to persist the artifact",
-        )
     except Exception as error:  # noqa: BLE001 - keep handler resilient
         _LOGGER.exception(
             "Unhandled error in artifact create handler: %s", error
@@ -62,8 +81,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             HTTPStatus.INTERNAL_SERVER_ERROR, "Internal server error"
         )
 
-    response_body = _serialize_artifact(stored, event)
-    return _json_response(HTTPStatus.CREATED, response_body)
+    response_body = _serialize_artifact(artifact, event)
+    response_body["status"] = "processing"
+    return _json_response(HTTPStatus.ACCEPTED, response_body)
 
 
 def _parse_artifact_type(event: Dict[str, Any]) -> ArtifactType:
@@ -149,27 +169,38 @@ def _generate_artifact_id() -> str:
 
 
 def _store_artifact_blob(artifact: Artifact) -> StoredArtifact:
-    file_path: Path | None = None
+    bundle: ArtifactBundle | None = None
     try:
-        file_path, content_type = prepare_artifact_bundle(artifact.data.url)
-        stored = _BLOB_STORE.store_file(
-            artifact.metadata.id,
-            file_path,
-            content_type=content_type,
-        )
+        bundle = prepare_artifact_bundle(artifact.data.url)
+        if bundle.kind == "file":
+            stored = _BLOB_STORE.store_file(
+                artifact.metadata.id,
+                bundle.path,
+                content_type=bundle.content_type,
+            )
+        else:
+            stored = _BLOB_STORE.store_directory(
+                artifact.metadata.id,
+                bundle.path,
+                content_type=bundle.content_type,
+            )
     except ArtifactDownloadError as error:
         raise BlobStoreError(str(error)) from error
     finally:
-        if file_path:
-            file_path.unlink(missing_ok=True)
-            parent = file_path.parent
-            # Clean up temp directories created for HF archives.
-            if parent.name.startswith("hf_repo_"):
-                shutil.rmtree(parent, ignore_errors=True)
+        if bundle:
+            if bundle.kind == "file":
+                bundle.cleanup_root.unlink(missing_ok=True)
+            else:
+                shutil.rmtree(bundle.cleanup_root, ignore_errors=True)
     return stored
 
 
-def _store_artifact(artifact: Artifact) -> Artifact:
+def _store_artifact(artifact: Artifact, *, replace: bool = False) -> Artifact:
+    if replace:
+        try:
+            return _REPO.update(artifact)
+        except ArtifactNotFound:
+            return _REPO.create(artifact)
     return _REPO.create(artifact)
 
 
@@ -227,3 +258,124 @@ def _error_response(status: HTTPStatus, message: str) -> Dict[str, Any]:
 
 
 _BLOB_STORE = build_blob_store_from_env()
+
+
+def _lambda_client():
+    global _LAMBDA_CLIENT
+    if _LAMBDA_CLIENT is None:
+        if boto3 is None:  # pragma: no cover - handled in tests via patching
+            raise BlobStoreError("boto3 is required for async ingest")
+        _LAMBDA_CLIENT = boto3.client("lambda")
+    return _LAMBDA_CLIENT
+
+
+def _can_process_synchronously(source_url: str) -> bool:
+    parsed = urlparse(source_url)
+    if "huggingface.co" in (parsed.netloc or ""):
+        return False
+    try:
+        response = requests.head(source_url, allow_redirects=True, timeout=5)
+        response.raise_for_status()
+        size = int(response.headers.get("Content-Length", "0"))
+    except Exception:  # noqa: BLE001 - fall back to async
+        return False
+    max_size_bytes = int(
+        os.environ.get("SYNC_INGEST_MAX_BYTES", str(25 * 1024 * 1024))
+    )
+    return 0 < size <= max_size_bytes
+
+
+def _enqueue_async_ingest(
+    context: Any, artifact: Artifact, source_url: str
+) -> None:
+    function_arn = getattr(context, "invoked_function_arn", None)
+    if not function_arn:
+        function_arn = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+    if not function_arn:
+        raise BlobStoreError("Unable to determine worker function name")
+
+    payload = {
+        ASYNC_TASK_FIELD: ASYNC_TASK_INGEST,
+        "artifact": {
+            "metadata": {
+                "name": artifact.metadata.name,
+                "id": artifact.metadata.id,
+                "type": artifact.metadata.type.value,
+            }
+        },
+        "source_url": source_url,
+    }
+
+    if os.environ.get("ACME_DISABLE_ASYNC") == "1":
+        _process_async_ingest(payload)
+        return
+
+    try:
+        _lambda_client().invoke(
+            FunctionName=function_arn,
+            InvocationType="Event",
+            Payload=json.dumps(payload).encode("utf-8"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise BlobStoreError("Failed to enqueue artifact ingest task") from exc
+
+
+def _process_async_ingest(event: Dict[str, Any]) -> Dict[str, Any]:
+    artifact_payload = event.get("artifact", {})
+    metadata_payload = artifact_payload.get("metadata", {})
+    source_url = event.get("source_url")
+    if not source_url:
+        _LOGGER.error("Async ingest missing source_url")
+        return {"statusCode": 400, "body": "missing source_url"}
+
+    try:
+        metadata = ArtifactMetadata(
+            name=metadata_payload["name"],
+            id=metadata_payload["id"],
+            type=ArtifactType(metadata_payload["type"]),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.exception(
+            "Invalid artifact metadata in async payload: %s", exc
+        )
+        return {"statusCode": 400, "body": "invalid payload"}
+
+    artifact = Artifact(metadata=metadata, data=ArtifactData(url=source_url))
+    try:
+        _store_artifact_blob(artifact)
+        _store_artifact(artifact, replace=True)
+        _LOGGER.info("Async ingest done for artifact %s", metadata.id)
+    except Exception as error:  # noqa: BLE001
+        _LOGGER.exception(
+            "Async ingest failed for %s: %s", metadata.id, error
+        )
+        raise
+    return {"statusCode": 200, "body": "ok"}
+
+
+def _wait_for_download_ready(
+    artifact_id: str, event: Dict[str, Any], context: Any
+) -> bool:
+    if os.environ.get("ACME_DISABLE_ASYNC") == "1":
+        return True
+
+    remaining_ms = 0
+    if hasattr(context, "get_remaining_time_in_millis"):
+        remaining_ms = context.get_remaining_time_in_millis()
+    max_wait = min(
+        float(os.environ.get("SYNC_INGEST_MAX_WAIT", "25")),
+        max(0.0, remaining_ms / 1000.0 - 2.0),
+    )
+    if max_wait <= 0:
+        return False
+    deadline = time.monotonic() + max_wait
+    while time.monotonic() < deadline:
+        try:
+            _BLOB_STORE.generate_download_url(artifact_id)
+            return True
+        except BlobNotFoundError:
+            time.sleep(0.5)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("Download readiness check failed: %s", exc)
+            time.sleep(0.5)
+    return False

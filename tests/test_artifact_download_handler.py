@@ -24,6 +24,15 @@ class _FakeStore:
     ) -> StoredArtifact:
         raise NotImplementedError
 
+    def store_directory(
+        self,
+        artifact_id: str,
+        directory: Path,
+        *,
+        content_type: str | None = None,
+    ) -> StoredArtifact:
+        raise NotImplementedError
+
     def generate_download_url(
         self, artifact_id: str, *, expires_in: int = 900
     ) -> DownloadLink:

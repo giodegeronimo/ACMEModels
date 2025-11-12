@@ -1,4 +1,4 @@
-"""Source package for the ACME Models CLI."""
+"""Backend package marker for mypy."""
 
 from pkgutil import extend_path
 

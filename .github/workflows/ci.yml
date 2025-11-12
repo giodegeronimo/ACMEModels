@@ -34,7 +34,7 @@ jobs:
         run: flake8 .
 
       - name: Run mypy
-        run: mypy .
+        run: mypy src tests
 
       - name: Run tests
         run: ./run pytest

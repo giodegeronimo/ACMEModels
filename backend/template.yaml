@@ -1,14 +1,20 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Minimal Artifact API (dummy endpoint)
+Description: Trustworthy Model Registry - Artifact API
 
 Globals:
   Function:
     Runtime: python3.9
     Timeout: 300
-    MemorySize: 128
+    MemorySize: 2400
 
 Resources:
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+
   Api:
     Type: AWS::Serverless::HttpApi
     Properties:
@@ -20,8 +26,10 @@ Resources:
   ArtifactCreateFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: src/handlers/artifact_create/
-      Handler: app.lambda_handler
+      CodeUri: ..
+      Handler: backend/src/handlers/artifact_create/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
       Events:
         CreateArtifact:
           Type: HttpApi
@@ -29,8 +37,62 @@ Resources:
             ApiId: !Ref Api
             Method: POST
             Path: /artifact/{artifact_type}
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:HeadObject
+            Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+            Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-ArtifactCreateFunction*"
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_DOWNLOAD_BASE_URL: !Sub "https://${ArtifactBucket}.s3.${AWS::Region}.amazonaws.com"
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+
+  ArtifactDownloadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/artifact_download/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Events:
+        DownloadArtifact:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: GET
+            Path: /download/{id}
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:HeadObject
+            Resource: !Sub "${ArtifactBucket.Arn}/*"
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_DOWNLOAD_BASE_URL: !Sub "https://${ArtifactBucket}.s3.${AWS::Region}.amazonaws.com"
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
 
 Outputs:
   ApiUrl:
     Description: Base URL for testing
     Value: !Sub "https://${Api}.execute-api.${AWS::Region}.amazonaws.com"
+  ArtifactBucketName:
+    Description: S3 bucket storing uploaded artifacts
+    Value: !Ref ArtifactBucket

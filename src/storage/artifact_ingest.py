@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import tarfile
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,7 +12,7 @@ from typing import Literal
 from urllib.parse import urlparse
 
 import requests
-from huggingface_hub import snapshot_download
+from huggingface_hub import HfApi, hf_hub_download
 
 
 class ArtifactDownloadError(RuntimeError):
@@ -33,6 +34,8 @@ def prepare_artifact_bundle(source_url: str) -> ArtifactBundle:
 
     parsed = urlparse(source_url)
     if parsed.netloc.endswith("huggingface.co"):
+        if "/resolve/" in parsed.path:
+            return _download_generic_file(source_url)
         return _download_huggingface_repo(parsed)
     return _download_generic_file(source_url)
 
@@ -77,16 +80,35 @@ def _download_huggingface_repo(parsed_url) -> ArtifactBundle:
             "Unable to determine Hugging Face repository from URL"
         )
 
-    temp_dir = Path(tempfile.mkdtemp(prefix="hf_repo_"))
+    api = HfApi()
     try:
-        snapshot_path = Path(
-            snapshot_download(
-                repo_id=repo_id,
-                repo_type="model",
-                local_dir=temp_dir / "repo",
-                cache_dir=temp_dir / "cache",
-            )
-        )
+        files = api.list_repo_files(repo_id=repo_id, repo_type="model")
+    except Exception as exc:  # noqa: BLE001
+        raise ArtifactDownloadError(
+            f"Failed to enumerate Hugging Face repository: {exc}"
+        ) from exc
+    if not files:
+        raise ArtifactDownloadError("Hugging Face repository is empty")
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="hf_repo_"))
+    downloads_dir = temp_dir / "downloads"
+    cache_dir = temp_dir / "cache"
+    archive_path = temp_dir / "repo.tar.gz"
+
+    try:
+        with tarfile.open(archive_path, "w:gz") as archive:
+            for file_path in files:
+                local_file = Path(
+                    hf_hub_download(
+                        repo_id=repo_id,
+                        filename=file_path,
+                        repo_type="model",
+                        cache_dir=cache_dir,
+                        local_dir=downloads_dir,
+                    )
+                )
+                archive.add(local_file, arcname=file_path)
+                local_file.unlink(missing_ok=True)
     except Exception as exc:  # noqa: BLE001
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise ArtifactDownloadError(
@@ -94,8 +116,8 @@ def _download_huggingface_repo(parsed_url) -> ArtifactBundle:
         ) from exc
 
     return ArtifactBundle(
-        kind="directory",
-        path=snapshot_path,
+        kind="file",
+        path=archive_path,
         cleanup_root=temp_dir,
         content_type="application/gzip",
     )

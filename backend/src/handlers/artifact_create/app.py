@@ -31,11 +31,13 @@ from src.storage.artifact_ingest import (ArtifactBundle, ArtifactDownloadError,
 from src.storage.blob_store import (ArtifactBlobStore, BlobNotFoundError,
                                     BlobStoreError, StoredArtifact,
                                     build_blob_store_from_env)
-from src.storage.errors import ArtifactNotFound, ValidationError
-from src.storage.memory import InMemoryArtifactRepository
+from src.storage.errors import ValidationError
+from src.storage.metadata_store import (ArtifactMetadataStore,
+                                        MetadataStoreError,
+                                        build_metadata_store_from_env)
 
 _LOGGER = logging.getLogger(__name__)
-_REPO = InMemoryArtifactRepository()
+_METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()
 _BLOB_STORE: ArtifactBlobStore
 _LAMBDA_CLIENT = None
 
@@ -72,6 +74,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     except ValidationError as error:
         return _error_response(HTTPStatus.CONFLICT, str(error))
     except BlobStoreError as error:
+        return _error_response(HTTPStatus.BAD_GATEWAY, str(error))
+    except MetadataStoreError as error:
         return _error_response(HTTPStatus.BAD_GATEWAY, str(error))
     except Exception as error:  # noqa: BLE001 - keep handler resilient
         _LOGGER.exception(
@@ -188,20 +192,16 @@ def _store_artifact_blob(artifact: Artifact) -> StoredArtifact:
         raise BlobStoreError(str(error)) from error
     finally:
         if bundle:
-            if bundle.kind == "file":
-                bundle.cleanup_root.unlink(missing_ok=True)
-            else:
+            if bundle.cleanup_root.is_dir():
                 shutil.rmtree(bundle.cleanup_root, ignore_errors=True)
+            else:
+                bundle.cleanup_root.unlink(missing_ok=True)
     return stored
 
 
 def _store_artifact(artifact: Artifact, *, replace: bool = False) -> Artifact:
-    if replace:
-        try:
-            return _REPO.update(artifact)
-        except ArtifactNotFound:
-            return _REPO.create(artifact)
-    return _REPO.create(artifact)
+    _METADATA_STORE.save(artifact, overwrite=replace)
+    return artifact
 
 
 def _serialize_artifact(
@@ -271,7 +271,12 @@ def _lambda_client():
 
 def _can_process_synchronously(source_url: str) -> bool:
     parsed = urlparse(source_url)
-    if "huggingface.co" in (parsed.netloc or ""):
+    host = parsed.netloc or ""
+    path = parsed.path or ""
+    if host.endswith("huggingface.co") and "/resolve/" not in path:
+        # Hugging Face repo roots require enumerating and downloading many
+        # files, which easily exceeds API Gateway's sync timeout. Handle them
+        # async.
         return False
     try:
         response = requests.head(source_url, allow_redirects=True, timeout=5)

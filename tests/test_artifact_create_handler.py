@@ -5,19 +5,23 @@ from __future__ import annotations
 import base64
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 import pytest
 
 from backend.src.handlers.artifact_create import app as handler
+from src.models.artifacts import Artifact
 from src.storage.artifact_ingest import ArtifactBundle
 from src.storage.blob_store import BlobStoreError, DownloadLink, StoredArtifact
-from src.storage.memory import InMemoryArtifactRepository
+from src.storage.errors import ArtifactNotFound, ValidationError
+from src.storage.metadata_store import ArtifactMetadataStore
 
 
 @pytest.fixture(autouse=True)
 def _reset_handler(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    handler._REPO = InMemoryArtifactRepository()  # type: ignore[attr-defined]
+    handler._METADATA_STORE = cast(
+        ArtifactMetadataStore, _FakeMetadataStore()
+    )
     handler._BLOB_STORE = _FakeBlobStore()  # type: ignore[attr-defined]
     handler._LAMBDA_CLIENT = None  # type: ignore[attr-defined]
     monkeypatch.setenv("ACME_DISABLE_ASYNC", "1")
@@ -91,6 +95,25 @@ class _FakeBlobStore:
             url=f"https://downloads/{artifact_id}?ttl={expires_in}",
             expires_in=expires_in,
         )
+
+
+class _FakeMetadataStore(ArtifactMetadataStore):
+    def __init__(self) -> None:
+        self.records: dict[str, Artifact] = {}
+
+    def save(self, artifact: Artifact, *, overwrite: bool = False) -> None:
+        artifact_id = artifact.metadata.id
+        if not overwrite and artifact_id in self.records:
+            raise ValidationError(f"Artifact '{artifact_id}' already exists")
+        self.records[artifact_id] = artifact
+
+    def load(self, artifact_id: str) -> Artifact:
+        try:
+            return self.records[artifact_id]
+        except KeyError as exc:
+            raise ArtifactNotFound(
+                f"Artifact '{artifact_id}' does not exist"
+            ) from exc
 
 
 class _FakeLambdaClient:

@@ -5,8 +5,9 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
+from typing import Literal
 from urllib.parse import urlparse
 
 import requests
@@ -17,12 +18,18 @@ class ArtifactDownloadError(RuntimeError):
     """Raised when an artifact cannot be prepared for ingest."""
 
 
-def prepare_artifact_bundle(source_url: str) -> Tuple[Path, str | None]:
-    """
-    Download and package the artifact referenced by ``source_url``.
+@dataclass(frozen=True)
+class ArtifactBundle:
+    """Represents downloaded artifact contents awaiting storage."""
 
-    Returns a tuple of (path_to_file, content_type).
-    """
+    kind: Literal["file", "directory"]
+    path: Path
+    cleanup_root: Path
+    content_type: str | None = None
+
+
+def prepare_artifact_bundle(source_url: str) -> ArtifactBundle:
+    """Download and stage the artifact referenced by ``source_url``."""
 
     parsed = urlparse(source_url)
     if parsed.netloc.endswith("huggingface.co"):
@@ -30,7 +37,7 @@ def prepare_artifact_bundle(source_url: str) -> Tuple[Path, str | None]:
     return _download_generic_file(source_url)
 
 
-def _download_generic_file(source_url: str) -> Tuple[Path, str | None]:
+def _download_generic_file(source_url: str) -> ArtifactBundle:
     try:
         response = requests.get(source_url, stream=True, timeout=30)
         response.raise_for_status()
@@ -53,12 +60,15 @@ def _download_generic_file(source_url: str) -> Tuple[Path, str | None]:
         ) from exc
 
     content_type = response.headers.get("Content-Type")
-    return path, content_type
+    return ArtifactBundle(
+        kind="file",
+        path=path,
+        cleanup_root=path,
+        content_type=content_type,
+    )
 
 
-def _download_huggingface_repo(
-    parsed_url,
-) -> Tuple[Path, str | None]:
+def _download_huggingface_repo(parsed_url) -> ArtifactBundle:
     os.environ.setdefault("HF_HOME", "/tmp/hf-cache")
     os.environ.setdefault("HUGGINGFACE_HUB_CACHE", "/tmp/hf-cache")
     repo_id = _parse_hf_repo_id(parsed_url.path)
@@ -69,11 +79,13 @@ def _download_huggingface_repo(
 
     temp_dir = Path(tempfile.mkdtemp(prefix="hf_repo_"))
     try:
-        snapshot_path = snapshot_download(
-            repo_id=repo_id,
-            repo_type="model",
-            local_dir=temp_dir / "repo",
-            cache_dir=temp_dir / "cache",
+        snapshot_path = Path(
+            snapshot_download(
+                repo_id=repo_id,
+                repo_type="model",
+                local_dir=temp_dir / "repo",
+                cache_dir=temp_dir / "cache",
+            )
         )
     except Exception as exc:  # noqa: BLE001
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -81,16 +93,16 @@ def _download_huggingface_repo(
             f"Failed to download Hugging Face repository: {exc}"
         ) from exc
 
-    archive_base = temp_dir / "artifact"
-    archive_path = Path(
-        shutil.make_archive(str(archive_base), "zip", snapshot_path)
+    return ArtifactBundle(
+        kind="directory",
+        path=snapshot_path,
+        cleanup_root=temp_dir,
+        content_type="application/gzip",
     )
-    return archive_path, "application/zip"
 
 
 def _parse_hf_repo_id(path: str) -> str | None:
     segments = [segment for segment in path.split("/") if segment]
     if len(segments) < 2:
         return None
-    # Path can be /org/model/blob/main/...; we only care about first two.
     return "/".join(segments[:2])

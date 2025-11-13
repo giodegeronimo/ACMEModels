@@ -11,8 +11,12 @@ resolve_s3 = true
 capabilities = "CAPABILITY_NAMED_IAM"
 
 # CI quality-of-life: don't require interactive confirms
-confirm_changeset = false
+confirm_changeset = true
 
 # Leave empty if you’re not deploying container images
 image_repositories = []
 s3_prefix = "acmemodels-backend"
+parameter_overrides = "ArtifactNameIndexTable=\"ArtifactNameIndex\""
+
+[default.global.parameters]
+region = "us-east-2"

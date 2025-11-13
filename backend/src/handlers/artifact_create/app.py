@@ -32,6 +32,8 @@ from src.storage.blob_store import (ArtifactBlobStore, BlobNotFoundError,
                                     BlobStoreError, StoredArtifact,
                                     build_blob_store_from_env)
 from src.storage.errors import ValidationError
+from src.storage.name_index import (entry_from_metadata,
+                                    build_name_index_store_from_env)
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         MetadataStoreError,
                                         build_metadata_store_from_env)
@@ -39,6 +41,7 @@ from src.storage.metadata_store import (ArtifactMetadataStore,
 _LOGGER = logging.getLogger(__name__)
 _METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()
 _BLOB_STORE: ArtifactBlobStore
+_NAME_INDEX = build_name_index_store_from_env()
 _LAMBDA_CLIENT = None
 
 ASYNC_TASK_FIELD = "task"
@@ -160,10 +163,28 @@ def _build_artifact(
 
 def _derive_artifact_name(url: str) -> str:
     parsed = urlparse(url)
+    hf_slug = _extract_hf_repo_slug(parsed)
+    if hf_slug:
+        return hf_slug
     candidate = parsed.path.rstrip("/").split("/")[-1] if parsed.path else ""
     if not candidate:
         candidate = parsed.netloc or "artifact"
     return candidate
+
+
+def _extract_hf_repo_slug(parsed_url) -> str | None:
+    if not (parsed_url.netloc or "").endswith("huggingface.co"):
+        return None
+    segments = [segment for segment in parsed_url.path.split("/") if segment]
+    if "resolve" not in segments:
+        return None
+    resolve_index = segments.index("resolve")
+    candidates = segments[:resolve_index]
+    while candidates and candidates[0] in {"datasets", "spaces", "models"}:
+        candidates = candidates[1:]
+    if len(candidates) >= 2:
+        return candidates[1]
+    return None
 
 
 def _generate_artifact_id() -> str:
@@ -201,6 +222,14 @@ def _store_artifact_blob(artifact: Artifact) -> StoredArtifact:
 
 def _store_artifact(artifact: Artifact, *, replace: bool = False) -> Artifact:
     _METADATA_STORE.save(artifact, overwrite=replace)
+    try:
+        _NAME_INDEX.save(entry_from_metadata(artifact.metadata))
+    except Exception as exc:  # noqa: BLE001 - keep ingest resilient
+        _LOGGER.warning(
+            "Failed to update name index for %s: %s",
+            artifact.metadata.id,
+            exc,
+        )
     return artifact
 
 

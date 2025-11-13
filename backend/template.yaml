@@ -206,6 +206,74 @@ Resources:
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
 
+  ArtifactUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/artifact_update/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:HeadObject
+            Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt ArtifactBucket.Arn
+      Events:
+        UpdateArtifact:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: PUT
+            Path: /artifacts/{artifact_type}/{id}
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_METADATA_PREFIX: metadata
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+  ArtifactResetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/reset/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:DeleteObject
+              - s3:ListBucket
+              - s3:GetObject
+            Resource:
+              - !Sub "${ArtifactBucket.Arn}"
+              - !Sub "${ArtifactBucket.Arn}/*"
+      Events:
+        ResetRegistry:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: DELETE
+            Path: /reset
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_METADATA_PREFIX: metadata
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+
 Outputs:
   ApiUrl:
     Description: Base URL for testing

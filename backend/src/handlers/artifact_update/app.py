@@ -142,7 +142,7 @@ def _validate_existing(
     artifact_type: ArtifactType,
     incoming_meta: Dict[str, Any],
 ) -> None:
-    if existing.metadata.type is not artifact_type:
+    if existing.metadata.type != artifact_type:
         raise ArtifactNotFound(
             f"Artifact '{existing.metadata.id}' not found for type "
             f"'{artifact_type.value}'"

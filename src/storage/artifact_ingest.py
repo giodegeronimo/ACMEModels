@@ -6,11 +6,11 @@ import os
 import shutil
 import tarfile
 import tempfile
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
-import zipfile
 
 import requests
 from huggingface_hub import HfApi, hf_hub_download

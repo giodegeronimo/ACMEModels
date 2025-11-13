@@ -32,11 +32,11 @@ from src.storage.blob_store import (ArtifactBlobStore, BlobNotFoundError,
                                     BlobStoreError, StoredArtifact,
                                     build_blob_store_from_env)
 from src.storage.errors import ValidationError
-from src.storage.name_index import (entry_from_metadata,
-                                    build_name_index_store_from_env)
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         MetadataStoreError,
                                         build_metadata_store_from_env)
+from src.storage.name_index import (build_name_index_store_from_env,
+                                    entry_from_metadata)
 
 _LOGGER = logging.getLogger(__name__)
 _METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()

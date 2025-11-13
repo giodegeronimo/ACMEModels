@@ -170,6 +170,19 @@ class _FakeNameIndexStore:
     def save(self, entry: NameIndexEntry) -> None:
         self.entries.append(entry)
 
+    def delete(self, entry: NameIndexEntry) -> None:
+        self.entries = [
+            existing for existing in self.entries if existing != entry
+        ]
+
+    def scan(
+        self,
+        *,
+        start_key: Any | None = None,
+        limit: int | None = None,
+    ) -> tuple[list[NameIndexEntry], Any | None]:
+        return list(self.entries), None
+
 
 def _event(
     *,

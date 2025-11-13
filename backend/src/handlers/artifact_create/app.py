@@ -20,6 +20,11 @@ from uuid import uuid4
 
 import requests
 
+try:  # pragma: no cover - optional during tests
+    from huggingface_hub import hf_hub_url
+except ImportError:  # pragma: no cover
+    hf_hub_url = None
+
 try:  # pragma: no cover - boto3 present in production
     import boto3
 except ImportError:  # pragma: no cover
@@ -42,6 +47,9 @@ _LOGGER = logging.getLogger(__name__)
 _METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()
 _BLOB_STORE: ArtifactBlobStore
 _NAME_INDEX = build_name_index_store_from_env()
+
+README_INDEX_CHAR_LIMIT = 4096
+GITHUB_API_README_ACCEPT = "application/vnd.github.raw"
 _LAMBDA_CLIENT = None
 
 ASYNC_TASK_FIELD = "task"
@@ -60,13 +68,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         payload = _parse_body(event)
         artifact = _build_artifact(artifact_type, payload)
         source_url = payload["url"]
+        readme_excerpt = _fetch_readme_excerpt(source_url)
         if _can_process_synchronously(source_url):
             _store_artifact_blob(artifact)
-            stored = _store_artifact(artifact)
+            stored = _store_artifact(
+                artifact, readme_excerpt=readme_excerpt
+            )
             response_body = _serialize_artifact(stored, event)
             return _json_response(HTTPStatus.CREATED, response_body)
-        _store_artifact(artifact)
-        _enqueue_async_ingest(context, artifact, source_url)
+        _store_artifact(artifact, readme_excerpt=readme_excerpt)
+        _enqueue_async_ingest(
+            context, artifact, source_url, readme_excerpt=readme_excerpt
+        )
         if _wait_for_download_ready(
             artifact.metadata.id, event, context
         ):
@@ -163,16 +176,17 @@ def _build_artifact(
 
 def _derive_artifact_name(url: str) -> str:
     parsed = urlparse(url)
-    hf_slug = _extract_hf_repo_slug(parsed)
-    if hf_slug:
-        return hf_slug
+    repo_id = _resolve_hf_repo_id(parsed)
+    if repo_id:
+        _, repo = repo_id.split("/", 1)
+        return repo
     candidate = parsed.path.rstrip("/").split("/")[-1] if parsed.path else ""
     if not candidate:
         candidate = parsed.netloc or "artifact"
     return candidate
 
 
-def _extract_hf_repo_slug(parsed_url) -> str | None:
+def _resolve_hf_repo_id(parsed_url) -> str | None:
     if not (parsed_url.netloc or "").endswith("huggingface.co"):
         return None
     segments = [segment for segment in parsed_url.path.split("/") if segment]
@@ -183,8 +197,22 @@ def _extract_hf_repo_slug(parsed_url) -> str | None:
     while candidates and candidates[0] in {"datasets", "spaces", "models"}:
         candidates = candidates[1:]
     if len(candidates) >= 2:
-        return candidates[1]
+        owner, repo = candidates[:2]
+        return f"{owner}/{repo}"
     return None
+
+
+def _extract_github_repo(parsed_url) -> tuple[str, str] | None:
+    netloc = (parsed_url.netloc or "").lower()
+    if not netloc.endswith("github.com"):
+        return None
+    segments = [segment for segment in parsed_url.path.split("/") if segment]
+    if len(segments) < 2:
+        return None
+    owner, repo = segments[:2]
+    if repo.endswith(".git"):
+        repo = repo[:-4]
+    return owner, repo
 
 
 def _generate_artifact_id() -> str:
@@ -220,10 +248,20 @@ def _store_artifact_blob(artifact: Artifact) -> StoredArtifact:
     return stored
 
 
-def _store_artifact(artifact: Artifact, *, replace: bool = False) -> Artifact:
+def _store_artifact(
+    artifact: Artifact,
+    *,
+    replace: bool = False,
+    readme_excerpt: str | None = None,
+) -> Artifact:
     _METADATA_STORE.save(artifact, overwrite=replace)
     try:
-        _NAME_INDEX.save(entry_from_metadata(artifact.metadata))
+        _NAME_INDEX.save(
+            entry_from_metadata(
+                artifact.metadata,
+                readme_excerpt=readme_excerpt,
+            )
+        )
     except Exception as exc:  # noqa: BLE001 - keep ingest resilient
         _LOGGER.warning(
             "Failed to update name index for %s: %s",
@@ -320,7 +358,11 @@ def _can_process_synchronously(source_url: str) -> bool:
 
 
 def _enqueue_async_ingest(
-    context: Any, artifact: Artifact, source_url: str
+    context: Any,
+    artifact: Artifact,
+    source_url: str,
+    *,
+    readme_excerpt: str | None,
 ) -> None:
     function_arn = getattr(context, "invoked_function_arn", None)
     if not function_arn:
@@ -338,6 +380,7 @@ def _enqueue_async_ingest(
             }
         },
         "source_url": source_url,
+        "readme_excerpt": readme_excerpt,
     }
 
     if os.environ.get("ACME_DISABLE_ASYNC") == "1":
@@ -375,9 +418,12 @@ def _process_async_ingest(event: Dict[str, Any]) -> Dict[str, Any]:
         return {"statusCode": 400, "body": "invalid payload"}
 
     artifact = Artifact(metadata=metadata, data=ArtifactData(url=source_url))
+    readme_excerpt = event.get("readme_excerpt")
+    if readme_excerpt is None:
+        readme_excerpt = _fetch_readme_excerpt(source_url)
     try:
         _store_artifact_blob(artifact)
-        _store_artifact(artifact, replace=True)
+        _store_artifact(artifact, replace=True, readme_excerpt=readme_excerpt)
         _LOGGER.info("Async ingest done for artifact %s", metadata.id)
     except Exception as error:  # noqa: BLE001
         _LOGGER.exception(
@@ -413,3 +459,47 @@ def _wait_for_download_ready(
             _LOGGER.debug("Download readiness check failed: %s", exc)
             time.sleep(0.5)
     return False
+
+
+def _fetch_readme_excerpt(source_url: str) -> str | None:
+    parsed = urlparse(source_url)
+    repo_id = _resolve_hf_repo_id(parsed)
+    if repo_id and hf_hub_url is not None:
+        try:
+            readme_url = hf_hub_url(repo_id=repo_id, filename="README.md")
+            response = requests.get(readme_url, timeout=10)
+            if response.status_code == HTTPStatus.OK:
+                text = (response.text or "").strip()
+                if text:
+                    return text[:README_INDEX_CHAR_LIMIT]
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("README fetch failed for %s: %s", repo_id, exc)
+    github_repo = _extract_github_repo(parsed)
+    if github_repo:
+        owner, repo = github_repo
+        text = _download_github_readme(owner, repo)
+        if text:
+            return text[:README_INDEX_CHAR_LIMIT]
+    return None
+
+
+def _download_github_readme(owner: str, repo: str) -> str | None:
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/readme"
+    headers = {"Accept": GITHUB_API_README_ACCEPT}
+    token = os.getenv("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        response = requests.get(api_url, headers=headers, timeout=10)
+        if response.status_code != HTTPStatus.OK:
+            return None
+        text = (response.text or "").strip()
+        return text or None
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.debug(
+            "GitHub README fetch failed for %s/%s: %s",
+            owner,
+            repo,
+            exc,
+        )
+        return None

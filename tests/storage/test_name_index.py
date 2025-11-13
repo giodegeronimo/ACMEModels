@@ -14,8 +14,15 @@ def _metadata(name: str, artifact_id: str = "artifact-1") -> ArtifactMetadata:
     return ArtifactMetadata(name=name, id=artifact_id, type=ArtifactType.MODEL)
 
 
-def _entry(name: str, artifact_id: str = "artifact-1") -> NameIndexEntry:
-    return entry_from_metadata(_metadata(name=name, artifact_id=artifact_id))
+def _entry(
+    name: str,
+    artifact_id: str = "artifact-1",
+    readme: str | None = None,
+) -> NameIndexEntry:
+    return entry_from_metadata(
+        _metadata(name=name, artifact_id=artifact_id),
+        readme_excerpt=readme,
+    )
 
 
 def test_in_memory_store_persists_and_scans_entries() -> None:
@@ -81,7 +88,7 @@ def test_dynamodb_store_writes_expected_items() -> None:
     table = _FakeTable()
     resource = _FakeResource(table)
     store = DynamoDBNameIndexStore("NameIndex", resource=resource)
-    entry = _entry("SampleName", "s1")
+    entry = _entry("SampleName", "s1", readme="README content")
 
     store.save(entry)
     assert resource.requested_table == "NameIndex"
@@ -91,6 +98,7 @@ def test_dynamodb_store_writes_expected_items() -> None:
             "artifact_id": entry.artifact_id,
             "name": entry.name,
             "artifact_type": entry.artifact_type.value,
+            "readme_excerpt": "README content",
         }
     ]
 
@@ -113,6 +121,7 @@ def test_dynamodb_store_scan_returns_entries() -> None:
                     "artifact_id": "abc",
                     "name": "Model",
                     "artifact_type": "model",
+                    "readme_excerpt": "Details",
                 }
             ],
             "LastEvaluatedKey": {
@@ -126,6 +135,7 @@ def test_dynamodb_store_scan_returns_entries() -> None:
     entries, token = store.scan(limit=5, start_key={"artifact_id": "xyz"})
     assert len(entries) == 1
     assert entries[0].artifact_id == "abc"
+    assert entries[0].readme_excerpt == "Details"
     assert token == {"artifact_id": "abc", "normalized_name": "model"}
     assert table.scan_calls == [
         {"ExclusiveStartKey": {"artifact_id": "xyz"}, "Limit": 5}

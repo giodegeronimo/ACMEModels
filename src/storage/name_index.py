@@ -16,6 +16,7 @@ class NameIndexEntry:
     artifact_id: str
     name: str
     artifact_type: ArtifactType
+    readme_excerpt: str | None = None
 
     @property
     def normalized_name(self) -> str:
@@ -110,6 +111,8 @@ class DynamoDBNameIndexStore(NameIndexStore):
             "name": entry.name,
             "artifact_type": entry.artifact_type.value,
         }
+        if entry.readme_excerpt:
+            item["readme_excerpt"] = entry.readme_excerpt
         self._table.put_item(Item=item)
 
     def delete(self, entry: NameIndexEntry) -> None:
@@ -137,6 +140,7 @@ class DynamoDBNameIndexStore(NameIndexStore):
                 artifact_id=item["artifact_id"],
                 name=item["name"],
                 artifact_type=ArtifactType(item["artifact_type"]),
+                readme_excerpt=item.get("readme_excerpt"),
             )
             for item in items
         ]
@@ -150,9 +154,14 @@ def build_name_index_store_from_env() -> NameIndexStore:
     return InMemoryNameIndexStore()
 
 
-def entry_from_metadata(metadata: ArtifactMetadata) -> NameIndexEntry:
+def entry_from_metadata(
+    metadata: ArtifactMetadata,
+    *,
+    readme_excerpt: str | None = None,
+) -> NameIndexEntry:
     return NameIndexEntry(
         artifact_id=metadata.id,
         name=metadata.name,
         artifact_type=metadata.type,
+        readme_excerpt=readme_excerpt,
     )

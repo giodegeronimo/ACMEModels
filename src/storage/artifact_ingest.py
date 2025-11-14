@@ -247,6 +247,7 @@ def _download_github_repo(parsed_url, repo: tuple[str, str]) -> ArtifactBundle:
     branch = _resolve_github_default_branch(owner, name)
     candidate_branches = [branch] if branch else []
     candidate_branches.extend(["main", "master"])
+    candidate_branches = list(dict.fromkeys(candidate_branches))
 
     headers = {}
     token = os.getenv("GITHUB_TOKEN")

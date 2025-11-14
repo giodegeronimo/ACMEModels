@@ -11,7 +11,7 @@ resolve_s3 = true
 capabilities = "CAPABILITY_NAMED_IAM"
 
 # CI quality-of-life: don't require interactive confirms
-confirm_changeset = true
+confirm_changeset = false
 
 # Leave empty if you’re not deploying container images
 image_repositories = []

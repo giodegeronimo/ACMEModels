@@ -6,15 +6,18 @@ import base64
 import json
 from pathlib import Path
 from typing import Any, Dict, cast
+from uuid import uuid4
 
 import pytest
 
 from backend.src.handlers.artifact_create import app as handler
-from src.models.artifacts import Artifact
+from src.models.artifacts import (Artifact, ArtifactData, ArtifactMetadata,
+                                  ArtifactType)
 from src.storage.artifact_ingest import ArtifactBundle
 from src.storage.blob_store import BlobStoreError, DownloadLink, StoredArtifact
 from src.storage.errors import ArtifactNotFound, ValidationError
 from src.storage.metadata_store import ArtifactMetadataStore
+from src.storage.name_index import NameIndexEntry
 
 
 @pytest.fixture(autouse=True)
@@ -24,22 +27,25 @@ def _reset_handler(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     )
     handler._BLOB_STORE = _FakeBlobStore()  # type: ignore[attr-defined]
     handler._LAMBDA_CLIENT = None  # type: ignore[attr-defined]
+    handler._NAME_INDEX = _FakeNameIndexStore()
     monkeypatch.setenv("ACME_DISABLE_ASYNC", "1")
-    bundle_dir = tmp_path / "bundle"
-    bundle_dir.mkdir(parents=True, exist_ok=True)
-    (bundle_dir / "file.txt").write_text("content")
+    monkeypatch.setattr(
+        handler,
+        "_can_process_synchronously",
+        lambda url: False,
+    )
 
     def _fake_prepare(url: str) -> ArtifactBundle:
+        bundle_path = tmp_path / f"bundle_{uuid4().hex}.bin"
+        bundle_path.write_text("content", encoding="utf-8")
         return ArtifactBundle(
-            kind="directory",
-            path=bundle_dir,
-            cleanup_root=bundle_dir,
-            content_type="application/gzip",
+            kind="file",
+            path=bundle_path,
+            cleanup_root=bundle_path,
+            content_type="application/octet-stream",
         )
 
-    monkeypatch.setattr(
-        handler, "prepare_artifact_bundle", _fake_prepare
-    )
+    monkeypatch.setattr(handler, "prepare_artifact_bundle", _fake_prepare)
 
     fake_client = _FakeLambdaClient()
 
@@ -157,6 +163,27 @@ class _FailingStore(_FakeBlobStore):
         raise BlobStoreError("boom")
 
 
+class _FakeNameIndexStore:
+    def __init__(self) -> None:
+        self.entries: list[NameIndexEntry] = []
+
+    def save(self, entry: NameIndexEntry) -> None:
+        self.entries.append(entry)
+
+    def delete(self, entry: NameIndexEntry) -> None:
+        self.entries = [
+            existing for existing in self.entries if existing != entry
+        ]
+
+    def scan(
+        self,
+        *,
+        start_key: Any | None = None,
+        limit: int | None = None,
+    ) -> tuple[list[NameIndexEntry], Any | None]:
+        return list(self.entries), None
+
+
 def _event(
     *,
     artifact_type: str = "model",
@@ -218,6 +245,38 @@ def test_create_artifact_handles_duplicate_ids(
     assert "already exists" in json.loads(second["body"])["error"]
 
 
+def test_store_artifact_records_readme_excerpt(tmp_path: Path) -> None:
+    metadata = ArtifactMetadata(
+        name="example",
+        id="artifact-id",
+        type=ArtifactType.MODEL,
+    )
+    artifact = Artifact(
+        metadata=metadata,
+        data=ArtifactData(url="https://x"),
+    )
+
+    handler._store_artifact(artifact, readme_excerpt="Readme text")
+
+    entries = handler._NAME_INDEX.entries  # type: ignore[attr-defined]
+    assert entries
+    assert entries[0].readme_excerpt == "Readme text"
+
+
+def test_derive_artifact_name_hf_resolve_model() -> None:
+    url = (
+        "https://huggingface.co/openai/whisper-tiny/resolve/main/config.json"
+    )
+    assert handler._derive_artifact_name(url) == "whisper-tiny"
+
+
+def test_derive_artifact_name_hf_resolve_dataset() -> None:
+    url = (
+        "https://huggingface.co/datasets/acme/sentiment/resolve/main/data.txt"
+    )
+    assert handler._derive_artifact_name(url) == "sentiment"
+
+
 def test_create_artifact_accepts_base64_body() -> None:
     context = type("Ctx", (), {"invoked_function_arn": "arn"})
     response = handler.lambda_handler(
@@ -267,4 +326,4 @@ def test_async_worker_processes_ingest() -> None:
     response = handler.lambda_handler(event, context={})
     assert response["statusCode"] == 200
     fake_store = handler._BLOB_STORE  # type: ignore[attr-defined]
-    assert fake_store.saved_dirs  # type: ignore[attr-defined]
+    assert fake_store.saved_files  # type: ignore[attr-defined]

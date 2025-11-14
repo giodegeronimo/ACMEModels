@@ -16,3 +16,7 @@ confirm_changeset = false
 # Leave empty if you’re not deploying container images
 image_repositories = []
 s3_prefix = "acmemodels-backend"
+parameter_overrides = "ArtifactNameIndexTable=\"ArtifactNameIndex\""
+
+[default.global.parameters]
+region = "us-east-2"

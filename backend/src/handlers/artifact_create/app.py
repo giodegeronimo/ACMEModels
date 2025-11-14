@@ -35,10 +35,13 @@ from src.storage.errors import ValidationError
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         MetadataStoreError,
                                         build_metadata_store_from_env)
+from src.storage.name_index import (build_name_index_store_from_env,
+                                    entry_from_metadata)
 
 _LOGGER = logging.getLogger(__name__)
 _METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()
 _BLOB_STORE: ArtifactBlobStore
+_NAME_INDEX = build_name_index_store_from_env()
 _LAMBDA_CLIENT = None
 
 ASYNC_TASK_FIELD = "task"
@@ -58,12 +61,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         artifact = _build_artifact(artifact_type, payload)
         source_url = payload["url"]
         if _can_process_synchronously(source_url):
-            _store_artifact_blob(artifact)
-            stored = _store_artifact(artifact)
+            try:
+                bundle = prepare_artifact_bundle(source_url)
+            except ArtifactDownloadError as error:
+                raise BlobStoreError(str(error)) from error
+            _store_artifact_blob(artifact, bundle=bundle)
+            stored = _store_artifact(
+                artifact, readme_excerpt=bundle.readme_excerpt
+            )
             response_body = _serialize_artifact(stored, event)
             return _json_response(HTTPStatus.CREATED, response_body)
-        _store_artifact(artifact)
-        _enqueue_async_ingest(context, artifact, source_url)
+        _store_artifact(artifact, readme_excerpt=None)
+        _enqueue_async_ingest(
+            context,
+            artifact,
+            source_url,
+        )
         if _wait_for_download_ready(
             artifact.metadata.id, event, context
         ):
@@ -160,10 +173,43 @@ def _build_artifact(
 
 def _derive_artifact_name(url: str) -> str:
     parsed = urlparse(url)
+    repo_id = _resolve_hf_repo_id(parsed)
+    if repo_id:
+        _, repo = repo_id.split("/", 1)
+        return repo
     candidate = parsed.path.rstrip("/").split("/")[-1] if parsed.path else ""
     if not candidate:
         candidate = parsed.netloc or "artifact"
     return candidate
+
+
+def _resolve_hf_repo_id(parsed_url) -> str | None:
+    if not (parsed_url.netloc or "").endswith("huggingface.co"):
+        return None
+    segments = [segment for segment in parsed_url.path.split("/") if segment]
+    if "resolve" not in segments:
+        return None
+    resolve_index = segments.index("resolve")
+    candidates = segments[:resolve_index]
+    while candidates and candidates[0] in {"datasets", "spaces", "models"}:
+        candidates = candidates[1:]
+    if len(candidates) >= 2:
+        owner, repo = candidates[:2]
+        return f"{owner}/{repo}"
+    return None
+
+
+def _extract_github_repo(parsed_url) -> tuple[str, str] | None:
+    netloc = (parsed_url.netloc or "").lower()
+    if not netloc.endswith("github.com"):
+        return None
+    segments = [segment for segment in parsed_url.path.split("/") if segment]
+    if len(segments) < 2:
+        return None
+    owner, repo = segments[:2]
+    if repo.endswith(".git"):
+        repo = repo[:-4]
+    return owner, repo
 
 
 def _generate_artifact_id() -> str:
@@ -172,10 +218,12 @@ def _generate_artifact_id() -> str:
     return uuid4().hex
 
 
-def _store_artifact_blob(artifact: Artifact) -> StoredArtifact:
-    bundle: ArtifactBundle | None = None
+def _store_artifact_blob(
+    artifact: Artifact,
+    *,
+    bundle: ArtifactBundle,
+) -> StoredArtifact:
     try:
-        bundle = prepare_artifact_bundle(artifact.data.url)
         if bundle.kind == "file":
             stored = _BLOB_STORE.store_file(
                 artifact.metadata.id,
@@ -188,19 +236,34 @@ def _store_artifact_blob(artifact: Artifact) -> StoredArtifact:
                 bundle.path,
                 content_type=bundle.content_type,
             )
-    except ArtifactDownloadError as error:
-        raise BlobStoreError(str(error)) from error
     finally:
-        if bundle:
-            if bundle.cleanup_root.is_dir():
-                shutil.rmtree(bundle.cleanup_root, ignore_errors=True)
-            else:
-                bundle.cleanup_root.unlink(missing_ok=True)
+        if bundle.cleanup_root.is_dir():
+            shutil.rmtree(bundle.cleanup_root, ignore_errors=True)
+        else:
+            bundle.cleanup_root.unlink(missing_ok=True)
     return stored
 
 
-def _store_artifact(artifact: Artifact, *, replace: bool = False) -> Artifact:
+def _store_artifact(
+    artifact: Artifact,
+    *,
+    replace: bool = False,
+    readme_excerpt: str | None = None,
+) -> Artifact:
     _METADATA_STORE.save(artifact, overwrite=replace)
+    try:
+        _NAME_INDEX.save(
+            entry_from_metadata(
+                artifact.metadata,
+                readme_excerpt=readme_excerpt,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - keep ingest resilient
+        _LOGGER.warning(
+            "Failed to update name index for %s: %s",
+            artifact.metadata.id,
+            exc,
+        )
     return artifact
 
 
@@ -291,7 +354,9 @@ def _can_process_synchronously(source_url: str) -> bool:
 
 
 def _enqueue_async_ingest(
-    context: Any, artifact: Artifact, source_url: str
+    context: Any,
+    artifact: Artifact,
+    source_url: str,
 ) -> None:
     function_arn = getattr(context, "invoked_function_arn", None)
     if not function_arn:
@@ -347,8 +412,20 @@ def _process_async_ingest(event: Dict[str, Any]) -> Dict[str, Any]:
 
     artifact = Artifact(metadata=metadata, data=ArtifactData(url=source_url))
     try:
-        _store_artifact_blob(artifact)
-        _store_artifact(artifact, replace=True)
+        bundle = prepare_artifact_bundle(source_url)
+    except ArtifactDownloadError as error:
+        _LOGGER.exception(
+            "Async bundle preparation failed for %s",
+            metadata.id,
+        )
+        raise BlobStoreError(str(error)) from error
+    try:
+        _store_artifact_blob(artifact, bundle=bundle)
+        _store_artifact(
+            artifact,
+            replace=True,
+            readme_excerpt=bundle.readme_excerpt,
+        )
         _LOGGER.info("Async ingest done for artifact %s", metadata.id)
     except Exception as error:  # noqa: BLE001
         _LOGGER.exception(

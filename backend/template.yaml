@@ -8,6 +8,12 @@ Globals:
     Timeout: 300
     MemorySize: 2400
 
+Parameters:
+  ArtifactNameIndexTable:
+    Type: String
+    Default: ArtifactNameIndex
+    Description: DynamoDB table name storing artifact name index entries
+
 Resources:
   ArtifactBucket:
     Type: AWS::S3::Bucket
@@ -55,6 +61,17 @@ Resources:
             Action:
               - lambda:InvokeFunction
             Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-ArtifactCreateFunction*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
       Environment:
         Variables:
           ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
@@ -62,6 +79,7 @@ Resources:
           ARTIFACT_STORAGE_REGION: !Ref AWS::Region
           ARTIFACT_METADATA_PREFIX: metadata
           ARTIFACT_DOWNLOAD_BASE_URL: !Sub "https://${ArtifactBucket}.s3.${AWS::Region}.amazonaws.com"
+          ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
 
@@ -91,6 +109,14 @@ Resources:
             Action:
               - s3:ListBucket
             Resource: !GetAtt ArtifactBucket.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
       Environment:
         Variables:
           ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
@@ -98,6 +124,7 @@ Resources:
           ARTIFACT_STORAGE_REGION: !Ref AWS::Region
           ARTIFACT_METADATA_PREFIX: metadata
           ARTIFACT_DOWNLOAD_BASE_URL: !Sub "https://${ArtifactBucket}.s3.${AWS::Region}.amazonaws.com"
+          ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
 
@@ -115,6 +142,14 @@ Resources:
               - s3:GetObject
               - s3:HeadObject
             Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
       Events:
         RetrieveArtifact:
           Type: HttpApi
@@ -128,6 +163,46 @@ Resources:
           ARTIFACT_STORAGE_PREFIX: artifacts
           ARTIFACT_STORAGE_REGION: !Ref AWS::Region
           ARTIFACT_METADATA_PREFIX: metadata
+          ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+
+  ArtifactRegexSearchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/artifact_regex/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Events:
+        RegexSearch:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: POST
+            Path: /artifact/byRegEx
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:HeadObject
+            Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_METADATA_PREFIX: metadata
+          ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
 

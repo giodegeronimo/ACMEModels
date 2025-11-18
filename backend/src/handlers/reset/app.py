@@ -15,12 +15,7 @@ try:  # pragma: no cover - boto3 present in AWS, optional locally
 except ImportError:  # pragma: no cover
     boto3 = None  # type: ignore[assignment]
 
-from src.storage.blob_store import build_blob_store_from_env
-from src.storage.metadata_store import build_metadata_store_from_env
-
 _LOGGER = logging.getLogger(__name__)
-_BLOB_STORE = build_blob_store_from_env()
-_METADATA_STORE = build_metadata_store_from_env()
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -53,13 +48,16 @@ def _reset_storage() -> None:
         _reset_local()
         return
     bucket = os.environ.get("ARTIFACT_STORAGE_BUCKET")
-    if not bucket:
+    if bucket:
+        prefixes = _s3_prefixes()
+        _clear_s3_bucket(bucket, prefixes)
+    else:
         _LOGGER.info(
             "No ARTIFACT_STORAGE_BUCKET configured; nothing to reset."
         )
-        return
-    prefixes = _s3_prefixes()
-    _clear_s3_bucket(bucket, prefixes)
+    table_name = os.environ.get("ARTIFACT_NAME_INDEX_TABLE")
+    if table_name:
+        _clear_name_index_table(table_name)
 
 
 def _reset_local() -> None:
@@ -125,6 +123,38 @@ def _clear_s3_bucket(bucket: str, prefixes: list[str]) -> None:
                 if len(to_delete) == 1000:
                     _flush_batch(to_delete)
         _flush_batch(to_delete)
+
+
+def _clear_name_index_table(table_name: str) -> None:
+    if boto3 is None:
+        raise RuntimeError("boto3 is required to reset the registry in AWS")
+    region = (
+        os.environ.get("ARTIFACT_STORAGE_REGION")
+        or os.environ.get("AWS_REGION")
+        or os.environ.get("AWS_DEFAULT_REGION")
+    )
+    resource_kwargs = {"region_name": region} if region else {}
+    dynamo = boto3.resource("dynamodb", **resource_kwargs)
+    table = dynamo.Table(table_name)
+    start_key = None
+    while True:
+        params: dict[str, Any] = {}
+        if start_key:
+            params["ExclusiveStartKey"] = start_key
+        response = table.scan(**params)
+        items = response.get("Items", [])
+        if items:
+            with table.batch_writer() as batch:
+                for item in items:
+                    batch.delete_item(
+                        Key={
+                            "normalized_name": item["normalized_name"],
+                            "artifact_id": item["artifact_id"],
+                        }
+                    )
+        start_key = response.get("LastEvaluatedKey")
+        if not start_key:
+            break
 
 
 def _json_response(

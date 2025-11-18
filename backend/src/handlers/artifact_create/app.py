@@ -25,6 +25,7 @@ try:  # pragma: no cover - boto3 present in production
 except ImportError:  # pragma: no cover
     boto3 = None  # type: ignore[assignment]
 
+from src.metrics.ratings import RatingComputationError, compute_model_rating
 from src.models import Artifact, ArtifactData, ArtifactMetadata, ArtifactType
 from src.storage.artifact_ingest import (ArtifactBundle, ArtifactDownloadError,
                                          prepare_artifact_bundle)
@@ -37,6 +38,7 @@ from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
 from src.storage.name_index import (build_name_index_store_from_env,
                                     entry_from_metadata)
+from src.storage.ratings_store import store_rating
 
 _LOGGER = logging.getLogger(__name__)
 _METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()
@@ -66,6 +68,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             except ArtifactDownloadError as error:
                 raise BlobStoreError(str(error)) from error
             _store_artifact_blob(artifact, bundle=bundle)
+            _compute_and_store_rating_if_needed(artifact, source_url)
             stored = _store_artifact(
                 artifact, readme_excerpt=bundle.readme_excerpt
             )
@@ -169,6 +172,18 @@ def _build_artifact(
     )
     data = ArtifactData(url=url)
     return Artifact(metadata=metadata, data=data)
+
+
+def _compute_and_store_rating_if_needed(
+    artifact: Artifact, source_url: str
+) -> None:
+    if artifact.metadata.type is not ArtifactType.MODEL:
+        return
+    try:
+        rating_payload = compute_model_rating(source_url)
+    except RatingComputationError as exc:
+        raise ValidationError(str(exc)) from exc
+    store_rating(artifact.metadata.id, rating_payload)
 
 
 def _derive_artifact_name(url: str) -> str:
@@ -421,6 +436,7 @@ def _process_async_ingest(event: Dict[str, Any]) -> Dict[str, Any]:
         raise BlobStoreError(str(error)) from error
     try:
         _store_artifact_blob(artifact, bundle=bundle)
+        _compute_and_store_rating_if_needed(artifact, source_url)
         _store_artifact(
             artifact,
             replace=True,

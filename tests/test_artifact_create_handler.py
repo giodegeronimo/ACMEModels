@@ -29,6 +29,7 @@ def _reset_handler(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     handler._LAMBDA_CLIENT = None  # type: ignore[attr-defined]
     handler._NAME_INDEX = _FakeNameIndexStore()
     monkeypatch.setenv("ACME_DISABLE_ASYNC", "1")
+    monkeypatch.setenv("AWS_SAM_LOCAL", "1")
     monkeypatch.setattr(
         handler,
         "_can_process_synchronously",
@@ -46,6 +47,38 @@ def _reset_handler(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         )
 
     monkeypatch.setattr(handler, "prepare_artifact_bundle", _fake_prepare)
+    monkeypatch.setattr(
+        handler,
+        "compute_model_rating",
+        lambda url: {
+            "name": "fake",
+            "category": "MODEL",
+            "net_score": 1.0,
+            "net_score_latency": 0.1,
+            "ramp_up_time": 1.0,
+            "ramp_up_time_latency": 0.1,
+            "bus_factor": 1.0,
+            "bus_factor_latency": 0.1,
+            "performance_claims": 1.0,
+            "performance_claims_latency": 0.1,
+            "license": 1.0,
+            "license_latency": 0.1,
+            "dataset_and_code_score": 1.0,
+            "dataset_and_code_score_latency": 0.1,
+            "dataset_quality": 1.0,
+            "dataset_quality_latency": 0.1,
+            "code_quality": 1.0,
+            "code_quality_latency": 0.1,
+            "reproducibility": 1.0,
+            "reproducibility_latency": 0.1,
+            "reviewedness": 1.0,
+            "reviewedness_latency": 0.1,
+            "tree_score": 1.0,
+            "tree_score_latency": 0.1,
+            "size_score": 1.0,
+            "size_score_latency": 0.1,
+        },
+    )
 
     fake_client = _FakeLambdaClient()
 

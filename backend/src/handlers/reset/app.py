@@ -59,6 +59,10 @@ def _reset_storage() -> None:
         )
         return
     prefixes = _s3_prefixes()
+    ratings_env = os.environ.get("MODEL_RESULTS_PREFIX", "ratings")
+    ratings_prefix = ratings_env.strip("/")
+    if ratings_prefix:
+        prefixes.append(ratings_prefix)
     _clear_s3_bucket(bucket, prefixes)
 
 

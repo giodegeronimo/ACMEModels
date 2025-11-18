@@ -103,7 +103,13 @@ Resources:
             Action:
               - s3:GetObject
               - s3:HeadObject
+              - s3:ListBucket
             Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt ArtifactBucket.Arn
         - Statement:
             Effect: Allow
             Action:
@@ -141,7 +147,13 @@ Resources:
             Action:
               - s3:GetObject
               - s3:HeadObject
+              - s3:ListBucket
             Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt ArtifactBucket.Arn
         - Statement:
             Effect: Allow
             Action:
@@ -258,6 +270,14 @@ Resources:
             Resource:
               - !Sub "${ArtifactBucket.Arn}"
               - !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:Scan
+              - dynamodb:DeleteItem
+              - dynamodb:BatchWriteItem
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
       Events:
         ResetRegistry:
           Type: HttpApi
@@ -271,6 +291,7 @@ Resources:
           ARTIFACT_STORAGE_PREFIX: artifacts
           ARTIFACT_STORAGE_REGION: !Ref AWS::Region
           ARTIFACT_METADATA_PREFIX: metadata
+          ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
 

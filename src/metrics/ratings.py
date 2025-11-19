@@ -23,6 +23,7 @@ def compute_model_rating(hf_url: str) -> Dict[str, Any]:
     try:
         results = app.generate_results(records)
     except Exception as exc:  # noqa: BLE001 - propagate context
+        _LOGGER.exception(f"Exception occurred while computing rating for '{hf_url}'")
         raise RatingComputationError(
             f"Failed to compute rating for '{hf_url}': {exc}"
         ) from exc

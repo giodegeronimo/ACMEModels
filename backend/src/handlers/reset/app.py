@@ -24,7 +24,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     _extract_auth_token(event)
     try:
         _reset_storage()
-    except Exception as error:  # noqa: BLE001
+    except Exception as error:  # noqa: BLE001s
         _LOGGER.exception(
             "Failed to reset registry: %s", error
         )

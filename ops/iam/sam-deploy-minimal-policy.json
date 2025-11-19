@@ -77,7 +77,9 @@
         "iam:GetRole",
         "iam:CreateRole",
         "iam:AttachRolePolicy",
-        "iam:PutRolePolicy"
+        "iam:PutRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole"
       ],
       "Resource": "*"
     }

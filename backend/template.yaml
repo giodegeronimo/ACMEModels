@@ -261,6 +261,87 @@ Resources:
           MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
           MODEL_RESULTS_PREFIX: ratings
 
+  ArtifactMonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${AWS::StackName}-artifact-monitoring"
+      DashboardBody:
+        !Sub
+          - |
+            {
+              "widgets": [
+                {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 0,
+                  "width": 24,
+                  "height": 6,
+                  "properties": {
+                    "metrics": [
+                      [ "AWS/ApiGateway", "5XXError", "ApiId", "${ApiId}", { "stat": "Sum", "label": "5XX" } ],
+                      [ ".", "4XXError", ".", ".", { "stat": "Sum", "label": "4XX" } ],
+                      [ ".", "Count", ".", ".", { "stat": "Sum", "label": "Count" } ],
+                      [ ".", "Latency", ".", ".", { "stat": "Average", "label": "Latency (ms)" } ]
+                    ],
+                    "region": "${AWS::Region}",
+                    "title": "API Gateway Health",
+                    "period": 300,
+                    "stacked": false
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 6,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                    "metrics": [
+                      [ "AWS/Lambda", "Errors", "FunctionName", "${CreateFn}", { "label": "Create" } ],
+                      [ ".", "Errors", "FunctionName", "${DownloadFn}", { "label": "Download" } ],
+                      [ ".", "Errors", "FunctionName", "${RetrieveFn}", { "label": "Get" } ],
+                      [ ".", "Errors", "FunctionName", "${UpdateFn}", { "label": "Update" } ],
+                      [ ".", "Errors", "FunctionName", "${RegexFn}", { "label": "Regex" } ],
+                      [ ".", "Errors", "FunctionName", "${ResetFn}", { "label": "Reset" } ]
+                    ],
+                    "region": "${AWS::Region}",
+                    "title": "Lambda Errors",
+                    "period": 300
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 12,
+                  "y": 6,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                    "metrics": [
+                      [ "AWS/Lambda", "Duration", "FunctionName", "${CreateFn}", { "label": "Create" } ],
+                      [ ".", "Duration", "FunctionName", "${DownloadFn}", { "label": "Download" } ],
+                      [ ".", "Duration", "FunctionName", "${RetrieveFn}", { "label": "Get" } ],
+                      [ ".", "Duration", "FunctionName", "${UpdateFn}", { "label": "Update" } ],
+                      [ ".", "Duration", "FunctionName", "${RegexFn}", { "label": "Regex" } ],
+                      [ ".", "Duration", "FunctionName", "${ResetFn}", { "label": "Reset" } ]
+                    ],
+                    "region": "${AWS::Region}",
+                    "title": "Lambda Duration (ms)",
+                    "period": 300,
+                    "stat": "Average"
+                  }
+                }
+              ]
+            }
+          - {
+              ApiId: !Ref Api,
+              CreateFn: !Ref ArtifactCreateFunction,
+              DownloadFn: !Ref ArtifactDownloadFunction,
+              RetrieveFn: !Ref ArtifactRetrieveFunction,
+              UpdateFn: !Ref ArtifactUpdateFunction,
+              RegexFn: !Ref ArtifactRegexSearchFunction,
+              ResetFn: !Ref ArtifactResetFunction
+            }
+
   ArtifactUpdateFunction:
     Type: AWS::Serverless::Function
     Properties:

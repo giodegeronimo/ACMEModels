@@ -50,14 +50,22 @@ def _reset_storage() -> None:
     bucket = os.environ.get("ARTIFACT_STORAGE_BUCKET")
     if bucket:
         prefixes = _s3_prefixes()
+        ratings_env = os.environ.get("MODEL_RESULTS_PREFIX", "ratings")
+        ratings_prefix = ratings_env.strip("/")
+        if ratings_prefix:
+            prefixes.append(ratings_prefix)
         _clear_s3_bucket(bucket, prefixes)
     else:
         _LOGGER.info(
-            "No ARTIFACT_STORAGE_BUCKET configured; nothing to reset."
+            "No ARTIFACT_STORAGE_BUCKET configured; skipping S3 cleanup."
         )
     table_name = os.environ.get("ARTIFACT_NAME_INDEX_TABLE")
     if table_name:
         _clear_name_index_table(table_name)
+    else:
+        _LOGGER.info(
+            "No ARTIFACT_NAME_INDEX_TABLE configured; skipping DDB cleanup."
+        )
 
 
 def _reset_local() -> None:

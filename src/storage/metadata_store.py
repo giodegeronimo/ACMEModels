@@ -119,7 +119,7 @@ class S3ArtifactMetadataStore(ArtifactMetadataStore):
         try:
             response = self._s3.get_object(Bucket=self._bucket, Key=key)
         except Exception as exc:  # noqa: BLE001
-            if _is_not_found(exc):
+            if _is_access_denied(exc) or _is_not_found(exc):
                 raise ArtifactNotFound(
                     f"Artifact '{artifact_id}' does not exist"
                 ) from exc
@@ -139,6 +139,19 @@ class S3ArtifactMetadataStore(ArtifactMetadataStore):
             raise MetadataStoreError(
                 f"Failed to probe metadata: {exc}"
             ) from exc
+
+
+def _is_access_denied(exc: Exception) -> bool:
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return False
+    error = response.get("Error")
+    if not isinstance(error, dict):
+        return False
+    code = error.get("Code")
+    if not isinstance(code, str):
+        return False
+    return code == "AccessDenied"
 
 
 def _is_not_found(exc: Exception) -> bool:

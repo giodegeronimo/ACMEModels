@@ -151,6 +151,7 @@ class CLIApp:
 logger = logging.getLogger(__name__)
 
 DEFAULT_RESULTS_BUCKET = "model-directory-30861"
+DEFAULT_RESULTS_PREFIX = "ratings"
 _S3_CLIENT: Optional[Any] = None
 
 
@@ -172,6 +173,7 @@ def _get_s3_client() -> Any:
 def _store_results_in_s3(
     results: Sequence[Mapping[str, Any]],
     bucket_name: str,
+    prefix: str | None = None,
 ) -> List[str]:
     if not bucket_name:
         raise ValueError(
@@ -190,7 +192,18 @@ def _store_results_in_s3(
             )
             continue
 
-        object_key = f"{_sanitize_model_name(model_name)}.json"
+        prefix_source = (
+            prefix
+            or os.environ.get("MODEL_RESULTS_PREFIX")
+            or DEFAULT_RESULTS_PREFIX
+        )
+        prefix_path = prefix_source.strip("/") if prefix_source else ""
+        model_key = _sanitize_model_name(model_name)
+        object_key = (
+            f"{prefix_path}/{model_key}.json"
+            if prefix_path
+            else f"{model_key}.json"
+        )
         try:
             client.put_object(
                 Bucket=bucket_name,
@@ -344,6 +357,7 @@ def _apply_runtime_configuration(event: Mapping[str, Any]) -> None:
     os.environ.setdefault("LOG_FILE", "/tmp/acme_models_lambda.log")
     os.environ.setdefault("LOG_LEVEL", "1")
     os.environ.setdefault("MODEL_RESULTS_BUCKET", DEFAULT_RESULTS_BUCKET)
+    os.environ.setdefault("MODEL_RESULTS_PREFIX", DEFAULT_RESULTS_PREFIX)
 
 
 def handler(

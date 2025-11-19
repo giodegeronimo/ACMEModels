@@ -80,6 +80,8 @@ Resources:
           ARTIFACT_METADATA_PREFIX: metadata
           ARTIFACT_DOWNLOAD_BASE_URL: !Sub "https://${ArtifactBucket}.s3.${AWS::Region}.amazonaws.com"
           ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
+          MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
+          MODEL_RESULTS_PREFIX: ratings
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
 
@@ -131,6 +133,8 @@ Resources:
           ARTIFACT_METADATA_PREFIX: metadata
           ARTIFACT_DOWNLOAD_BASE_URL: !Sub "https://${ArtifactBucket}.s3.${AWS::Region}.amazonaws.com"
           ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
+          MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
+          MODEL_RESULTS_PREFIX: ratings
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
 
@@ -176,6 +180,8 @@ Resources:
           ARTIFACT_STORAGE_REGION: !Ref AWS::Region
           ARTIFACT_METADATA_PREFIX: metadata
           ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
+          MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
+          MODEL_RESULTS_PREFIX: ratings
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
 
@@ -215,8 +221,45 @@ Resources:
           ARTIFACT_STORAGE_REGION: !Ref AWS::Region
           ARTIFACT_METADATA_PREFIX: metadata
           ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
+          MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
+          MODEL_RESULTS_PREFIX: ratings
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+  ArtifactRateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/artifact_rate/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:HeadObject
+              - s3:ListBucket
+            Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt ArtifactBucket.Arn
+      Events:
+        GetArtifactRating:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: GET
+            Path: /artifact/model/{id}/rate
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_METADATA_PREFIX: metadata
+          MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
+          MODEL_RESULTS_PREFIX: ratings
 
   ArtifactUpdateFunction:
     Type: AWS::Serverless::Function

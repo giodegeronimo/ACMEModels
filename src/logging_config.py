@@ -19,20 +19,28 @@ def configure_logging() -> None:
     level = _read_level(os.getenv("LOG_LEVEL", "0"))
     log_path = os.getenv("LOG_FILE")
 
-    if level is None or level <= 0 or not log_path:
+    if level is None or level <= 0:
         # Silent mode; keep logging disabled.
         _CONFIGURED = True
         return
 
-    log_file = Path(log_path)
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-
-    logging.basicConfig(
-        level=_map_level(level),
-        filename=log_file,
-        filemode="a",
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    log_format = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    if log_path:
+        log_file = Path(log_path)
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        logging.basicConfig(
+            level=_map_level(level),
+            format=log_format,
+            force=True,
+            filename=log_file,
+            filemode="a",
+        )
+    else:
+        logging.basicConfig(
+            level=_map_level(level),
+            format=log_format,
+            force=True,
+        )
     _CONFIGURED = True
 
 

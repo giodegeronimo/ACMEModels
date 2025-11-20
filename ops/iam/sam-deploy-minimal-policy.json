@@ -70,6 +70,17 @@
       "Resource": "*"
     },
     {
+      "Sid": "CloudWatchDashboards",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:PutDashboard",
+        "cloudwatch:GetDashboard",
+        "cloudwatch:ListDashboards",
+        "cloudwatch:DeleteDashboards"
+      ],
+      "Resource": "*"
+    },
+    {
       "Sid": "IAMPassRoleTightenLater",
       "Effect": "Allow",
       "Action": [

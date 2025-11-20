@@ -9,6 +9,7 @@ import shutil
 from http import HTTPStatus
 from typing import Any, Dict
 
+from src.logging_config import configure_logging
 from src.models import Artifact, ArtifactData, ArtifactType
 from src.storage.artifact_ingest import (ArtifactBundle, ArtifactDownloadError,
                                          prepare_artifact_bundle)
@@ -18,7 +19,9 @@ from src.storage.errors import ArtifactNotFound
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         MetadataStoreError,
                                         build_metadata_store_from_env)
+from src.utils.auth import extract_auth_token
 
+configure_logging()
 _LOGGER = logging.getLogger(__name__)
 _METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()
 _BLOB_STORE: ArtifactBlobStore = build_blob_store_from_env()
@@ -47,6 +50,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         body = _serialize_artifact(updated_artifact, event)
     except ValueError as error:
         return _error_response(HTTPStatus.BAD_REQUEST, str(error))
+    except PermissionError as error:
+        return _error_response(HTTPStatus.FORBIDDEN, str(error))
     except ArtifactNotFound as error:
         return _error_response(HTTPStatus.NOT_FOUND, str(error))
     except (BlobStoreError, MetadataStoreError) as error:
@@ -85,11 +90,7 @@ def _parse_artifact_id(event: Dict[str, Any]) -> str:
 
 
 def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    headers = event.get("headers") or {}
-    token = headers.get("X-Authorization") or headers.get("x-authorization")
-    if not token:
-        _LOGGER.info("Artifact update called without X-Authorization header.")
-    return token
+    return extract_auth_token(event)
 
 
 def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:

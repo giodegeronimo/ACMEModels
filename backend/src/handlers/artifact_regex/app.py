@@ -8,12 +8,15 @@ import re
 from http import HTTPStatus
 from typing import Any, Dict, List, Pattern
 
+from src.logging_config import configure_logging
 from src.storage.errors import ArtifactNotFound
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
 from src.storage.name_index import (NameIndexEntry, NameIndexStore,
                                     build_name_index_store_from_env)
+from src.utils.auth import extract_auth_token
 
+configure_logging()
 _LOGGER = logging.getLogger(__name__)
 _NAME_INDEX: NameIndexStore = build_name_index_store_from_env()
 _METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()
@@ -31,6 +34,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         response = [_artifact_entry_payload(entry) for entry in matches]
     except ValueError as error:
         return _error_response(HTTPStatus.BAD_REQUEST, str(error))
+    except PermissionError as error:
+        return _error_response(HTTPStatus.FORBIDDEN, str(error))
     except Exception as error:  # noqa: BLE001 - resilience
         _LOGGER.exception("Unhandled error in regex search handler: %s", error)
         return _error_response(
@@ -106,11 +111,7 @@ def _artifact_entry_payload(entry: NameIndexEntry) -> Dict[str, Any]:
 
 
 def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    headers = event.get("headers") or {}
-    token = headers.get("X-Authorization") or headers.get("x-authorization")
-    if not token:
-        _LOGGER.info("Regex search called without X-Authorization header.")
-    return token
+    return extract_auth_token(event)
 
 
 def _json_response(status: HTTPStatus, body: Any) -> Dict[str, Any]:

@@ -262,6 +262,29 @@ def test_create_artifact_requires_url_field() -> None:
     assert "url" in json.loads(response["body"])["error"]
 
 
+def test_create_artifact_accepts_name_field() -> None:
+    body = {
+        "url": "https://huggingface.co/org/model",
+        "name": "custom-name",
+    }
+    context = type("Ctx", (), {"invoked_function_arn": "arn"})
+    response = handler.lambda_handler(_event(body=body), context=context)
+
+    assert response["statusCode"] in {201, 202}
+    assert json.loads(response["body"])["metadata"]["name"] == "custom-name"
+
+
+def test_create_artifact_ignores_unknown_fields() -> None:
+    body = {
+        "url": "https://huggingface.co/org/model",
+        "unknown": "value",
+    }
+    context = type("Ctx", (), {"invoked_function_arn": "arn"})
+    response = handler.lambda_handler(_event(body=body), context=context)
+
+    assert response["statusCode"] in {201, 202}
+
+
 def test_create_artifact_handles_duplicate_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

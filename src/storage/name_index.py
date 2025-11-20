@@ -67,7 +67,11 @@ class InMemoryNameIndexStore(NameIndexStore):
     ) -> Tuple[List[NameIndexEntry], Any | None]:
         start_index = -1
         if start_key is not None:
-            start_index = self._positions.get(str(start_key), -1)
+            candidate = start_key
+            if isinstance(candidate, dict):
+                candidate = candidate.get("artifact_id")
+            if candidate is not None:
+                start_index = self._positions.get(str(candidate), -1)
 
         collected: list[NameIndexEntry] = []
         next_key: str | None = None

@@ -7,7 +7,8 @@
       "Action": [
         "iam:CreateRole","iam:DeleteRole","iam:GetRole",
         "iam:UpdateAssumeRolePolicy","iam:AttachRolePolicy",
-        "iam:DetachRolePolicy","iam:PutRolePolicy","iam:DeleteRolePolicy"
+        "iam:DetachRolePolicy","iam:PutRolePolicy","iam:DeleteRolePolicy",
+        "iam:TagRole","iam:UntagRole"
       ],
       "Resource": "arn:aws:iam::963604113709:role/acmemodels-backend-*"
     },

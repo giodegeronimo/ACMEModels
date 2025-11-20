@@ -1,14 +1,26 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Minimal Artifact API (dummy endpoint)
+Description: Trustworthy Model Registry - Artifact API
 
 Globals:
   Function:
     Runtime: python3.9
     Timeout: 300
-    MemorySize: 128
+    MemorySize: 2400
+
+Parameters:
+  ArtifactNameIndexTable:
+    Type: String
+    Default: ArtifactNameIndex
+    Description: DynamoDB table name storing artifact name index entries
 
 Resources:
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+
   Api:
     Type: AWS::Serverless::HttpApi
     Properties:
@@ -20,8 +32,10 @@ Resources:
   ArtifactCreateFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: src/handlers/artifact_create/
-      Handler: app.lambda_handler
+      CodeUri: ..
+      Handler: backend/src/handlers/artifact_create/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
       Events:
         CreateArtifact:
           Type: HttpApi
@@ -29,8 +43,399 @@ Resources:
             ApiId: !Ref Api
             Method: POST
             Path: /artifact/{artifact_type}
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:HeadObject
+            Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt ArtifactBucket.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+            Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-ArtifactCreateFunction*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_METADATA_PREFIX: metadata
+          ARTIFACT_DOWNLOAD_BASE_URL: !Sub "https://${ArtifactBucket}.s3.${AWS::Region}.amazonaws.com"
+          ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
+          MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
+          MODEL_RESULTS_PREFIX: ratings
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+
+  ArtifactDownloadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/artifact_download/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Events:
+        DownloadArtifact:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: GET
+            Path: /download/{id}
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:HeadObject
+              - s3:ListBucket
+            Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt ArtifactBucket.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt ArtifactBucket.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_METADATA_PREFIX: metadata
+          ARTIFACT_DOWNLOAD_BASE_URL: !Sub "https://${ArtifactBucket}.s3.${AWS::Region}.amazonaws.com"
+          ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
+          MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
+          MODEL_RESULTS_PREFIX: ratings
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+
+  ArtifactRetrieveFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/artifact_get/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:HeadObject
+              - s3:ListBucket
+            Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt ArtifactBucket.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+      Events:
+        RetrieveArtifact:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: GET
+            Path: /artifacts/{artifact_type}/{id}
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_METADATA_PREFIX: metadata
+          ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
+          MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
+          MODEL_RESULTS_PREFIX: ratings
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+
+  ArtifactRegexSearchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/artifact_regex/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Events:
+        RegexSearch:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: POST
+            Path: /artifact/byRegEx
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:HeadObject
+            Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_METADATA_PREFIX: metadata
+          ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
+          MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
+          MODEL_RESULTS_PREFIX: ratings
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+  ArtifactRateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/artifact_rate/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:HeadObject
+              - s3:ListBucket
+            Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt ArtifactBucket.Arn
+      Events:
+        GetArtifactRating:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: GET
+            Path: /artifact/model/{id}/rate
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_METADATA_PREFIX: metadata
+          MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
+          MODEL_RESULTS_PREFIX: ratings
+
+  ArtifactMonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${AWS::StackName}-artifact-monitoring"
+      DashboardBody:
+        !Sub
+          - |
+            {
+              "widgets": [
+                {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 0,
+                  "width": 24,
+                  "height": 6,
+                  "properties": {
+                    "metrics": [
+                      [ "AWS/ApiGateway", "5XXError", "ApiId", "${ApiId}", { "stat": "Sum", "label": "5XX" } ],
+                      [ ".", "4XXError", ".", ".", { "stat": "Sum", "label": "4XX" } ],
+                      [ ".", "Count", ".", ".", { "stat": "Sum", "label": "Count" } ],
+                      [ ".", "Latency", ".", ".", { "stat": "Average", "label": "Latency (ms)" } ]
+                    ],
+                    "region": "${AWS::Region}",
+                    "title": "API Gateway Health",
+                    "period": 300,
+                    "stacked": false
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 6,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                    "metrics": [
+                      [ "AWS/Lambda", "Errors", "FunctionName", "${CreateFn}", { "label": "Create" } ],
+                      [ ".", "Errors", "FunctionName", "${DownloadFn}", { "label": "Download" } ],
+                      [ ".", "Errors", "FunctionName", "${RetrieveFn}", { "label": "Get" } ],
+                      [ ".", "Errors", "FunctionName", "${UpdateFn}", { "label": "Update" } ],
+                      [ ".", "Errors", "FunctionName", "${RegexFn}", { "label": "Regex" } ],
+                      [ ".", "Errors", "FunctionName", "${ResetFn}", { "label": "Reset" } ]
+                    ],
+                    "region": "${AWS::Region}",
+                    "title": "Lambda Errors",
+                    "period": 300
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 12,
+                  "y": 6,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                    "metrics": [
+                      [ "AWS/Lambda", "Duration", "FunctionName", "${CreateFn}", { "label": "Create" } ],
+                      [ ".", "Duration", "FunctionName", "${DownloadFn}", { "label": "Download" } ],
+                      [ ".", "Duration", "FunctionName", "${RetrieveFn}", { "label": "Get" } ],
+                      [ ".", "Duration", "FunctionName", "${UpdateFn}", { "label": "Update" } ],
+                      [ ".", "Duration", "FunctionName", "${RegexFn}", { "label": "Regex" } ],
+                      [ ".", "Duration", "FunctionName", "${ResetFn}", { "label": "Reset" } ]
+                    ],
+                    "region": "${AWS::Region}",
+                    "title": "Lambda Duration (ms)",
+                    "period": 300,
+                    "stat": "Average"
+                  }
+                }
+              ]
+            }
+          - {
+              ApiId: !Ref Api,
+              CreateFn: !Ref ArtifactCreateFunction,
+              DownloadFn: !Ref ArtifactDownloadFunction,
+              RetrieveFn: !Ref ArtifactRetrieveFunction,
+              UpdateFn: !Ref ArtifactUpdateFunction,
+              RegexFn: !Ref ArtifactRegexSearchFunction,
+              ResetFn: !Ref ArtifactResetFunction
+            }
+
+  ArtifactUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/artifact_update/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:HeadObject
+            Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt ArtifactBucket.Arn
+      Events:
+        UpdateArtifact:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: PUT
+            Path: /artifacts/{artifact_type}/{id}
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_METADATA_PREFIX: metadata
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+  ArtifactResetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/reset/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:DeleteObject
+              - s3:ListBucket
+              - s3:GetObject
+            Resource:
+              - !Sub "${ArtifactBucket.Arn}"
+              - !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:Scan
+              - dynamodb:DeleteItem
+              - dynamodb:BatchWriteItem
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+      Events:
+        ResetRegistry:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: DELETE
+            Path: /reset
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_METADATA_PREFIX: metadata
+          ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+
+  HealthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/health/
+      Handler: app.lambda_handler
+      Events:
+        HealthCheck:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: GET
+            Path: /health
 
 Outputs:
   ApiUrl:
     Description: Base URL for testing
     Value: !Sub "https://${Api}.execute-api.${AWS::Region}.amazonaws.com"
+  ArtifactBucketName:
+    Description: S3 bucket storing uploaded artifacts
+    Value: !Ref ArtifactBucket

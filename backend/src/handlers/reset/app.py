@@ -12,6 +12,7 @@ from typing import Any, Dict
 
 from src.logging_config import configure_logging
 from src.utils.auth import extract_auth_token
+from src.utils.request_logging import log_request
 
 try:  # pragma: no cover - boto3 present in AWS, optional locally
     import boto3
@@ -25,6 +26,7 @@ _LOGGER = logging.getLogger(__name__)
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for DELETE /reset."""
 
+    log_request(_LOGGER, event)
     try:
         _extract_auth_token(event)
     except PermissionError as error:

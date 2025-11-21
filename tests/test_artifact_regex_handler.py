@@ -30,6 +30,8 @@ class _FakeNameIndexStore:
         *,
         start_key: Any | None = None,
         limit: int | None = None,
+        segment: int | None = None,
+        total_segments: int | None = None,
     ) -> Tuple[List[NameIndexEntry], Any | None]:
         return list(self._entries), None
 
@@ -43,6 +45,31 @@ class _FakeMetadataStore:
             return self._records[artifact_id]
         except KeyError as exc:
             raise ArtifactNotFound("missing") from exc
+
+
+class _ParallelNameIndexStore:
+    supports_parallel_scan = True
+
+    def __init__(self, segments: Dict[int, List[NameIndexEntry]]) -> None:
+        self._segments = segments
+
+    def scan(
+        self,
+        *,
+        start_key: Any | None = None,
+        limit: int | None = None,
+        segment: int | None = None,
+        total_segments: int | None = None,
+    ) -> Tuple[List[NameIndexEntry], Any | None]:
+        assert segment is not None
+        data = self._segments.get(segment, [])
+        index = int(start_key or 0)
+        upper = len(data) if limit is None else index + limit
+        batch = data[index:upper]
+        next_key: int | None = None
+        if upper < len(data):
+            next_key = upper
+        return batch, next_key
 
 
 def _artifact(name: str, artifact_id: str) -> Artifact:
@@ -127,3 +154,36 @@ def test_regex_search_matches_readme(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response["statusCode"] == 200
     body = json.loads(response["body"])
     assert body[0]["id"] == "rid"
+
+
+def test_regex_parallel_scan_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    entries_segment_0 = [
+        NameIndexEntry("s0", "bert-base", ArtifactType.MODEL),
+    ]
+    entries_segment_1 = [
+        NameIndexEntry("s1", "google-research-bert", ArtifactType.CODE),
+        NameIndexEntry("s2", "whisper", ArtifactType.MODEL),
+    ]
+    store = _ParallelNameIndexStore({0: entries_segment_0, 1: entries_segment_1})
+    monkeypatch.setattr(handler, "_NAME_INDEX", store)
+    monkeypatch.setattr(
+        handler,
+        "_METADATA_STORE",
+        _FakeMetadataStore(
+            {
+                "s0": _artifact("bert-base", "s0"),
+                "s1": _artifact("google-research-bert", "s1"),
+                "s2": _artifact("whisper", "s2"),
+            }
+        ),
+    )
+    monkeypatch.setattr(handler, "PARALLEL_SEGMENTS", 2)
+
+    response = handler.lambda_handler(
+        _event({"regex": "google-research-bert"}),
+        context={},
+    )
+
+    assert response["statusCode"] == 200
+    body = json.loads(response["body"])
+    assert [item["id"] for item in body] == ["s1"]

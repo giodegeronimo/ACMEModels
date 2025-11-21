@@ -12,6 +12,7 @@ from src.models import validate_artifact_id
 from src.storage.blob_store import (ArtifactBlobStore, BlobNotFoundError,
                                     BlobStoreError, build_blob_store_from_env)
 from src.utils.auth import extract_auth_token
+from src.utils.request_logging import log_request
 
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ _BLOB_STORE: ArtifactBlobStore = build_blob_store_from_env()
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for GET /download/{id}."""
 
+    log_request(_LOGGER, event)
     try:
         artifact_id = _parse_artifact_id(event)
         _extract_auth_token(event)

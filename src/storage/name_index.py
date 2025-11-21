@@ -37,6 +37,8 @@ class NameIndexStore(Protocol):
         *,
         start_key: Any | None = None,
         limit: int | None = None,
+        segment: int | None = None,
+        total_segments: int | None = None,
     ) -> Tuple[List[NameIndexEntry], Any | None]:
         """Return a window of entries along with the pagination token."""
 
@@ -64,6 +66,8 @@ class InMemoryNameIndexStore(NameIndexStore):
         *,
         start_key: Any | None = None,
         limit: int | None = None,
+        segment: int | None = None,
+        total_segments: int | None = None,
     ) -> Tuple[List[NameIndexEntry], Any | None]:
         start_index = -1
         if start_key is not None:
@@ -93,6 +97,8 @@ class InMemoryNameIndexStore(NameIndexStore):
 
 class DynamoDBNameIndexStore(NameIndexStore):
     """DynamoDB-backed index keyed by normalized artifact name."""
+
+    supports_parallel_scan = True
 
     def __init__(
         self,
@@ -131,12 +137,17 @@ class DynamoDBNameIndexStore(NameIndexStore):
         *,
         start_key: Any | None = None,
         limit: int | None = None,
+        segment: int | None = None,
+        total_segments: int | None = None,
     ) -> Tuple[List[NameIndexEntry], Any | None]:
         params: dict[str, Any] = {}
         if start_key is not None:
             params["ExclusiveStartKey"] = start_key
         if limit is not None:
             params["Limit"] = limit
+        if segment is not None:
+            params["Segment"] = segment
+            params["TotalSegments"] = total_segments or 1
         response = self._table.scan(**params)
         items = response.get("Items", [])
         entries = [

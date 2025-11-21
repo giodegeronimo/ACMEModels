@@ -41,6 +41,7 @@ from src.storage.name_index import (build_name_index_store_from_env,
                                     entry_from_metadata)
 from src.storage.ratings_store import store_rating
 from src.utils.auth import extract_auth_token
+from src.utils.request_logging import log_request
 
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
@@ -62,6 +63,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             (event.get("artifact") or {}).get("metadata", {}).get("id"),
         )
         return _process_async_ingest(event)
+
+    log_request(_LOGGER, event)
 
     try:
         artifact_type = _parse_artifact_type(event)

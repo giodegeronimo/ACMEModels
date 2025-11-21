@@ -13,6 +13,7 @@ from src.storage.errors import ArtifactNotFound
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
 from src.utils.auth import extract_auth_token
+from src.utils.request_logging import log_request
 
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ _METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for GET /artifacts/{artifact_type}/{id}."""
 
+    log_request(_LOGGER, event)
     try:
         artifact_type = _parse_artifact_type(event)
         artifact_id = _parse_artifact_id(event)

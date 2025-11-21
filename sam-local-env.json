@@ -1,0 +1,6 @@
+{
+  "ArtifactRegexSearchFunction": {
+    "AWS_SAM_LOCAL": "1",
+    "ARTIFACT_NAME_INDEX_TABLE": ""
+  }
+}

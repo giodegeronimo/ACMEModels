@@ -31,7 +31,7 @@ Resources:
           {"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","routeKey":"$context.routeKey","status":"$context.status","protocol":"$context.protocol","method":"$context.httpMethod","path":"$context.path","integrationStatus":"$context.integrationStatus","integrationLatency":"$context.integrationLatency","responseLatency":"$context.responseLatency","error":"$context.error.message"}
       CorsConfiguration:
         AllowOrigins: ['*']
-        AllowMethods: ['GET','POST','OPTIONS']
+        AllowMethods: ['GET','POST','PUT','OPTIONS']
         AllowHeaders: ['*']
   ApiAccessLogGroup:
     Type: AWS::Logs::LogGroup
@@ -469,6 +469,46 @@ Resources:
           ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+
+  PlannedTracksFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/tracks/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Events:
+        GetPlannedTracks:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: GET
+            Path: /tracks
+      Environment:
+        Variables:
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+          LOG_LEVEL: "2"
+
+  AuthenticateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/authenticate/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Events:
+        AuthenticateUser:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: PUT
+            Path: /authenticate
+      Environment:
+        Variables:
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+          LOG_LEVEL: "2"
 
   HealthFunction:
     Type: AWS::Serverless::Function

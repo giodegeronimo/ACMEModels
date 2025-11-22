@@ -31,7 +31,12 @@ class ArtifactBundle:
     readme_excerpt: str | None = None
 
 
-README_EXCERPT_LIMIT = 4096
+_README_LIMIT_ENV = os.environ.get("ARTIFACT_README_MAX_BYTES", "0")
+try:
+    _README_LIMIT_VALUE = int(_README_LIMIT_ENV)
+except ValueError:
+    _README_LIMIT_VALUE = 0
+README_CAPTURE_LIMIT = _README_LIMIT_VALUE if _README_LIMIT_VALUE > 0 else None
 
 
 def prepare_artifact_bundle(source_url: str) -> ArtifactBundle:
@@ -95,7 +100,7 @@ def _is_readme_filename(name: str) -> bool:
 
 def _read_text_file(
     path: Path,
-    limit: int = README_EXCERPT_LIMIT,
+    limit: int | None = README_CAPTURE_LIMIT,
 ) -> str | None:
     try:
         text = path.read_text(encoding="utf-8")
@@ -107,7 +112,9 @@ def _read_text_file(
     text = text.strip()
     if not text:
         return None
-    return text[:limit]
+    if limit is not None and len(text) > limit:
+        return text[:limit]
+    return text
 
 
 def _extract_readme_from_directory(root: Path) -> str | None:
@@ -128,12 +135,15 @@ def _extract_readme_from_zip(path: Path) -> str | None:
                     continue
                 if _is_readme_filename(info.filename):
                     with archive.open(info) as handle:
-                        data = handle.read(README_EXCERPT_LIMIT).decode(
-                            "utf-8", errors="ignore"
-                        )
-                        data = data.strip()
-                        if data:
-                            return data[:README_EXCERPT_LIMIT]
+                        data = handle.read()
+                        text = data.decode("utf-8", errors="ignore").strip()
+                        if text:
+                            if (
+                                README_CAPTURE_LIMIT is not None
+                                and len(text) > README_CAPTURE_LIMIT
+                            ):
+                                return text[:README_CAPTURE_LIMIT]
+                            return text
     except Exception:
         return None
     return None

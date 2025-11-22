@@ -9,7 +9,7 @@ from typing import Any, Dict
 
 from src.models.artifacts import validate_artifact_id
 from src.storage.artifact_cost import (CostCalculationError,
-                                        calculate_artifact_cost)
+                                       calculate_artifact_cost)
 from src.storage.blob_store import BlobNotFoundError
 from src.storage.errors import ArtifactNotFound
 from src.storage.metadata_store import build_metadata_store_from_env
@@ -33,7 +33,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Verify artifact type matches
         if artifact.metadata.type.value != artifact_type:
             raise ArtifactNotFound(
-                f"Artifact '{artifact_id}' not found for type '{artifact_type}'"
+                f"Artifact '{artifact_id}' not found for type "
+                f"'{artifact_type}'"
             )
 
         # Get lineage graph if dependencies requested

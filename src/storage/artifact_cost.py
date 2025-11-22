@@ -21,19 +21,21 @@ def calculate_artifact_cost(
     lineage_graph: ArtifactLineageGraph | None = None,
 ) -> dict[str, dict[str, float]]:
     """
-    Calculate the cost (size in MB) of an artifact and optionally its dependencies.
+    Calculate the cost (size in MB) of an artifact and optionally its
+    dependencies.
 
     Args:
         artifact_id: The artifact to calculate cost for
         include_dependencies: Whether to include dependency costs
-        lineage_graph: Lineage graph for finding dependencies (required if include_dependencies=True)
+        lineage_graph: Lineage graph for finding dependencies
+            (required if include_dependencies=True)
 
     Returns:
         Dictionary mapping artifact_id -> cost info:
         {
             "artifact_id": {
-                "standalone_cost": 412.5,  # only if include_dependencies=True
-                "total_cost": 1255.0
+                "standalone_cost": 412.5,  # always included
+                "total_cost": 1255.0  # sum of artifact + dependencies (if any)
             }
         }
     """
@@ -49,7 +51,9 @@ def calculate_artifact_cost(
     try:
         import boto3
     except ImportError as exc:
-        raise CostCalculationError("boto3 is required for cost calculation") from exc
+        raise CostCalculationError(
+            "boto3 is required for cost calculation"
+        ) from exc
 
     region = (
         os.environ.get("ARTIFACT_STORAGE_REGION")
@@ -66,9 +70,10 @@ def calculate_artifact_cost(
     standalone_cost = _get_artifact_size_mb(s3, bucket, prefix, artifact_id)
 
     if not include_dependencies:
-        # Simple case: just return the artifact's cost as total_cost
+        # Simple case: return standalone_cost = total_cost (no dependencies)
         return {
             artifact_id: {
+                "standalone_cost": standalone_cost,
                 "total_cost": standalone_cost
             }
         }

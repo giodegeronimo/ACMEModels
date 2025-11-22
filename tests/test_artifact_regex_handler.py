@@ -90,6 +90,11 @@ def test_regex_search_handles_invalid_regex() -> None:
     assert response["statusCode"] == 400
 
 
+def test_regex_search_returns_404_when_no_match() -> None:
+    response = handler.lambda_handler(_event({"regex": "missing"}), context={})
+    assert response["statusCode"] == 404
+
+
 def test_regex_search_falls_back_when_metadata_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -120,6 +125,26 @@ def test_regex_search_matches_readme(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
 
+
+def test_regex_search_detects_slow_pattern(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = handler.lambda_handler(_event({"regex": "(a+)+$"}), context={})
+    assert response["statusCode"] == 400
+    entry = NameIndexEntry(
+        "rid",
+        "unrelated-name",
+        ArtifactType.MODEL,
+        readme_excerpt="Supports advanced sentiment analysis",
+    )
+    monkeypatch.setattr(handler, "_NAME_INDEX", _FakeNameIndexStore([entry]))
+    monkeypatch.setattr(
+        handler,
+        "_METADATA_STORE",
+        _FakeMetadataStore(
+            {entry.artifact_id: _artifact(entry.name, entry.artifact_id)}
+        ),
+    )
     response = handler.lambda_handler(
         _event({"regex": "sentiment"}),
         context={},

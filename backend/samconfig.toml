@@ -16,7 +16,6 @@ confirm_changeset = false
 image_repositories = []
 s3_prefix = "acmemodels-backend"
 parameter_overrides = "ArtifactNameIndexTable=\"ArtifactNameIndex\""
-profile = "dih"
 
 [default.global.parameters]
 region = "us-east-2"

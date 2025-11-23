@@ -109,7 +109,8 @@ def _load_lineage_graph(
     if not include_dependencies:
         return None
     try:
-        _LOGGER.debug("Loading lineage graph for cost artifact_id=%s", artifact_id)
+        _LOGGER.debug("Loading lineage graph for"
+                      "cost artifact_id=%s", artifact_id)
         return _LINEAGE_STORE.load(artifact_id)
     except LineageNotFound as exc:
         raise ValueError(str(exc)) from exc

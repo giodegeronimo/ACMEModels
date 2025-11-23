@@ -88,6 +88,8 @@ Resources:
           ARTIFACT_STORAGE_PREFIX: artifacts
           ARTIFACT_STORAGE_REGION: !Ref AWS::Region
           ARTIFACT_METADATA_PREFIX: metadata
+          ARTIFACT_LINEAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_LINEAGE_PREFIX: lineage
           ARTIFACT_DOWNLOAD_BASE_URL: !Sub "https://${ArtifactBucket}.s3.${AWS::Region}.amazonaws.com"
           ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
           MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
@@ -190,6 +192,8 @@ Resources:
           ARTIFACT_STORAGE_PREFIX: artifacts
           ARTIFACT_STORAGE_REGION: !Ref AWS::Region
           ARTIFACT_METADATA_PREFIX: metadata
+          ARTIFACT_LINEAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_LINEAGE_PREFIX: lineage
           ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
@@ -315,6 +319,44 @@ Resources:
           MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
           MODEL_RESULTS_PREFIX: ratings
 
+  ArtifactLineageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/artifact_lineage/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Events:
+        GetArtifactLineage:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: GET
+            Path: /artifact/model/{id}/lineage
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:HeadObject
+            Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt ArtifactBucket.Arn
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_METADATA_PREFIX: metadata
+          ARTIFACT_LINEAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_LINEAGE_PREFIX: lineage
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+          LOG_LEVEL: "2"
+
   ArtifactCostFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -354,6 +396,8 @@ Resources:
           ARTIFACT_STORAGE_PREFIX: artifacts
           ARTIFACT_STORAGE_REGION: !Ref AWS::Region
           ARTIFACT_METADATA_PREFIX: metadata
+          ARTIFACT_LINEAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_LINEAGE_PREFIX: lineage
           ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache

@@ -191,6 +191,9 @@ Resources:
           ARTIFACT_STORAGE_REGION: !Ref AWS::Region
           ARTIFACT_METADATA_PREFIX: metadata
           ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+          LOG_LEVEL: "2"
           MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
           MODEL_RESULTS_PREFIX: ratings
           HF_HOME: /tmp/hf-cache
@@ -352,6 +355,9 @@ Resources:
           ARTIFACT_STORAGE_REGION: !Ref AWS::Region
           ARTIFACT_METADATA_PREFIX: metadata
           ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
+          HF_HOME: /tmp/hf-cache
+          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+          LOG_LEVEL: "2"
 
   ArtifactMonitoringDashboard:
     Type: AWS::CloudWatch::Dashboard

@@ -26,6 +26,7 @@ configure_logging()
 _LOGGER = logging.getLogger(__name__)
 _METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()
 _NAME_INDEX = build_name_index_store_from_env()
+_S3_CLIENT = boto3.client("s3") if boto3 is not None else None
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -50,16 +51,49 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 f"'{artifact_type.value}'"
             )
 
-        # Delete all components of the artifact
-        _delete_artifact_blob(artifact_id)
-        _delete_artifact_metadata(artifact_id)
-        _delete_artifact_from_name_index(
-            artifact.metadata.name, artifact_id, artifact_type
-        )
+        # Delete all components of the artifact, collecting errors
+        deletion_errors = []
+
+        try:
+            _delete_artifact_blob(artifact_id)
+        except Exception as exc:
+            _LOGGER.warning("Failed to delete artifact blob: %s", exc)
+            deletion_errors.append(f"blob: {str(exc)}")
+
+        try:
+            _delete_artifact_metadata(artifact_id)
+        except Exception as exc:
+            _LOGGER.warning("Failed to delete artifact metadata: %s", exc)
+            deletion_errors.append(f"metadata: {str(exc)}")
+
+        try:
+            _delete_artifact_from_name_index(
+                artifact.metadata.name, artifact_id, artifact_type
+            )
+        except Exception as exc:
+            _LOGGER.warning(
+                "Failed to delete artifact from name index: %s", exc
+            )
+            deletion_errors.append(f"name_index: {str(exc)}")
 
         # Delete rating if it's a model
         if artifact_type == ArtifactType.MODEL:
-            _delete_artifact_rating(artifact_id)
+            try:
+                _delete_artifact_rating(artifact_id)
+            except Exception as exc:
+                _LOGGER.warning("Failed to delete artifact rating: %s", exc)
+                deletion_errors.append(f"rating: {str(exc)}")
+
+        if deletion_errors:
+            _LOGGER.error(
+                "Artifact deletion incomplete for %s. Errors: %s",
+                artifact_id,
+                "; ".join(deletion_errors),
+            )
+            return _error_response(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                f"Artifact deletion incomplete: {', '.join(deletion_errors)}",
+            )
 
         _LOGGER.info("Successfully deleted artifact %s", artifact_id)
         return _success_response()
@@ -108,53 +142,56 @@ def _extract_auth_token(event: Dict[str, Any]) -> str | None:
 
 
 def _delete_artifact_blob(artifact_id: str) -> None:
-    """Delete artifact binary from S3."""
+    """Delete artifact binary from S3.
+
+    Raises:
+        RuntimeError: If boto3 is not available or bucket is not configured.
+        Exception: If S3 deletion fails.
+    """
     bucket = os.environ.get("ARTIFACT_STORAGE_BUCKET")
     if not bucket:
-        _LOGGER.warning("ARTIFACT_STORAGE_BUCKET not configured")
-        return
+        raise RuntimeError("ARTIFACT_STORAGE_BUCKET not configured")
 
     prefix = os.environ.get("ARTIFACT_STORAGE_PREFIX", "artifacts")
     key = f"{prefix}/{artifact_id}" if prefix else artifact_id
 
-    if boto3 is None:
+    if _S3_CLIENT is None:
         raise RuntimeError("boto3 is required for deletion")
 
-    s3 = boto3.client("s3")
-    try:
-        s3.delete_object(Bucket=bucket, Key=key)
-        _LOGGER.info("Deleted blob: s3://%s/%s", bucket, key)
-    except Exception as exc:
-        _LOGGER.warning(
-            "Failed to delete blob for %s: %s", artifact_id, exc
-        )
+    _S3_CLIENT.delete_object(Bucket=bucket, Key=key)
+    _LOGGER.info("Deleted blob: s3://%s/%s", bucket, key)
 
 
 def _delete_artifact_metadata(artifact_id: str) -> None:
-    """Delete artifact metadata from S3."""
+    """Delete artifact metadata from S3.
+
+    Raises:
+        RuntimeError: If boto3 is not available or bucket is not configured.
+        Exception: If S3 deletion fails.
+    """
     bucket = os.environ.get("ARTIFACT_STORAGE_BUCKET")
     if not bucket:
-        _LOGGER.warning("ARTIFACT_STORAGE_BUCKET not configured")
-        return
+        raise RuntimeError("ARTIFACT_STORAGE_BUCKET not configured")
 
     prefix = os.environ.get("ARTIFACT_METADATA_PREFIX", "metadata")
     key = f"{prefix}/{artifact_id}.json" if prefix else f"{artifact_id}.json"
 
-    if boto3 is None:
+    if _S3_CLIENT is None:
         raise RuntimeError("boto3 is required for deletion")
 
-    s3 = boto3.client("s3")
-    try:
-        s3.delete_object(Bucket=bucket, Key=key)
-        _LOGGER.info("Deleted metadata: s3://%s/%s", bucket, key)
-    except Exception as exc:
-        _LOGGER.warning(
-            "Failed to delete metadata for %s: %s", artifact_id, exc
-        )
+    _S3_CLIENT.delete_object(Bucket=bucket, Key=key)
+    _LOGGER.info("Deleted metadata: s3://%s/%s", bucket, key)
 
 
 def _delete_artifact_rating(artifact_id: str) -> None:
-    """Delete model rating from S3."""
+    """Delete model rating from S3.
+
+    Note: Does not raise if bucket is not configured (ratings are optional).
+
+    Raises:
+        RuntimeError: If boto3 is not available.
+        Exception: If S3 deletion fails.
+    """
     bucket = os.environ.get("MODEL_RESULTS_BUCKET")
     if not bucket:
         _LOGGER.debug("MODEL_RESULTS_BUCKET not configured, skipping")
@@ -163,37 +200,28 @@ def _delete_artifact_rating(artifact_id: str) -> None:
     prefix = os.environ.get("MODEL_RESULTS_PREFIX", "ratings")
     key = f"{prefix}/{artifact_id}.json" if prefix else f"{artifact_id}.json"
 
-    if boto3 is None:
+    if _S3_CLIENT is None:
         raise RuntimeError("boto3 is required for deletion")
 
-    s3 = boto3.client("s3")
-    try:
-        s3.delete_object(Bucket=bucket, Key=key)
-        _LOGGER.info("Deleted rating: s3://%s/%s", bucket, key)
-    except Exception as exc:
-        _LOGGER.debug(
-            "Failed to delete rating for %s (may not exist): %s",
-            artifact_id,
-            exc,
-        )
+    _S3_CLIENT.delete_object(Bucket=bucket, Key=key)
+    _LOGGER.info("Deleted rating: s3://%s/%s", bucket, key)
 
 
 def _delete_artifact_from_name_index(
     name: str, artifact_id: str, artifact_type: ArtifactType
 ) -> None:
-    """Delete artifact from DynamoDB name index."""
-    try:
-        entry = NameIndexEntry(
-            artifact_id=artifact_id,
-            name=name,
-            artifact_type=artifact_type,
-        )
-        _NAME_INDEX.delete(entry)
-        _LOGGER.info("Deleted from name index: %s", name)
-    except Exception as exc:
-        _LOGGER.warning(
-            "Failed to delete from name index for %s: %s", artifact_id, exc
-        )
+    """Delete artifact from DynamoDB name index.
+
+    Raises:
+        Exception: If name index deletion fails.
+    """
+    entry = NameIndexEntry(
+        artifact_id=artifact_id,
+        name=name,
+        artifact_type=artifact_type,
+    )
+    _NAME_INDEX.delete(entry)
+    _LOGGER.info("Deleted from name index: %s", name)
 
 
 def _success_response() -> Dict[str, Any]:

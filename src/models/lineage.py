@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
-from .artifacts import validate_artifact_id
-
 
 @dataclass(frozen=True)
 class ArtifactLineageNode:
@@ -16,9 +14,6 @@ class ArtifactLineageNode:
     name: str | None = None
     source: str | None = None
     metadata: Mapping[str, Any] | None = None
-
-    def __post_init__(self) -> None:
-        validate_artifact_id(self.artifact_id)
 
 
 @dataclass(frozen=True)
@@ -30,8 +25,6 @@ class ArtifactLineageEdge:
     relationship: str
 
     def __post_init__(self) -> None:
-        validate_artifact_id(self.from_node_artifact_id)
-        validate_artifact_id(self.to_node_artifact_id)
         if not self.relationship:
             raise ValueError("Lineage relationship label cannot be empty")
 

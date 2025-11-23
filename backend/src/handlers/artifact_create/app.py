@@ -25,6 +25,10 @@ try:  # pragma: no cover - boto3 present in production
 except ImportError:  # pragma: no cover
     boto3 = None  # type: ignore[assignment]
 
+import tarfile
+import zipfile
+from pathlib import Path
+
 from src.logging_config import configure_logging
 from src.metrics.ratings import RatingComputationError, compute_model_rating
 from src.models import Artifact, ArtifactData, ArtifactMetadata, ArtifactType
@@ -34,6 +38,8 @@ from src.storage.blob_store import (ArtifactBlobStore, BlobNotFoundError,
                                     BlobStoreError, StoredArtifact,
                                     build_blob_store_from_env)
 from src.storage.errors import ValidationError
+from src.storage.lineage_store import (LineageStore,
+                                       build_lineage_store_from_env)
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         MetadataStoreError,
                                         build_metadata_store_from_env)
@@ -47,6 +53,7 @@ _LOGGER = logging.getLogger(__name__)
 _METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()
 _BLOB_STORE: ArtifactBlobStore
 _NAME_INDEX = build_name_index_store_from_env()
+_LINEAGE_STORE: LineageStore = build_lineage_store_from_env()
 _LAMBDA_CLIENT = None
 
 ASYNC_TASK_FIELD = "task"
@@ -85,6 +92,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 bundle = prepare_artifact_bundle(source_url)
             except ArtifactDownloadError as error:
                 raise BlobStoreError(str(error)) from error
+            # Attempt to extract lineage metadata from the downloaded bundle
+            _extract_and_upsert_lineage(bundle, artifact)
             _store_artifact_blob(artifact, bundle=bundle)
             _compute_and_store_rating_if_needed(artifact, source_url)
             stored = _store_artifact(
@@ -491,6 +500,8 @@ def _process_async_ingest(event: Dict[str, Any]) -> Dict[str, Any]:
             metadata.id,
         )
         raise BlobStoreError(str(error)) from error
+    # Try to extract lineage from the bundle for async ingest as well.
+    _extract_and_upsert_lineage(bundle, artifact)
     try:
         _store_artifact_blob(artifact, bundle=bundle)
         _compute_and_store_rating_if_needed(artifact, source_url)
@@ -556,9 +567,134 @@ def _log_bad_request(event: Dict[str, Any], error: Exception) -> None:
         path = (event.get("requestContext") or {}).get("http", {}).get("path")
     except Exception:
         path = None
+    path_display = path or event.get("path") or ""
     _LOGGER.warning(
         "Bad request for artifact_create path=%s body=%s error=%s",
-        path or (event.get("path") or ""),
+        path_display,
         body,
         error,
     )
+
+
+def _read_file_from_bundle(
+    bundle: ArtifactBundle,
+    filename: str,
+) -> str | None:
+    """Try to locate and read a file with `filename` inside the bundle.
+
+    Returns the file contents as a string if found, otherwise None.
+    """
+    try:
+        if bundle.kind == "directory":
+            root = Path(bundle.path)
+            for candidate in root.rglob(filename):
+                if candidate.is_file():
+                    return candidate.read_text(encoding="utf-8")
+            return None
+
+        # bundle.kind == 'file'
+        path = Path(bundle.path)
+        # Try tar.gz / tar archives
+        try:
+            if tarfile.is_tarfile(path):
+                with tarfile.open(path) as archive:
+                    for member in archive.getmembers():
+                        if (
+                            member.isfile()
+                            and Path(member.name).name == filename
+                        ):
+                            f = archive.extractfile(member)
+                            if f is None:
+                                continue
+                            data = f.read()
+                            return data.decode("utf-8")
+        except Exception:
+            # fall through to zip handling
+            pass
+
+        # Try zip archives
+        try:
+            if zipfile.is_zipfile(path):
+                with zipfile.ZipFile(path) as archive:
+                    for info in archive.infolist():
+                        if (
+                            not info.is_dir()
+                            and Path(info.filename).name == filename
+                        ):
+                            with archive.open(info) as handle:
+                                data = handle.read()
+                                return data.decode("utf-8")
+        except Exception:
+            pass
+
+        # As a last resort, if the file itself is JSON, try to read it.
+        try:
+            return path.read_text(encoding="utf-8")
+        except Exception:
+            return None
+    except Exception as exc:  # noqa: BLE001
+        # do not fail ingest on lineage issues
+        _LOGGER.debug("Error while searching bundle for %s: %s", filename, exc)
+        return None
+
+
+def _extract_and_upsert_lineage(
+    bundle: ArtifactBundle,
+    artifact: Artifact,
+) -> None:
+    """Extract lineage JSON from the bundle (if present) and upsert it.
+
+    This function is best-effort: any failure will be logged and will not
+    interrupt the ingest flow.
+    """
+    artifact_id = artifact.metadata.id
+    try:
+        # Look for common filenames
+        content = _read_file_from_bundle(bundle, "lineage.json")
+        if content is None:
+            content = _read_file_from_bundle(bundle, "config.json")
+        if content is None:
+            return
+        # Parse JSON and construct domain objects
+        payload = json.loads(content)
+        nodes_raw = payload.get("nodes", [])
+        edges_raw = payload.get("edges", [])
+        from src.models.lineage import (ArtifactLineageEdge,
+                                        ArtifactLineageGraph,
+                                        ArtifactLineageNode)
+
+        nodes = [ArtifactLineageNode(**n) for n in nodes_raw]
+        edges = [ArtifactLineageEdge(**e) for e in edges_raw]
+        graph = ArtifactLineageGraph(nodes=nodes, edges=edges)
+        # Persist lineage for other handlers
+        try:
+            _LINEAGE_STORE.save(  # type: ignore[attr-defined]
+                artifact_id, graph
+            )
+            _LOGGER.info("Lineage persisted for artifact=%s", artifact_id)
+        except Exception as exc:  # noqa: BLE001 - do not fail ingest
+            _LOGGER.warning(
+                "Failed to persist lineage for %s: %s",
+                artifact_id,
+                exc,
+            )
+
+        # Upsert into the in-memory lineage repo if available (tests/dev)
+        try:
+            from src.storage.memory import get_lineage_repo
+
+            repo = get_lineage_repo()
+            repo.upsert(artifact_id, graph)
+            _LOGGER.info("Lineage upserted for artifact=%s", artifact_id)
+        except Exception as exc:  # noqa: BLE001 - do not fail ingest
+            _LOGGER.warning(
+                "Failed to upsert lineage for %s: %s",
+                artifact_id,
+                exc,
+            )
+    except Exception as exc:  # noqa: BLE001 - swallow and log
+        _LOGGER.warning(
+            "Failed to extract lineage from bundle for %s: %s",
+            artifact_id,
+            exc,
+        )

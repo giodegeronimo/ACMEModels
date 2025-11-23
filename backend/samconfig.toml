@@ -2,13 +2,12 @@ version = 0.1
 
 [default.deploy.parameters]
 stack_name = "acmemodels-backend"
-region = "us-east-2"
 
 # Let SAM manage per-account artifact buckets automatically
 resolve_s3 = true
 
 # Capabilities
-capabilities = "CAPABILITY_NAMED_IAM"
+capabilities = "CAPABILITY_IAM"
 
 # CI quality-of-life: don't require interactive confirms
 confirm_changeset = false
@@ -17,6 +16,7 @@ confirm_changeset = false
 image_repositories = []
 s3_prefix = "acmemodels-backend"
 parameter_overrides = "ArtifactNameIndexTable=\"ArtifactNameIndex\""
+profile = "dih"
 
 [default.global.parameters]
 region = "us-east-2"

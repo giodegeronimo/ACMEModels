@@ -103,11 +103,16 @@ def _s3_prefixes() -> list[str]:
     metadata_prefix = os.environ.get(
         "ARTIFACT_METADATA_PREFIX", "metadata"
     ).strip("/")
+    lineage_prefix = os.environ.get(
+        "ARTIFACT_LINEAGE_PREFIX", "lineage"
+    ).strip("/")
     prefixes = []
     if artifact_prefix:
         prefixes.append(artifact_prefix)
     if metadata_prefix:
         prefixes.append(metadata_prefix)
+    if lineage_prefix:
+        prefixes.append(lineage_prefix)
     return prefixes
 
 

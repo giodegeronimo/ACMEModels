@@ -12,7 +12,9 @@ from src.models.artifacts import validate_artifact_id
 from src.storage.artifact_cost import (CostCalculationError,
                                        calculate_artifact_cost)
 from src.storage.blob_store import BlobNotFoundError
-from src.storage.errors import ArtifactNotFound
+from src.storage.errors import ArtifactNotFound, LineageNotFound
+from src.storage.lineage_store import (LineageStore,
+                                       build_lineage_store_from_env)
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
 from src.utils.auth import extract_auth_token
@@ -20,6 +22,7 @@ from src.utils.auth import extract_auth_token
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
 _METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()
+_LINEAGE_STORE: LineageStore = build_lineage_store_from_env()
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -31,6 +34,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         artifact_type = _parse_artifact_type(event)
         include_dependencies = _parse_dependency_param(event)
         _extract_auth_token(event)
+        _LOGGER.info(
+            "Cost request artifact_id=%s type=%s include_dependencies=%s",
+            artifact_id,
+            artifact_type,
+            include_dependencies,
+        )
 
         artifact = _METADATA_STORE.load(artifact_id)
         if artifact.metadata.type.value != artifact_type:
@@ -100,17 +109,17 @@ def _load_lineage_graph(
     if not include_dependencies:
         return None
     try:
-        from src.storage.memory import get_lineage_repo
-
-        lineage_repo = get_lineage_repo()
-        return lineage_repo.get(artifact_id)
+        _LOGGER.debug("Loading lineage graph for cost artifact_id=%s", artifact_id)
+        return _LINEAGE_STORE.load(artifact_id)
+    except LineageNotFound as exc:
+        raise ValueError(str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - lineage optional
         _LOGGER.warning(
             "Failed to load lineage for artifact %s: %s",
             artifact_id,
             exc,
         )
-        return None
+        raise ValueError("Lineage metadata malformed") from exc
 
 
 def _extract_auth_token(event: Dict[str, Any]) -> str | None:
@@ -137,4 +146,9 @@ def _json_response(status: HTTPStatus, body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _error_response(status: HTTPStatus, message: str) -> Dict[str, Any]:
+    _LOGGER.info(
+        "Cost request failed status=%s message=%s",
+        status.value,
+        message,
+    )
     return _json_response(status, {"error": message})

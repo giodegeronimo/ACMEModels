@@ -95,6 +95,7 @@ Resources:
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
           LOG_LEVEL: "2"
+          LOG_LEVEL: "2"
 
   ArtifactDownloadFunction:
     Type: AWS::Serverless::Function
@@ -239,6 +240,7 @@ Resources:
           MODEL_RESULTS_PREFIX: ratings
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+          LOG_LEVEL: "2"
   ArtifactListFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -279,6 +281,7 @@ Resources:
           MODEL_RESULTS_PREFIX: ratings
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+          LOG_LEVEL: "2"
   ArtifactRateFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -314,6 +317,7 @@ Resources:
           ARTIFACT_METADATA_PREFIX: metadata
           MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
           MODEL_RESULTS_PREFIX: ratings
+          LOG_LEVEL: "2"
 
   ArtifactCostFunction:
     Type: AWS::Serverless::Function
@@ -357,6 +361,7 @@ Resources:
           ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+          LOG_LEVEL: "2"
           LOG_LEVEL: "2"
 
   ArtifactMonitoringDashboard:
@@ -475,6 +480,7 @@ Resources:
           ARTIFACT_METADATA_PREFIX: metadata
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+          LOG_LEVEL: "2"
   ArtifactResetFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -516,6 +522,7 @@ Resources:
           ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+          LOG_LEVEL: "2"
 
   PlannedTracksFunction:
     Type: AWS::Serverless::Function
@@ -569,6 +576,9 @@ Resources:
             ApiId: !Ref Api
             Method: GET
             Path: /health
+      Environment:
+        Variables:
+          LOG_LEVEL: "2"
 
 Outputs:
   ApiUrl:

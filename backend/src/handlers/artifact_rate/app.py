@@ -24,18 +24,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for GET /artifact/model/{id}/rate."""
 
     try:
+        _log_request(event)
         artifact_id = _parse_artifact_id(event)
         _extract_auth_token(event)
+        _LOGGER.debug("Loading artifact metadata for %s", artifact_id)
         artifact = _METADATA_STORE.load(artifact_id)
         if artifact.metadata.type is not ArtifactType.MODEL:
             raise ArtifactNotFound(
                 f"Artifact '{artifact_id}' not found for type 'model'"
             )
+        _LOGGER.debug("Fetching rating for artifact %s", artifact_id)
         rating = load_rating(artifact_id)
         if rating is None:
             raise ArtifactNotFound(
                 f"Rating not available for artifact '{artifact_id}'"
             )
+        _normalize_latency_units(rating)
         body = rating
     except ValueError as error:
         return _error_response(HTTPStatus.BAD_REQUEST, str(error))
@@ -63,6 +67,34 @@ def _parse_artifact_id(event: Dict[str, Any]) -> str:
 
 def _extract_auth_token(event: Dict[str, Any]) -> str | None:
     return extract_auth_token(event)
+
+
+def _log_request(event: Dict[str, Any]) -> None:
+    http_ctx = (event.get("requestContext") or {}).get("http", {})
+    _LOGGER.info(
+        "Rate request path=%s params=%s headers=%s",
+        http_ctx.get("path"),
+        event.get("pathParameters"),
+        event.get("headers"),
+    )
+
+
+def _normalize_latency_units(rating: Dict[str, Any]) -> None:
+    """
+    Convert legacy millisecond latency values to seconds in-place.
+
+    Older ratings stored latencies in milliseconds, but the OpenAPI
+    contract expects seconds. Detect obviously millisecond-scale numbers
+    and normalize them while leaving already-correct second values alone.
+    """
+
+    for key, value in list(rating.items()):
+        if not key.endswith("_latency"):
+            continue
+        if not isinstance(value, (int, float)):
+            continue
+        if value > 20:  # heuristically assume ms values; convert to seconds
+            rating[key] = round(value / 1000, 3)
 
 
 def _json_response(status: HTTPStatus, body: Dict[str, Any]) -> Dict[str, Any]:

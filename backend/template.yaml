@@ -517,6 +517,50 @@ Resources:
           ARTIFACT_METADATA_PREFIX: metadata
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
+  ArtifactDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/artifact_delete/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Events:
+        DeleteArtifact:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: DELETE
+            Path: /artifacts/{artifact_type}/{id}
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:DeleteObject
+              - s3:GetObject
+              - s3:HeadObject
+            Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt ArtifactBucket.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:DeleteItem
+              - dynamodb:Query
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_METADATA_PREFIX: metadata
+          ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
+          MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
+          MODEL_RESULTS_PREFIX: ratings
   ArtifactResetFunction:
     Type: AWS::Serverless::Function
     Properties:

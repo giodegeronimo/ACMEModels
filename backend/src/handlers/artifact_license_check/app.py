@@ -115,14 +115,20 @@ def _evaluate_license(github_url: str) -> bool:
         )
         return False
     policy = _load_policy()
-    classification = _classify(candidates, policy)
+    classes = {policy.class_of(candidate) for candidate in candidates}
+    if "incompatible" in classes and "compatible" not in classes:
+        outcome = False
+    elif "compatible" in classes:
+        outcome = True
+    else:
+        outcome = False
     _LOGGER.info(
         "License classification for %s candidates=%s -> %s",
         github_url,
         candidates,
-        classification,
+        classes,
     )
-    return classification == "compatible"
+    return outcome
 
 
 def _extract_license_candidates(metadata: Dict[str, Any]) -> List[str]:

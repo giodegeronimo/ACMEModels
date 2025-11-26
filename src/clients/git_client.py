@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Optional, Protocol, cast
 
 import requests  # type: ignore[import]
@@ -49,8 +50,9 @@ class GitClient(BaseClient[Any]):
         """Fetch repository metadata from supported hosts."""
         normalized = repo_url.strip().rstrip("/")
         if normalized.startswith("https://github.com/"):
+            headers = self._auth_headers()
             return self._execute_with_rate_limit(
-                lambda: self._fetch_github_repo(normalized),
+                lambda: self._fetch_github_repo(normalized, headers=headers),
                 name=f"github.repo({normalized})",
             )
 
@@ -69,8 +71,11 @@ class GitClient(BaseClient[Any]):
 
         normalized = repo_url.strip().rstrip("/")
         if normalized.startswith("https://github.com/"):
+            headers = self._auth_headers()
             return self._execute_with_rate_limit(
-                lambda: self._fetch_github_tree(normalized, branch),
+                lambda: self._fetch_github_tree(
+                    normalized, branch, headers=headers
+                ),
                 name=f"github.tree({normalized})",
             )
 
@@ -90,14 +95,19 @@ class GitClient(BaseClient[Any]):
 
         normalized = repo_url.strip().rstrip("/")
         if normalized.startswith("https://github.com/"):
+            headers = self._auth_headers()
             return self._execute_with_rate_limit(
-                lambda: self._fetch_github_contributors(normalized, per_page),
+                lambda: self._fetch_github_contributors(
+                    normalized, per_page, headers=headers
+                ),
                 name=f"github.contributors({normalized})",
             )
 
         raise ValueError(f"Unsupported git repository host: {repo_url}")
 
-    def _fetch_github_repo(self, repo_url: str) -> dict[str, Any]:
+    def _fetch_github_repo(
+        self, repo_url: str, *, headers: Optional[dict[str, str]] = None
+    ) -> dict[str, Any]:
         parts = repo_url.removeprefix("https://github.com/").split("/")
         if len(parts) < 2:
             raise ValueError(f"Invalid GitHub repository URL: {repo_url}")
@@ -105,7 +115,7 @@ class GitClient(BaseClient[Any]):
         owner, repo = parts[0], parts[1]
         api_url = f"https://api.github.com/repos/{owner}/{repo}"
 
-        response = self._session.get(api_url, timeout=10)
+        response = self._session.get(api_url, timeout=10, headers=headers)
         if response.status_code != 200:
             raise RuntimeError(
                 f"Failed to retrieve repo metadata: {response.status_code}"
@@ -117,6 +127,8 @@ class GitClient(BaseClient[Any]):
         self,
         repo_url: str,
         branch: Optional[str],
+        *,
+        headers: Optional[dict[str, str]] = None,
     ) -> list[str]:
         parts = repo_url.removeprefix("https://github.com/").split("/")
         if len(parts) < 2:
@@ -134,7 +146,7 @@ class GitClient(BaseClient[Any]):
             f"{owner}/{repo}/git/trees/{tree_branch}?recursive=1"
         )
 
-        response = self._session.get(api_url, timeout=10)
+        response = self._session.get(api_url, timeout=10, headers=headers)
         if response.status_code != 200:
             raise RuntimeError(
                 f"Failed to retrieve repo tree: {response.status_code}"
@@ -154,6 +166,8 @@ class GitClient(BaseClient[Any]):
         self,
         repo_url: str,
         per_page: int,
+        *,
+        headers: Optional[dict[str, str]] = None,
     ) -> list[dict[str, Any]]:
         parts = repo_url.removeprefix("https://github.com/").split("/")
         if len(parts) < 2:
@@ -166,7 +180,7 @@ class GitClient(BaseClient[Any]):
             f"{owner}/{repo}/contributors?per_page={per_page}&anon=1"
         )
 
-        response = self._session.get(api_url, timeout=10)
+        response = self._session.get(api_url, timeout=10, headers=headers)
         if response.status_code != 200:
             raise RuntimeError(
                 f"Failed to retrieve repo contributors: {response.status_code}"
@@ -234,6 +248,8 @@ class GitClient(BaseClient[Any]):
         repo_url: str,
         file_path: str,
         branch: Optional[str],
+        *,
+        headers: Optional[dict[str, str]] = None,
     ) -> list[dict[str, Any]]:
         """Fetch blame data from GitHub GraphQL API."""
         parts = repo_url.removeprefix("https://github.com/").split("/")
@@ -293,7 +309,7 @@ class GitClient(BaseClient[Any]):
         }
 
         response = self._session.post(
-            graphql_url, json=payload, timeout=30
+            graphql_url, json=payload, timeout=30, headers=headers
         )
 
         if response.status_code != 200:
@@ -348,6 +364,8 @@ class GitClient(BaseClient[Any]):
         self,
         repo_url: str,
         commit_sha: str,
+        *,
+        headers: Optional[dict[str, str]] = None,
     ) -> Optional[dict[str, Any]]:
         """Get PR associated with a commit."""
         parts = repo_url.removeprefix("https://github.com/").split("/")
@@ -368,7 +386,8 @@ class GitClient(BaseClient[Any]):
             api_url,
             timeout=10,
             headers={
-                "Accept": "application/vnd.github.groot-preview+json"
+                **({"Accept": "application/vnd.github.groot-preview+json"}),
+                **(headers or {}),
             },
         )
 
@@ -387,3 +406,9 @@ class GitClient(BaseClient[Any]):
 
         # Return the first (usually only) PR associated with this commit
         return prs[0]
+
+    def _auth_headers(self) -> dict[str, str]:
+        token = os.getenv("GITHUB_TOKEN")
+        if token:
+            return {"Authorization": f"token {token}"}
+        return {}

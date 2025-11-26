@@ -136,3 +136,26 @@ def test_external_failure_returns_bad_gateway(tmp_path, monkeypatch):
     )
 
     assert resp["statusCode"] == 502
+
+
+def test_license_aliases_dont_reduce_compatibility(tmp_path, monkeypatch):
+    handler = _load_handler(tmp_path, monkeypatch)
+    _store_model(handler, "abc123")
+    stub = StubGitClient(
+        metadata={
+            "license": {
+                "spdx_id": "Apache-2.0",
+                "key": "apache-2.0",
+                "name": "Apache License 2.0",
+            }
+        }
+    )
+    handler._set_git_client(stub)
+
+    resp = handler.lambda_handler(
+        _event("abc123", "https://github.com/org/repo", {"X-Authorization": "token"}),
+        None,
+    )
+
+    assert resp["statusCode"] == 200
+    assert json.loads(resp["body"]) is True

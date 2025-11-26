@@ -199,31 +199,48 @@ def _normalize_slug(value: str) -> Optional[str]:
     synonyms: Dict[str, str] = {
         "mit license": "MIT",
         "mit": "MIT",
+        "apache license 2.0": "Apache-2.0",
+        "apache license, version 2.0": "Apache-2.0",
         "apache2": "Apache-2.0",
         "apache 2.0": "Apache-2.0",
         "apache-2.0": "Apache-2.0",
         "bsd 3-clause": "BSD-3-Clause",
+        'bsd 3-clause "new" or "revised" license': "BSD-3-Clause",
         "bsd-3-clause": "BSD-3-Clause",
         "bsd 2-clause": "BSD-2-Clause",
+        'bsd 2-clause "simplified" license': "BSD-2-Clause",
         "bsd-2-clause": "BSD-2-Clause",
+        "mozilla public license 2.0": "MPL-2.0",
         "mpl 2.0": "MPL-2.0",
         "mpl-2.0": "MPL-2.0",
+        "gnu lesser general public license v2.1": "LGPL-2.1-only",
         "lgpl 2.1": "LGPL-2.1-only",
         "lgpl v2.1": "LGPL-2.1-only",
         "lgpl-2.1": "LGPL-2.1-only",
+        "gnu lesser general public license v3.0": "LGPL-3.0-only",
         "lgpl3": "LGPL-3.0-only",
         "lgpl v3": "LGPL-3.0-only",
         "lgpl-3.0": "LGPL-3.0-only",
+        "gnu general public license v3.0": "GPL-3.0-only",
         "gpl v3": "GPL-3.0-only",
         "gpl-3.0": "GPL-3.0-only",
+        "gnu affero general public license v3.0": "AGPL-3.0-only",
         "agpl-3.0": "AGPL-3.0-only",
         "cc-by 4.0": "CC-BY-4.0",
+        "creative commons attribution 4.0 international": "CC-BY-4.0",
         "cc-by-4.0": "CC-BY-4.0",
+        "creative commons zero v1.0 universal": "CC0-1.0",
         "cc0": "CC0-1.0",
         "cc0-1.0": "CC0-1.0",
         "cc-by-sa 4.0": "CC-BY-SA-4.0",
+        "creative commons attribution share alike 4.0 international": "CC-BY-SA-4.0",
         "cc-by-sa-4.0": "CC-BY-SA-4.0",
+        "creative commons attribution-noncommercial 4.0 international": "CC-BY-NC-4.0",
+        "cc-by-nc-4.0": "CC-BY-NC-4.0",
+        "creative commons attribution-noderivatives 4.0 international": "CC-BY-ND-4.0",
+        "cc-by-nd-4.0": "CC-BY-ND-4.0",
         "openrail-m": "OpenRAIL-M",
+        "openrail++": "OpenRAIL++",
         "custom": "Custom",
     }
     if s in synonyms:
@@ -305,6 +322,9 @@ def _classify(candidates: Sequence[str], policy: _LicensePolicy) -> str:
     if not candidates:
         return "unknown"
     classes = {policy.class_of(slug) for slug in candidates}
+    classes.discard("unknown")
+    if not classes:
+        return "unknown"
     if classes == {"compatible"}:
         return "compatible"
     if "incompatible" in classes and "compatible" not in classes:

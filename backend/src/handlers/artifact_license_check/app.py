@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 from src.clients.git_client import GitClient
 from src.logging_config import configure_logging
-from src.metrics.license import _classify, _load_policy, _normalize_slug
+from src.metrics.license import _normalize_slug
 from src.models.artifacts import ArtifactType, validate_artifact_id
 from src.storage.errors import ArtifactNotFound
 from src.storage.metadata_store import (ArtifactMetadataStore,
@@ -52,7 +52,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         )
         return _error_response(status, message)
     except Exception as error:  # noqa: BLE001 - keep handler resilient
-        _LOGGER.exception("Unhandled error in license check handler: %s", error)
+        _LOGGER.exception(
+            "Unhandled error in license check handler: %s", error
+        )
         return _error_response(
             HTTPStatus.INTERNAL_SERVER_ERROR,
             "Internal server error",
@@ -69,7 +71,8 @@ def _parse_artifact_id(event: Dict[str, Any]) -> str:
 
 
 def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    # Require auth header per spec; env override can still relax via AUTH_OPTIONAL=1
+    # Require auth header per spec; env override can still relax via
+    # AUTH_OPTIONAL=1
     return extract_auth_token(event, optional=False)
 
 
@@ -98,7 +101,9 @@ def _parse_body(event: Dict[str, Any]) -> str:
 
     url_value = payload.get("github_url")
     if not isinstance(url_value, str) or not url_value.strip():
-        raise ValueError("Field 'github_url' is required and must be a string")
+        raise ValueError(
+            "Field 'github_url' is required and must be a string"
+        )
     parsed = urlparse(url_value.strip())
     if not (parsed.scheme and parsed.netloc):
         raise ValueError("Field 'github_url' must be a valid absolute URL")

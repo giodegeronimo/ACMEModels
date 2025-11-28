@@ -23,7 +23,13 @@ class _SessionWithGet(Protocol):
         headers: Optional[dict[str, str]] = None,
     ) -> Any: ...
 
-    def post(self, url: str, json: Any, timeout: int) -> Any: ...
+    def post(
+        self,
+        url: str,
+        json: Any,
+        timeout: int,
+        headers: Optional[dict[str, str]] = None,
+    ) -> Any: ...
 
 
 class GitClient(BaseClient[Any]):

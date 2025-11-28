@@ -33,7 +33,9 @@ def _load_handler(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return module
 
 
-def _store_model(handler_module, artifact_id: str, *, artifact_type=ArtifactType.MODEL):
+def _store_model(
+    handler_module, artifact_id: str, *, artifact_type=ArtifactType.MODEL
+):
     artifact = Artifact(
         metadata=ArtifactMetadata(
             name="demo-model",
@@ -45,7 +47,9 @@ def _store_model(handler_module, artifact_id: str, *, artifact_type=ArtifactType
     handler_module._METADATA_STORE.save(artifact, overwrite=True)
 
 
-def _event(artifact_id: str, github_url: str | None, headers: dict | None = None):
+def _event(
+    artifact_id: str, github_url: str | None, headers: dict | None = None
+):
     event = {
         "pathParameters": {"id": artifact_id},
         "body": json.dumps({"github_url": github_url} if github_url else {}),
@@ -61,7 +65,11 @@ def test_license_check_success(tmp_path, monkeypatch):
     handler._set_git_client(stub)
 
     resp = handler.lambda_handler(
-        _event("abc123", "https://github.com/org/repo", {"X-Authorization": "token"}),
+        _event(
+            "abc123",
+            "https://github.com/org/repo",
+            {"X-Authorization": "token"},
+        ),
         None,
     )
 
@@ -77,7 +85,11 @@ def test_non_model_artifact_returns_not_found(tmp_path, monkeypatch):
     handler._set_git_client(stub)
 
     resp = handler.lambda_handler(
-        _event("abc123", "https://github.com/org/repo", {"X-Authorization": "token"}),
+        _event(
+            "abc123",
+            "https://github.com/org/repo",
+            {"X-Authorization": "token"},
+        ),
         None,
     )
 
@@ -100,7 +112,9 @@ def test_invalid_body_returns_bad_request(tmp_path, monkeypatch):
 def test_missing_auth_returns_forbidden(tmp_path, monkeypatch):
     handler = _load_handler(tmp_path, monkeypatch)
     _store_model(handler, "abc123")
-    handler._set_git_client(StubGitClient(metadata={"license": {"spdx_id": "MIT"}}))
+    handler._set_git_client(
+        StubGitClient(metadata={"license": {"spdx_id": "MIT"}})
+    )
 
     resp = handler.lambda_handler(
         _event("abc123", "https://github.com/org/repo", {}),
@@ -114,11 +128,17 @@ def test_repo_not_found(tmp_path, monkeypatch):
     handler = _load_handler(tmp_path, monkeypatch)
     _store_model(handler, "abc123")
     handler._set_git_client(
-        StubGitClient(exc=RuntimeError("Failed to retrieve repo metadata: 404"))
+        StubGitClient(
+            exc=RuntimeError("Failed to retrieve repo metadata: 404")
+        )
     )
 
     resp = handler.lambda_handler(
-        _event("abc123", "https://github.com/org/repo", {"X-Authorization": "token"}),
+        _event(
+            "abc123",
+            "https://github.com/org/repo",
+            {"X-Authorization": "token"},
+        ),
         None,
     )
 
@@ -131,7 +151,11 @@ def test_external_failure_returns_bad_gateway(tmp_path, monkeypatch):
     handler._set_git_client(StubGitClient(exc=RuntimeError("timeout")))
 
     resp = handler.lambda_handler(
-        _event("abc123", "https://github.com/org/repo", {"X-Authorization": "token"}),
+        _event(
+            "abc123",
+            "https://github.com/org/repo",
+            {"X-Authorization": "token"},
+        ),
         None,
     )
 
@@ -153,7 +177,11 @@ def test_license_aliases_dont_reduce_compatibility(tmp_path, monkeypatch):
     handler._set_git_client(stub)
 
     resp = handler.lambda_handler(
-        _event("abc123", "https://github.com/org/repo", {"X-Authorization": "token"}),
+        _event(
+            "abc123",
+            "https://github.com/org/repo",
+            {"X-Authorization": "token"},
+        ),
         None,
     )
 

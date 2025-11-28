@@ -233,11 +233,14 @@ def _normalize_slug(value: str) -> Optional[str]:
         "cc0": "CC0-1.0",
         "cc0-1.0": "CC0-1.0",
         "cc-by-sa 4.0": "CC-BY-SA-4.0",
-        "creative commons attribution share alike 4.0 international": "CC-BY-SA-4.0",
+        "creative commons attribution share alike 4.0 international":
+            "CC-BY-SA-4.0",
         "cc-by-sa-4.0": "CC-BY-SA-4.0",
-        "creative commons attribution-noncommercial 4.0 international": "CC-BY-NC-4.0",
+        "creative commons attribution-noncommercial 4.0 international":
+            "CC-BY-NC-4.0",
         "cc-by-nc-4.0": "CC-BY-NC-4.0",
-        "creative commons attribution-noderivatives 4.0 international": "CC-BY-ND-4.0",
+        "creative commons attribution-noderivatives 4.0 international":
+            "CC-BY-ND-4.0",
         "cc-by-nd-4.0": "CC-BY-ND-4.0",
         "openrail-m": "OpenRAIL-M",
         "openrail++": "OpenRAIL++",

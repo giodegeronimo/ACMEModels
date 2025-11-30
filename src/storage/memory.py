@@ -124,6 +124,21 @@ class InMemoryLineageRepository(LineageRepository):
             ) from exc
 
 
+_lineage_repo: InMemoryLineageRepository | None = None
+
+
+def get_lineage_repo() -> InMemoryLineageRepository:
+    """Return a singleton in-memory lineage repository for tests/dev.
+
+    Other modules import this function lazily; providing it here keeps
+    test and handler wiring simple for the in-memory adapter.
+    """
+    global _lineage_repo
+    if _lineage_repo is None:
+        _lineage_repo = InMemoryLineageRepository()
+    return _lineage_repo
+
+
 class InMemoryAuditRepository(AuditRepository):
     """Append-only audit log stored in memory."""
 

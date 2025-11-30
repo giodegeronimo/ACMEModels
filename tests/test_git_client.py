@@ -33,12 +33,22 @@ class DummySession:
         self._response = response
         self.calls: list[tuple[str, int]] = []
 
-    def get(self, url: str, timeout: int,
-            headers: dict[str, str] | None = None) -> DummyResponse:
+    def get(
+        self,
+        url: str,
+        timeout: int,
+        headers: dict[str, str] | None = None,
+    ) -> DummyResponse:
         self.calls.append((url, timeout))
         return self._response
 
-    def post(self, url: str, json: Any, timeout: int) -> DummyResponse:
+    def post(
+        self,
+        url: str,
+        json: Any,
+        timeout: int,
+        headers: dict[str, str] | None = None,
+    ) -> DummyResponse:
         return self._response
 
 
@@ -47,14 +57,24 @@ class SequenceSession:
         self._responses = list(responses)
         self.calls: list[tuple[str, int]] = []
 
-    def get(self, url: str, timeout: int,
-            headers: dict[str, str] | None = None) -> DummyResponse:
+    def get(
+        self,
+        url: str,
+        timeout: int,
+        headers: dict[str, str] | None = None,
+    ) -> DummyResponse:
         self.calls.append((url, timeout))
         if not self._responses:
             raise RuntimeError("No more responses configured")
         return self._responses.pop(0)
 
-    def post(self, url: str, json: Any, timeout: int) -> DummyResponse:
+    def post(
+        self,
+        url: str,
+        json: Any,
+        timeout: int,
+        headers: dict[str, str] | None = None,
+    ) -> DummyResponse:
         if not self._responses:
             raise RuntimeError("No more responses configured")
         return self._responses.pop(0)

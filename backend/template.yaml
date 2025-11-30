@@ -13,6 +13,13 @@ Parameters:
     Type: String
     Default: ArtifactNameIndex
     Description: DynamoDB table name storing artifact name index entries
+  GitHubTokenSecretArn:
+    Type: String
+    Default: ""
+    Description: "Optional: ARN of Secrets Manager secret containing a GitHub token"
+
+Conditions:
+  HasGitHubToken: !Not [!Equals [!Ref GitHubTokenSecretArn, ""]]
 
 Resources:
   ArtifactBucket:
@@ -314,6 +321,60 @@ Resources:
           ARTIFACT_METADATA_PREFIX: metadata
           MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
           MODEL_RESULTS_PREFIX: ratings
+  ArtifactLicenseCheckFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend/src/handlers/artifact_license_check/app.lambda_handler
+      EphemeralStorage:
+        Size: 10240
+      Events:
+        LicenseCheck:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Method: POST
+            Path: /artifact/model/{id}/license-check
+      Environment:
+        Variables:
+          ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
+          ARTIFACT_STORAGE_PREFIX: artifacts
+          ARTIFACT_STORAGE_REGION: !Ref AWS::Region
+          ARTIFACT_METADATA_PREFIX: metadata
+          ARTIFACT_NAME_INDEX_TABLE: !Ref ArtifactNameIndexTable
+          GITHUB_TOKEN: !If
+            - HasGitHubToken
+            - !Sub "{{resolve:secretsmanager:${GitHubTokenSecretArn}:SecretString}}"
+            - ""
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:HeadObject
+              - s3:ListBucket
+            Resource: !Sub "${ArtifactBucket.Arn}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt ArtifactBucket.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+        - !If
+          - HasGitHubToken
+          - Statement:
+              Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref GitHubTokenSecretArn
+          - !Ref "AWS::NoValue"
 
   ArtifactCostFunction:
     Type: AWS::Serverless::Function

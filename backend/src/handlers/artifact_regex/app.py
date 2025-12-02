@@ -5,15 +5,19 @@ from __future__ import annotations
 import json
 import logging
 import re
+import signal
 from http import HTTPStatus
-from typing import Any, Dict, List, Pattern
+from typing import Any, Callable, Dict, List, Pattern
 
+from src.logging_config import configure_logging
 from src.storage.errors import ArtifactNotFound
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
 from src.storage.name_index import (NameIndexEntry, NameIndexStore,
                                     build_name_index_store_from_env)
+from src.utils.auth import extract_auth_token
 
+configure_logging()
 _LOGGER = logging.getLogger(__name__)
 _NAME_INDEX: NameIndexStore = build_name_index_store_from_env()
 _METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()
@@ -27,10 +31,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     try:
         _extract_auth_token(event)
         regex = _parse_regex(event)
+        _guard_regex(regex)
         matches = _search_name_index(regex)
+        if not matches:
+            return _error_response(
+                HTTPStatus.NOT_FOUND,
+                "No artifact found under this regex",
+            )
         response = [_artifact_entry_payload(entry) for entry in matches]
     except ValueError as error:
         return _error_response(HTTPStatus.BAD_REQUEST, str(error))
+    except PermissionError as error:
+        return _error_response(HTTPStatus.FORBIDDEN, str(error))
     except Exception as error:  # noqa: BLE001 - resilience
         _LOGGER.exception("Unhandled error in regex search handler: %s", error)
         return _error_response(
@@ -64,6 +76,17 @@ def _parse_regex(event: Dict[str, Any]) -> Pattern[str]:
         raise ValueError(f"Invalid regular expression: {exc}") from exc
 
 
+def _guard_regex(pattern: Pattern[str]) -> None:
+    def _probe() -> None:
+        test_input = "a" * 5000 + "b"
+        pattern.search(test_input)
+
+    try:
+        _run_with_timeout(_probe, 0.5)
+    except TimeoutError as exc:
+        raise ValueError("Regex evaluation exceeded timeout") from exc
+
+
 def _search_name_index(pattern: Pattern[str]) -> List[NameIndexEntry]:
     results: List[NameIndexEntry] = []
     start_key = None
@@ -83,11 +106,17 @@ def _search_name_index(pattern: Pattern[str]) -> List[NameIndexEntry]:
 
 
 def _entry_matches(entry: NameIndexEntry, pattern: Pattern[str]) -> bool:
-    if pattern.search(entry.name):
-        return True
-    if entry.readme_excerpt and pattern.search(entry.readme_excerpt):
-        return True
-    return False
+    def _match() -> bool:
+        if pattern.search(entry.name):
+            return True
+        if entry.readme_excerpt and pattern.search(entry.readme_excerpt):
+            return True
+        return False
+
+    try:
+        return _run_with_timeout(_match, 0.5)
+    except TimeoutError as exc:
+        raise ValueError("Regex evaluation exceeded timeout") from exc
 
 
 def _artifact_entry_payload(entry: NameIndexEntry) -> Dict[str, Any]:
@@ -106,11 +135,7 @@ def _artifact_entry_payload(entry: NameIndexEntry) -> Dict[str, Any]:
 
 
 def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    headers = event.get("headers") or {}
-    token = headers.get("X-Authorization") or headers.get("x-authorization")
-    if not token:
-        _LOGGER.info("Regex search called without X-Authorization header.")
-    return token
+    return extract_auth_token(event)
 
 
 def _json_response(status: HTTPStatus, body: Any) -> Dict[str, Any]:
@@ -119,6 +144,23 @@ def _json_response(status: HTTPStatus, body: Any) -> Dict[str, Any]:
         "headers": {"Content-Type": "application/json"},
         "body": json.dumps(body),
     }
+
+
+def _run_with_timeout(func: Callable[[], Any], timeout: float) -> Any:
+    if timeout <= 0:
+        return func()
+
+    def _handler(signum, frame):  # noqa: ANN001
+        raise TimeoutError
+
+    previous = signal.signal(signal.SIGALRM, _handler)
+    signal.setitimer(signal.ITIMER_REAL, timeout)
+    try:
+        result = func()
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+    return result
 
 
 def _error_response(status: HTTPStatus, message: str) -> Dict[str, Any]:

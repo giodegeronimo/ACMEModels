@@ -25,6 +25,7 @@ try:  # pragma: no cover - boto3 present in production
 except ImportError:  # pragma: no cover
     boto3 = None  # type: ignore[assignment]
 
+from src.logging_config import configure_logging
 from src.metrics.ratings import RatingComputationError, compute_model_rating
 from src.models import Artifact, ArtifactData, ArtifactMetadata, ArtifactType
 from src.storage.artifact_ingest import (ArtifactBundle, ArtifactDownloadError,
@@ -39,7 +40,9 @@ from src.storage.metadata_store import (ArtifactMetadataStore,
 from src.storage.name_index import (build_name_index_store_from_env,
                                     entry_from_metadata)
 from src.storage.ratings_store import store_rating
+from src.utils.auth import extract_auth_token
 
+configure_logging()
 _LOGGER = logging.getLogger(__name__)
 _METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()
 _BLOB_STORE: ArtifactBlobStore
@@ -54,15 +57,30 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point compatible with AWS Lambda."""
 
     if event.get(ASYNC_TASK_FIELD) == ASYNC_TASK_INGEST:
+        _LOGGER.info(
+            "Processing async ingest payload for artifact_id=%s",
+            (event.get("artifact") or {}).get("metadata", {}).get("id"),
+        )
         return _process_async_ingest(event)
 
     try:
         artifact_type = _parse_artifact_type(event)
-        _extract_auth_token(event)  # placeholder – no auth enforcement yet
+        _extract_auth_token(event)
         payload = _parse_body(event)
         artifact = _build_artifact(artifact_type, payload)
         source_url = payload["url"]
+        _LOGGER.info(
+            "artifact_id=%s type=%s name=%s url=%s",
+            artifact.metadata.id,
+            artifact_type.value,
+            artifact.metadata.name,
+            source_url,
+        )
         if _can_process_synchronously(source_url):
+            _LOGGER.info(
+                "Processing artifact_id=%s synchronously",
+                artifact.metadata.id,
+            )
             try:
                 bundle = prepare_artifact_bundle(source_url)
             except ArtifactDownloadError as error:
@@ -72,8 +90,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             stored = _store_artifact(
                 artifact, readme_excerpt=bundle.readme_excerpt
             )
+            _LOGGER.info(
+                "artifact_id=%s stored synchronously",
+                stored.metadata.id,
+            )
             response_body = _serialize_artifact(stored, event)
             return _json_response(HTTPStatus.CREATED, response_body)
+        _LOGGER.info(
+            "artifact_id=%s requires async ingest",
+            artifact.metadata.id,
+        )
         _store_artifact(artifact, readme_excerpt=None)
         _enqueue_async_ingest(
             context,
@@ -86,7 +112,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             ready_body = _serialize_artifact(artifact, event)
             return _json_response(HTTPStatus.CREATED, ready_body)
     except ValueError as error:
+        _log_bad_request(event, error)
         return _error_response(HTTPStatus.BAD_REQUEST, str(error))
+    except PermissionError as error:
+        return _error_response(HTTPStatus.FORBIDDEN, str(error))
     except ValidationError as error:
         return _error_response(HTTPStatus.CONFLICT, str(error))
     except BlobStoreError as error:
@@ -120,11 +149,7 @@ def _parse_artifact_type(event: Dict[str, Any]) -> ArtifactType:
 
 
 def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    headers = event.get("headers") or {}
-    token = headers.get("X-Authorization") or headers.get("x-authorization")
-    if not token:
-        _LOGGER.info("Artifact create called without X-Authorization header.")
-    return token
+    return extract_auth_token(event)
 
 
 def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -147,9 +172,18 @@ def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("Request body must be a JSON object")
     if "url" not in parsed:
         raise ValueError("Field 'url' is required")
-    if len(parsed) != 1:
-        raise ValueError("Only the 'url' field is supported in this request")
-    return parsed
+
+    url_value = parsed["url"]
+    if not isinstance(url_value, str) or not url_value.strip():
+        raise ValueError("Field 'url' must be a non-empty string")
+
+    result: Dict[str, Any] = {"url": url_value.strip()}
+    if "name" in parsed and parsed["name"] is not None:
+        name_value = parsed["name"]
+        if not isinstance(name_value, str) or not name_value.strip():
+            raise ValueError("Field 'name' must be a non-empty string")
+        result["name"] = name_value.strip()
+    return result
 
 
 def _decode_base64_body(body: str) -> str:
@@ -165,8 +199,9 @@ def _build_artifact(
     artifact_type: ArtifactType, payload: Dict[str, Any]
 ) -> Artifact:
     url = payload["url"]
+    provided_name = payload.get("name")
     metadata = ArtifactMetadata(
-        name=_derive_artifact_name(url),
+        name=provided_name or _derive_artifact_name(url),
         id=_generate_artifact_id(),
         type=artifact_type,
     )
@@ -179,6 +214,10 @@ def _compute_and_store_rating_if_needed(
 ) -> None:
     if artifact.metadata.type is not ArtifactType.MODEL:
         return
+    _LOGGER.info(
+        "Computing rating for artifact_id=%s",
+        artifact.metadata.id,
+    )
     try:
         rating_payload = compute_model_rating(source_url)
     except RatingComputationError as exc:
@@ -238,6 +277,12 @@ def _store_artifact_blob(
     *,
     bundle: ArtifactBundle,
 ) -> StoredArtifact:
+    _LOGGER.debug(
+        "Storing blob artifact_id=%s kind=%s path=%s",
+        artifact.metadata.id,
+        bundle.kind,
+        bundle.path,
+    )
     try:
         if bundle.kind == "file":
             stored = _BLOB_STORE.store_file(
@@ -265,6 +310,11 @@ def _store_artifact(
     replace: bool = False,
     readme_excerpt: str | None = None,
 ) -> Artifact:
+    _LOGGER.info(
+        "Persisting metadata/index artifact_id=%s replace=%s",
+        artifact.metadata.id,
+        replace,
+    )
     _METADATA_STORE.save(artifact, overwrite=replace)
     try:
         _NAME_INDEX.save(
@@ -343,6 +393,7 @@ def _lambda_client():
     if _LAMBDA_CLIENT is None:
         if boto3 is None:  # pragma: no cover - handled in tests via patching
             raise BlobStoreError("boto3 is required for async ingest")
+        _LOGGER.debug("Creating boto3 lambda client for async ingest")
         _LAMBDA_CLIENT = boto3.client("lambda")
     return _LAMBDA_CLIENT
 
@@ -396,6 +447,11 @@ def _enqueue_async_ingest(
         return
 
     try:
+        _LOGGER.info(
+            "Invoking async ingest for artifact_id=%s function=%s",
+            artifact.metadata.id,
+            function_arn,
+        )
         _lambda_client().invoke(
             FunctionName=function_arn,
             InvocationType="Event",
@@ -426,6 +482,7 @@ def _process_async_ingest(event: Dict[str, Any]) -> Dict[str, Any]:
         return {"statusCode": 400, "body": "invalid payload"}
 
     artifact = Artifact(metadata=metadata, data=ArtifactData(url=source_url))
+    _LOGGER.info("Async ingest start artifact_id=%s", metadata.id)
     try:
         bundle = prepare_artifact_bundle(source_url)
     except ArtifactDownloadError as error:
@@ -466,14 +523,42 @@ def _wait_for_download_ready(
     )
     if max_wait <= 0:
         return False
+    _LOGGER.info(
+        "Waiting up to %.1fs for artifact_id=%s to finish ingest",
+        max_wait,
+        artifact_id,
+    )
     deadline = time.monotonic() + max_wait
     while time.monotonic() < deadline:
         try:
             _BLOB_STORE.generate_download_url(artifact_id)
+            _LOGGER.info("Artifact_id=%s ready during sync wait", artifact_id)
             return True
         except BlobNotFoundError:
             time.sleep(0.5)
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Download readiness check failed: %s", exc)
             time.sleep(0.5)
+    _LOGGER.info("Artifact_id=%s not ready before timeout", artifact_id)
     return False
+
+
+def _log_bad_request(event: Dict[str, Any], error: Exception) -> None:
+    try:
+        body = event.get("body")
+        if event.get("isBase64Encoded") and isinstance(body, str):
+            import base64
+
+            body = base64.b64decode(body).decode("utf-8")
+    except Exception:
+        body = "<unable to decode body>"
+    try:
+        path = (event.get("requestContext") or {}).get("http", {}).get("path")
+    except Exception:
+        path = None
+    _LOGGER.warning(
+        "Bad request for artifact_create path=%s body=%s error=%s",
+        path or (event.get("path") or ""),
+        body,
+        error,
+    )

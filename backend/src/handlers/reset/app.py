@@ -10,18 +10,28 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Dict
 
+from src.logging_config import configure_logging
+from src.utils.auth import extract_auth_token
+
 try:  # pragma: no cover - boto3 present in AWS, optional locally
     import boto3
 except ImportError:  # pragma: no cover
     boto3 = None  # type: ignore[assignment]
 
+configure_logging()
 _LOGGER = logging.getLogger(__name__)
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for DELETE /reset."""
 
-    _extract_auth_token(event)
+    try:
+        _extract_auth_token(event)
+    except PermissionError as error:
+        return _json_response(
+            HTTPStatus.FORBIDDEN,
+            {"error": str(error)},
+        )
     try:
         _reset_storage()
     except Exception as error:  # noqa: BLE001s
@@ -36,11 +46,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    headers = event.get("headers") or {}
-    token = headers.get("X-Authorization") or headers.get("x-authorization")
-    if not token:
-        _LOGGER.info("Registry reset called without X-Authorization header.")
-    return token
+    return extract_auth_token(event)
 
 
 def _reset_storage() -> None:

@@ -29,10 +29,12 @@ def test_require_auth_success_and_usage_increment() -> None:
     event = _event(token)
 
     record = auth.require_auth_token(event, optional=False)
+    assert record is not None
     assert record.username == "alice"
     assert record.usage_count == 1
 
-    auth.require_auth_token(event, optional=False)
+    second = auth.require_auth_token(event, optional=False)
+    assert second is not None
     assert record.usage_count == 2
 
 

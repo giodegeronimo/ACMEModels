@@ -5,21 +5,25 @@ import {
   getArtifactCost,
   getArtifactLineage,
   getArtifactRate,
-  getIngestRequests,
-  getStats,
+  fetchAllArtifacts,
+  getTracks,
   licenseCheck,
   listArtifacts,
   resetRegistry,
   searchArtifactsByRegex,
+  authenticate,
+  getAuthToken,
+  resetAuthTokenToDefault,
 } from "./api";
-import { parseCliResults } from "./utils/cli";
 import "./App.css";
 
 const ROUTES = [
   { pattern: "/", component: DashboardPage, label: "Dashboard" },
-  { pattern: "/models", component: ModelDirectoryPage, label: "Models" },
+  { pattern: "/models", component: ModelDirectoryPage, label: "Artifacts" },
+  { pattern: "/models/:type/:id", component: ModelDetailPage },
   { pattern: "/models/:id", component: ModelDetailPage },
   { pattern: "/ingest", component: IngestPage, label: "Ingest" },
+  { pattern: "/auth", component: AuthPage, label: "Auth" },
   { pattern: "/license", component: LicensePage, label: "License" },
   { pattern: "/admin/reset", component: ResetPage, label: "Admin" },
 ];
@@ -86,11 +90,14 @@ function Layout({ currentPath, children }) {
   return (
     <div className="app-shell">
       <header className="site-header">
+        <a className="skip-link" href="#main-content">
+          Skip to main content
+        </a>
         <div className="header-content">
-          <a className="site-title" href="#/">
+          <a className="site-title" href="#/" aria-label="ACME Models Registry home">
             ACME Models Registry
           </a>
-          <nav>
+          <nav aria-label="Primary">
             <ul className="nav-list">
               {ROUTES.filter((route) => route.label).map((route) => (
                 <li key={route.pattern}>
@@ -108,14 +115,15 @@ function Layout({ currentPath, children }) {
           </nav>
         </div>
       </header>
-      <main>{children}</main>
+      <main id="main-content">{children}</main>
     </div>
   );
 }
 
 function DashboardPage() {
   const [stats, setStats] = useState(null);
-  const [requests, setRequests] = useState([]);
+  const [recentArtifacts, setRecentArtifacts] = useState([]);
+  const [tracks, setTracks] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -123,13 +131,14 @@ function DashboardPage() {
 
     async function load() {
       try {
-        const [statsPayload, requestPayload] = await Promise.all([
-          getStats(),
-          getIngestRequests(),
+        const [allArtifacts, plannedTracks] = await Promise.all([
+          fetchAllArtifacts({ pageSize: 50 }),
+          getTracks().catch(() => []),
         ]);
         if (isMounted) {
-          setStats(statsPayload);
-          setRequests(requestPayload);
+          setStats(summarizeArtifacts(allArtifacts));
+          setRecentArtifacts(allArtifacts.slice(0, 10));
+          setTracks(plannedTracks || []);
           setError("");
         }
       } catch (err) {
@@ -147,20 +156,24 @@ function DashboardPage() {
 
   return (
     <section className="panel">
+      <h1 className="visually-hidden">Dashboard</h1>
       <div className="panel-header">
         <h2>Registry Overview</h2>
         <p className="lead-text">
-          Monitor vetted assets, ingestion pipelines, and license guardrails.
+          Snapshot of artifacts available from the deployed AWS backend.
         </p>
       </div>
-      {error && <p className="alert alert--warning">{error}</p>}
+      {error && (
+        <p className="alert alert--warning" role="alert">
+          {error}
+        </p>
+      )}
       <div className="grid grid--stats">
         {[
-          ["Total Models", stats?.total_models],
-          ["Vetted", stats?.vetted],
-          ["Unvetted", stats?.unvetted],
-          ["Proprietary", stats?.proprietary],
-          ["Public", stats?.public],
+          ["Total Artifacts", stats?.total],
+          ["Models", stats?.models],
+          ["Datasets", stats?.datasets],
+          ["Code", stats?.code],
         ].map(([label, value]) => (
           <article className="stat-card" key={label}>
             <h3>{label}</h3>
@@ -169,30 +182,36 @@ function DashboardPage() {
         ))}
       </div>
       <div className="panel-header">
-        <h2>Recent Ingestion Requests</h2>
-        <p>Requests must meet minimum metric thresholds before packaging.</p>
+        <h2>Recent Artifacts</h2>
+        <p>Latest entries returned by the registry API.</p>
       </div>
-      {requests.length ? (
+      {recentArtifacts.length ? (
         <div className="table-container">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Model</th>
-                <th>Submitted By</th>
-                <th>Status</th>
-                <th>Submitted</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Artifact ID</th>
               </tr>
             </thead>
             <tbody>
-              {requests.map((item) => (
-                <tr key={item.request_id}>
-                  <td>{item.name}</td>
-                  <td>{item.submitted_by || "anonymous"}</td>
-                  <td>{item.status}</td>
+              {recentArtifacts.map((item) => (
+                <tr key={item.id}>
                   <td>
-                    {item.submitted_at
-                      ? new Date(item.submitted_at * 1000).toLocaleString()
-                      : "—"}
+                    <a
+                      className="text-clip"
+                      href={`#/models/${encodeURIComponent(
+                        item.type || "model"
+                      )}/${encodeURIComponent(item.id)}`}
+                      title={item.name}
+                    >
+                      {item.name}
+                    </a>
+                  </td>
+                  <td>{item.type}</td>
+                  <td>
+                    <code>{item.id}</code>
                   </td>
                 </tr>
               ))}
@@ -200,7 +219,20 @@ function DashboardPage() {
           </table>
         </div>
       ) : (
-        <p role="status">No ingestion requests submitted yet.</p>
+        <p role="status">No artifacts available yet.</p>
+      )}
+      {tracks.length > 0 && (
+        <>
+          <div className="panel-header">
+            <h2>Planned Tracks</h2>
+            <p>Returned directly from the backend /tracks endpoint.</p>
+          </div>
+          <ul className="lineage-list">
+            {tracks.map((track) => (
+              <li key={track}>{track}</li>
+            ))}
+          </ul>
+        </>
       )}
     </section>
   );
@@ -263,9 +295,10 @@ function ModelDirectoryPage() {
 
   return (
     <section className="panel">
+      <h1 className="visually-hidden">Artifact Directory</h1>
       <div className="panel-header">
-        <h2>Model Directory</h2>
-        <p>Browse ACME-approved and third-party models side-by-side.</p>
+        <h2>Artifact Directory</h2>
+        <p>Browse artifacts (models, datasets and codebases) currently available in the registry.</p>
       </div>
       <form className="form-inline" onSubmit={runSearch}>
         <label htmlFor="regex-search" className="visually-hidden">
@@ -284,41 +317,37 @@ function ModelDirectoryPage() {
           cards.
         </p>
       </form>
-      {error && <p className="alert alert--warning">{error}</p>}
+      {error && (
+        <p className="alert alert--warning" role="alert">
+          {error}
+        </p>
+      )}
       <div className="table-container">
         <table className="data-table">
           <thead>
             <tr>
-              <th>Model</th>
-              <th>Owner</th>
-              <th>Net Score</th>
-              <th>License</th>
-              <th>Vetted</th>
-              <th>Size (MB)</th>
-              <th>Updated</th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Artifact ID</th>
             </tr>
           </thead>
           <tbody>
             {items.map((item) => (
               <tr key={item.id}>
                 <td>
-                  <a href={`#/models/${encodeURIComponent(item.id)}`}>
+                  <a
+                    className="text-clip"
+                    href={`#/models/${encodeURIComponent(
+                      item.type || "model"
+                    )}/${encodeURIComponent(item.id)}`}
+                    title={item.name}
+                  >
                     {item.name}
                   </a>
                 </td>
-                <td>{item.owner || "—"}</td>
-                <td>{formatScore(item.net_score)}</td>
-                <td>{item.license?.toUpperCase?.() ?? "—"}</td>
-                <td>{item.vetted ? "Yes" : "No"}</td>
+                <td>{item.type}</td>
                 <td>
-                  {typeof item.size_mb === "number"
-                    ? item.size_mb.toFixed(1)
-                    : "—"}
-                </td>
-                <td>
-                  {item.updated_at
-                    ? new Date(item.updated_at * 1000).toLocaleString()
-                    : "—"}
+                  <code>{item.id}</code>
                 </td>
               </tr>
             ))}
@@ -342,19 +371,40 @@ function ModelDirectoryPage() {
 }
 
 function ModelDetailPage({ params }) {
-  const { id } = params;
+  const { id, type } = params;
+  const artifactType = type || "model";
   const [detail, setDetail] = useState(null);
   const [metrics, setMetrics] = useState(null);
   const [lineage, setLineage] = useState(null);
   const [cost, setCost] = useState(null);
   const [error, setError] = useState("");
 
+  const costSummary = useMemo(() => {
+    if (!cost || typeof cost !== "object") return null;
+    const root = cost[id] || Object.values(cost)[0];
+    if (!root) return null;
+    const entries = Object.entries(cost).filter(
+      ([key]) => key !== id && cost[key]
+    );
+    return { root, dependencies: entries };
+  }, [cost, id]);
+
+  const detailSummary = useMemo(
+    () =>
+      detail?.description ||
+      detail?.card_excerpt ||
+      (detail?.url
+        ? `Source: ${detail.url}`
+        : "Artifact metadata provided by the registry."),
+    [detail]
+  );
+
   useEffect(() => {
     let isMounted = true;
 
     async function load() {
       try {
-        const artifactEnvelope = await getArtifact("model", id);
+        const artifactEnvelope = await getArtifact(artifactType, id);
         const flattened = {
           ...artifactEnvelope.metadata,
           ...artifactEnvelope.data,
@@ -365,12 +415,18 @@ function ModelDetailPage({ params }) {
         }
       } catch (err) {
         if (isMounted) {
-          setError(err.message || "Model not found.");
+          setError(err.message || "Artifact not found.");
         }
       }
     }
 
     async function loadExtras() {
+      if (artifactType !== "model") {
+        setMetrics(null);
+        setLineage(null);
+        setCost(null);
+        return;
+      }
       try {
         const [rating, lineagePayload, costPayload] = await Promise.all([
           getArtifactRate(id).catch(() => null),
@@ -392,13 +448,15 @@ function ModelDetailPage({ params }) {
     return () => {
       isMounted = false;
     };
-  }, [id]);
+  }, [id, artifactType]);
 
   if (error) {
     return (
       <section className="panel">
-        <h2>Model Details</h2>
-        <p className="alert alert--warning">{error}</p>
+        <h1>Artifact Details</h1>
+        <p className="alert alert--warning" role="alert">
+          {error}
+        </p>
       </section>
     );
   }
@@ -406,68 +464,38 @@ function ModelDetailPage({ params }) {
   if (!detail) {
     return (
       <section className="panel">
-        <h2>Model Details</h2>
-        <p>Loading model details…</p>
+        <h1>Artifact Details</h1>
+        <p role="status" aria-live="polite">
+          Loading artifact details…
+        </p>
       </section>
     );
   }
-
-  const costSummary = useMemo(() => {
-    if (!cost || typeof cost !== "object") return null;
-    const root = cost[id] || Object.values(cost)[0];
-    if (!root) return null;
-    const entries = Object.entries(cost).filter(
-      ([key]) => key !== id && cost[key]
-    );
-    return { root, dependencies: entries };
-  }, [cost, id]);
 
   return (
     <>
       <section className="panel">
         <div className="panel-header">
-          <h2>{detail.name}</h2>
-          <p>{detail.description || detail.card_excerpt}</p>
+          <h1>{detail.name}</h1>
+          <p>{detailSummary}</p>
         </div>
         <dl className="detail-grid">
           <div>
-            <dt>Model ID</dt>
+            <dt>Artifact ID</dt>
             <dd>
               <code>{detail.id}</code>
             </dd>
           </div>
           <div>
-            <dt>Owner</dt>
-            <dd>{detail.owner || "—"}</dd>
+            <dt>Type</dt>
+            <dd>{detail.type || artifactType}</dd>
           </div>
           <div>
-            <dt>Vetted Status</dt>
+            <dt>Source URL</dt>
             <dd>
-              {detail.vetted ? (
-                <span className="status status--success">Vetted</span>
-              ) : (
-                <span className="status status--warning">Pending review</span>
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>License</dt>
-            <dd>{detail.license?.toUpperCase?.() ?? "—"}</dd>
-          </div>
-          <div>
-            <dt>Net Score</dt>
-            <dd>
-              <span className="metric-highlight">
-                {formatScore(metrics?.net_score)}
-              </span>
-            </dd>
-          </div>
-          <div>
-            <dt>Model Card</dt>
-            <dd>
-              {detail.card_url ? (
-                <a href={detail.card_url} target="_blank" rel="noreferrer">
-                  Open card
+              {detail.url ? (
+                <a href={detail.url} target="_blank" rel="noreferrer">
+                  {detail.url}
                 </a>
               ) : (
                 "—"
@@ -475,200 +503,149 @@ function ModelDetailPage({ params }) {
             </dd>
           </div>
           <div>
-            <dt>Artifact Size</dt>
+            <dt>Download</dt>
             <dd>
-              {typeof detail.size_mb === "number"
-                ? `${detail.size_mb.toFixed(1)} MB`
-                : "—"}
-            </dd>
-          </div>
-          <div>
-            <dt>Tags</dt>
-            <dd>
-              {(detail.tags || []).map((tag) => (
-                <span className="chip" key={tag}>
-                  {tag}
-                </span>
-              ))}
-            </dd>
-          </div>
-          <div>
-            <dt>Updated</dt>
-            <dd>
-              {detail.updated_at
-                ? new Date(detail.updated_at * 1000).toLocaleString()
-                : "—"}
+              {detail.download_url ? (
+                <a
+                  href={detail.download_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Download from registry
+                </a>
+              ) : (
+                "—"
+              )}
             </dd>
           </div>
         </dl>
       </section>
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Quality Metrics</h2>
-        </div>
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Metric</th>
-                <th>Score</th>
-                <th>Latency</th>
-              </tr>
-            </thead>
-            <tbody>
-              {metrics ? (
-                metricRows(metrics).map(([label, value, latency]) => (
-                  <tr key={label}>
-                    <td>{label}</td>
-                    <td>{value}</td>
-                    <td>{latency}</td>
+      {artifactType === "model" && (
+        <>
+          <section className="panel">
+            <div className="panel-header">
+              <h2>Quality Metrics</h2>
+            </div>
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    <th>Score</th>
+                    <th>Latency</th>
                   </tr>
-                ))
+                </thead>
+                <tbody>
+                  {metrics ? (
+                    metricRows(metrics).map(([label, value, latency]) => (
+                      <tr key={label}>
+                        <td>{label}</td>
+                        <td>{value}</td>
+                        <td>{latency}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={3}>Metrics are not available.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section className="panel">
+            <div className="panel-header">
+              <h2>Lineage Graph</h2>
+              <p>Relationships are derived from config metadata and ingestion history.</p>
+            </div>
+            <div className="lineage" aria-live="polite">
+              {lineage && lineage.nodes?.length ? (
+                <ul className="lineage-list">
+                  {lineage.nodes.map((node) => (
+                    <li key={node.artifact_id || node.id}>
+                      <strong>{node.name}</strong> —{" "}
+                      {(node.metadata?.license || node.license || "unknown").toUpperCase()}{" "}
+                      • {node.metadata?.vetted || node.vetted ? "vetted" : "unvetted"}
+                    </li>
+                  ))}
+                </ul>
               ) : (
-                <tr>
-                  <td colSpan={3}>Metrics are not available.</td>
-                </tr>
+                <p>No lineage information available.</p>
               )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Lineage Graph</h2>
-          <p>Relationships are derived from config metadata and ingestion history.</p>
-        </div>
-        <div className="lineage" aria-live="polite">
-          {lineage && lineage.nodes?.length ? (
-            <ul className="lineage-list">
-              {lineage.nodes.map((node) => (
-                <li key={node.artifact_id || node.id}>
-                  <strong>{node.name}</strong> —{" "}
-                  {(node.metadata?.license || node.license || "unknown").toUpperCase()}{" "}
-                  • {node.metadata?.vetted || node.vetted ? "vetted" : "unvetted"}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>No lineage information available.</p>
-          )}
-        </div>
-      </section>
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Size Cost Estimate</h2>
-        </div>
-        <div className="size-cost" aria-live="polite">
-          {costSummary ? (
-            <>
-              <p>
-                Total download cost:{" "}
-                {formatScore(costSummary.root.total_cost)} MB
-              </p>
-              {typeof costSummary.root.standalone_cost === "number" && (
-                <p>
-                  Standalone cost:{" "}
-                  {formatScore(costSummary.root.standalone_cost)} MB
-                </p>
+            </div>
+          </section>
+          <section className="panel">
+            <div className="panel-header">
+              <h2>Size Cost Estimate</h2>
+            </div>
+            <div className="size-cost" aria-live="polite">
+              {costSummary ? (
+                <>
+                  <p>
+                    Total download cost:{" "}
+                    {formatScore(costSummary.root.total_cost)} MB
+                  </p>
+                  {typeof costSummary.root.standalone_cost === "number" && (
+                    <p>
+                      Standalone cost:{" "}
+                      {formatScore(costSummary.root.standalone_cost)} MB
+                    </p>
+                  )}
+                  {costSummary.dependencies.length > 0 && (
+                    <div>
+                      <h3>Dependencies</h3>
+                      <ul className="lineage-list">
+                        {costSummary.dependencies.map(([depId, dep]) => (
+                          <li key={depId}>
+                            {depId}: {formatScore(dep.total_cost)} MB
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p>No size information available.</p>
               )}
-              {costSummary.dependencies.length > 0 && (
-                <div>
-                  <h3>Dependencies</h3>
-                  <ul className="lineage-list">
-                    {costSummary.dependencies.map(([depId, dep]) => (
-                      <li key={depId}>
-                        {depId}: {formatScore(dep.total_cost)} MB
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
-          ) : (
-            <p>No size information available.</p>
-          )}
-        </div>
-      </section>
+            </div>
+          </section>
+        </>
+      )}
     </>
   );
 }
 
 function IngestPage() {
+  const [artifactType, setArtifactType] = useState("model");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
-  const [submittedBy, setSubmittedBy] = useState("");
-  const [cliText, setCliText] = useState("");
-  const [cliSummary, setCliSummary] = useState(
-    "Paste CLI output to populate metrics automatically."
-  );
-  const [cliError, setCliError] = useState("");
-  const [parsedCli, setParsedCli] = useState(null);
   const [status, setStatus] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!cliText.trim()) {
-      setCliSummary("Paste CLI output to populate metrics automatically.");
-      setCliError("");
-      setParsedCli(null);
-      return;
-    }
-    try {
-      const parsed = parseCliResults(cliText, name);
-      setParsedCli(parsed);
-      const parts = [];
-      if (parsed.record.name) {
-        parts.push(`Loaded metrics for ${parsed.record.name}.`);
-      }
-      if (parsed.metrics.net_score !== undefined) {
-        parts.push(`Net score ${formatScore(parsed.metrics.net_score)}.`);
-      }
-      if (parsed.totalRecords > 1) {
-        parts.push(`(${parsed.totalRecords} records detected.)`);
-      }
-      setCliSummary(parts.join(" "));
-      setCliError("");
-    } catch (err) {
-      setCliError(err.message);
-      setParsedCli(null);
-    }
-  }, [cliText, name]);
-
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!parsedCli) {
-      setCliError("Valid CLI output is required.");
-      return;
-    }
     if (!url.trim()) {
-      setStatus("A HuggingFace URL is required.");
+      setStatus("A source URL is required.");
       return;
     }
 
     const payload = {
-      name: name.trim() || parsedCli.record.name || "unnamed-model",
       url: url.trim(),
-      download_url: url.trim(),
-      owner: submittedBy.trim() || "external",
-      submitted_by: submittedBy.trim() || undefined,
-      metrics: parsedCli.metrics,
     };
-
-    if (parsedCli.record.category) {
-      payload.tags = [parsedCli.record.category];
+    if (name.trim()) {
+      payload.name = name.trim();
     }
 
     setSubmitting(true);
-    setStatus("Submitting request…");
+    setStatus("Submitting artifact…");
     try {
-      const response = await createArtifact(payload);
+      const response = await createArtifact(artifactType, payload);
       const artifactId = response?.metadata?.id ?? "unknown";
-      setStatus(`Artifact registered. ID: ${artifactId}`);
+      setStatus(
+        `Artifact registered. Type=${artifactType} ID=${artifactId}`
+      );
       setName("");
       setUrl("");
-      setSubmittedBy("");
-      setCliText("");
-      setParsedCli(null);
     } catch (err) {
       setStatus(err.message || "Unable to submit request.");
     } finally {
@@ -678,12 +655,26 @@ function IngestPage() {
 
   return (
     <section className="panel">
+      <h1>Artifact Ingest</h1>
       <div className="panel-header">
-        <h2>Request Model Ingestion</h2>
-        <p>Submit a public HuggingFace model for review.</p>
+        <h2>Submit new artifact</h2>
+        <p>
+          Use this page to add either a model, dataset, or codebase to the registry.
+        </p>
       </div>
       <form onSubmit={handleSubmit}>
-        <label htmlFor="ingest-name">Model name</label>
+        <label htmlFor="ingest-type">Artifact type</label>
+        <select
+          id="ingest-type"
+          value={artifactType}
+          onChange={(event) => setArtifactType(event.target.value)}
+        >
+          <option value="model">model</option>
+          <option value="dataset">dataset</option>
+          <option value="code">code</option>
+        </select>
+
+        <label htmlFor="ingest-name">Artifact name (optional)</label>
         <input
           id="ingest-name"
           type="text"
@@ -691,40 +682,114 @@ function IngestPage() {
           onChange={(event) => setName(event.target.value)}
           placeholder="e.g. google-bert/bert-base-uncased"
         />
-        <label htmlFor="ingest-url">HuggingFace URL</label>
+
+        <label htmlFor="ingest-url">Source URL</label>
         <input
           id="ingest-url"
           type="url"
           value={url}
           onChange={(event) => setUrl(event.target.value)}
-          placeholder="https://huggingface.co/..."
+          placeholder="https://huggingface.co/... or https://github.com/..."
           required
         />
-        <label htmlFor="ingest-submitted">Submitted by</label>
-        <input
-          id="ingest-submitted"
-          type="text"
-          value={submittedBy}
-          onChange={(event) => setSubmittedBy(event.target.value)}
-          placeholder="Your ACME username"
-        />
-        <label htmlFor="cli-output">CLI output</label>
-        <textarea
-          id="cli-output"
-          rows={6}
-          value={cliText}
-          onChange={(event) => setCliText(event.target.value)}
-          placeholder='{"name":"my-model","net_score":0.92,...}'
-          required
-        />
-        <p className={`form-help ${cliError ? "form-help--error" : ""}`}>
-          {cliError || cliSummary}
+
+        <p className="form-help">
+          We will assign an ID and ingest the artifact from the
+          provided URL.
         </p>
+
         <button type="submit" disabled={submitting}>
-          {submitting ? "Submitting…" : "Submit request"}
+          {submitting ? "Submitting…" : "Submit artifact"}
         </button>
       </form>
-      {status && <p className="status-message">{status}</p>}
+      {status && (
+        <p className="status-message" role="status" aria-live="polite">
+          {status}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function AuthPage() {
+  const [username, setUsername] = useState("ece30861defaultadminuser");
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState("");
+  const [token, setToken] = useState(getAuthToken() || "");
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!username.trim() || !password.trim()) {
+      setStatus("Username and password are required.");
+      return;
+    }
+    setStatus("Authenticating…");
+    try {
+      const newToken = await authenticate(username.trim(), password.trim());
+      setToken(newToken || "");
+      setStatus("Authenticated. Token applied to future requests.");
+      setPassword("");
+    } catch (err) {
+      setStatus(err.message || "Authentication failed.");
+    }
+  };
+
+  const handleReset = () => {
+    resetAuthTokenToDefault();
+    const defaultToken = getAuthToken() || "";
+    setToken(defaultToken);
+    setStatus("Reverted to default token.");
+  };
+
+  return (
+    <section className="panel">
+      <h1>Authenticate</h1>
+      <div className="panel-header">
+        <h2>Request token</h2>
+        <p>
+          Obtain an authorization token via <code>PUT /authenticate</code> and
+          apply it to all API calls.
+        </p>
+      </div>
+      <form onSubmit={handleSubmit}>
+        <label htmlFor="auth-username">Username</label>
+        <input
+          id="auth-username"
+          type="text"
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
+          placeholder="ece30861defaultadminuser"
+        />
+        <label htmlFor="auth-password">Password</label>
+        <input
+          id="auth-password"
+          type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          placeholder="Enter admin password"
+        />
+        <button type="submit">Authenticate</button>
+      </form>
+      <div className="status-message" aria-live="polite" role="status">
+        <p>
+          <strong>Current token:</strong>{" "}
+          {token ? (
+            <code className="text-clip" title={token}>
+              {token}
+            </code>
+          ) : (
+            "not set"
+          )}
+        </p>
+        <button type="button" onClick={handleReset}>
+          Use default token
+        </button>
+      </div>
+      {status && (
+        <p className="status-message" role="status" aria-live="polite">
+          {status}
+        </p>
+      )}
     </section>
   );
 }
@@ -756,8 +821,9 @@ function LicensePage() {
 
   return (
     <section className="panel">
+      <h1>License Compatibility</h1>
       <div className="panel-header">
-        <h2>License Compatibility</h2>
+        <h2>Check compatibility</h2>
         <p>
           Evaluate whether fine-tuning is permissible for a model artifact
           against a GitHub repository.
@@ -786,7 +852,11 @@ function LicensePage() {
           {checking ? "Checking…" : "Check compatibility"}
         </button>
       </form>
-      {status && <p className="status-message">{status}</p>}
+      {status && (
+        <p className="status-message" role="status" aria-live="polite">
+          {status}
+        </p>
+      )}
     </section>
   );
 }
@@ -810,6 +880,7 @@ function ResetPage() {
 
   return (
     <section className="panel">
+      <h1>Reset Registry</h1>
       <div className="panel-header">
         <h2>Admin: Reset Registry</h2>
         <p>Restores the prototype datastore to the default records.</p>
@@ -817,9 +888,32 @@ function ResetPage() {
       <button type="button" onClick={handleReset} disabled={loading}>
         {loading ? "Resetting…" : "Reset registry"}
       </button>
-      {status && <p className="status-message">{status}</p>}
+      {status && (
+        <p className="status-message" role="status" aria-live="polite">
+          {status}
+        </p>
+      )}
     </section>
   );
+}
+
+function summarizeArtifacts(artifacts) {
+  const summary = {
+    total: 0,
+    models: 0,
+    datasets: 0,
+    code: 0,
+  };
+  if (!Array.isArray(artifacts)) {
+    return summary;
+  }
+  summary.total = artifacts.length;
+  artifacts.forEach((artifact) => {
+    if (artifact.type === "model") summary.models += 1;
+    else if (artifact.type === "dataset") summary.datasets += 1;
+    else if (artifact.type === "code") summary.code += 1;
+  });
+  return summary;
 }
 
 function metricRows(metrics) {

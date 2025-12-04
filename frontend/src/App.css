@@ -68,6 +68,22 @@ main {
   padding: 0 1.5rem 3rem;
 }
 
+.skip-link {
+  position: absolute;
+  left: -999px;
+  top: 0.5rem;
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  z-index: 1000;
+}
+
+.skip-link:focus-visible {
+  left: 0.5rem;
+  outline: 2px solid var(--color-primary-contrast);
+}
+
 .panel {
   background: var(--color-surface);
   padding: 1.5rem;
@@ -115,6 +131,7 @@ form {
 input[type="text"],
 input[type="url"],
 input[type="search"],
+select,
 textarea {
   padding: 0.75rem;
   border: 1px solid #b9c3d4;
@@ -142,6 +159,16 @@ button[disabled] {
   cursor: not-allowed;
 }
 
+.nav-list a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 3px solid #ffbf47;
+  outline-offset: 2px;
+}
+
 .table-container {
   margin-top: 1.5rem;
 }
@@ -165,6 +192,15 @@ button[disabled] {
 .data-table th {
   background: #eef3fb;
   font-weight: 600;
+}
+
+.text-clip {
+  display: inline-block;
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
 .data-table tbody tr:hover,
@@ -237,6 +273,12 @@ dd {
 .form-help {
   margin-top: 0.5rem;
   color: var(--color-muted);
+}
+
+.status-message[role="status"],
+.status-message[aria-live],
+.alert[role="alert"] {
+  color: var(--color-text);
 }
 
 .form-help--error {

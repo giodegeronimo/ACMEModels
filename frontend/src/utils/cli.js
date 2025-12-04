@@ -46,7 +46,7 @@ export function parseCliResults(rawText, preferredName = "") {
       if (parsed && typeof parsed === "object") {
         records.push(parsed);
       }
-    } catch (error) {
+    } catch {
       throw new Error("CLI output must be valid JSON (NDJSON).");
     }
   }

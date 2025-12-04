@@ -1,12 +1,42 @@
-const JSON_HEADERS = {
+const DEFAULT_AUTH_TOKEN =
+  import.meta.env.VITE_API_TOKEN ||
+  import.meta.env.VITE_AUTH_TOKEN ||
+  "dev-token";
+
+const AUTH_STORAGE_KEY = "acme_auth_token";
+
+let authToken =
+  (typeof localStorage !== "undefined" &&
+    localStorage.getItem(AUTH_STORAGE_KEY)) ||
+  DEFAULT_AUTH_TOKEN;
+
+const BASE_HEADERS = {
   Accept: "application/json",
   "Content-Type": "application/json",
-  "X-Authorization": "dev-token",
 };
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "/api"
 );
+
+export function setAuthToken(token) {
+  authToken = token || "";
+  if (typeof localStorage !== "undefined") {
+    if (token) {
+      localStorage.setItem(AUTH_STORAGE_KEY, token);
+    } else {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+    }
+  }
+}
+
+export function getAuthToken() {
+  return authToken || null;
+}
+
+export function resetAuthTokenToDefault() {
+  setAuthToken(DEFAULT_AUTH_TOKEN);
+}
 
 function resolveUrl(path) {
   if (API_BASE_URL) {
@@ -16,8 +46,14 @@ function resolveUrl(path) {
 }
 
 async function request(path, options = {}) {
+  const headers = {
+    ...BASE_HEADERS,
+    ...(authToken ? { "X-Authorization": authToken } : {}),
+    ...(options.headers || {}),
+  };
+
   const response = await fetch(resolveUrl(path), {
-    headers: JSON_HEADERS,
+    headers,
     ...options,
   });
 
@@ -56,12 +92,9 @@ export async function listArtifacts({ limit = 20, offset = null } = {}) {
   );
 
   const nextHeader = response.headers.get("offset");
-  const nextOffset =
-    nextHeader !== null && nextHeader !== undefined
-      ? Number.parseInt(nextHeader, 10)
-      : null;
+  const nextOffset = nextHeader || null;
 
-  return { items: data || [], nextOffset: Number.isNaN(nextOffset) ? null : nextOffset };
+  return { items: data || [], nextOffset };
 }
 
 export async function searchArtifactsByRegex(regex) {
@@ -78,8 +111,9 @@ export async function getArtifact(artifactType, artifactId) {
   return data;
 }
 
-export async function createArtifact(payload) {
-  const { data } = await request("/artifact/model", {
+export async function createArtifact(artifactType, payload) {
+  const safeType = encodeURIComponent(artifactType);
+  const { data } = await request(`/artifact/${safeType}`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -123,11 +157,66 @@ export async function resetRegistry() {
 }
 
 export async function getStats() {
-  const { data } = await request("/stats");
-  return data;
+  const artifacts = await fetchAllArtifacts();
+  const summary = {
+    total: artifacts.length,
+    models: 0,
+    datasets: 0,
+    code: 0,
+  };
+  artifacts.forEach((artifact) => {
+    if (artifact.type === "model") summary.models += 1;
+    else if (artifact.type === "dataset") summary.datasets += 1;
+    else if (artifact.type === "code") summary.code += 1;
+  });
+  return summary;
 }
 
-export async function getIngestRequests() {
-  const { data } = await request("/ingest/requests");
-  return data.items || [];
+export async function getRecentArtifacts(limit = 10) {
+  const { items } = await listArtifacts({ limit });
+  return items || [];
+}
+
+export async function fetchAllArtifacts({
+  pageSize = 100,
+  maxPages = 25,
+} = {}) {
+  const collected = [];
+  let offset = null;
+  let page = 0;
+
+  while (page < maxPages) {
+    const { items, nextOffset } = await listArtifacts({
+      limit: pageSize,
+      offset,
+    });
+    collected.push(...(items || []));
+    if (!nextOffset) {
+      break;
+    }
+    offset = nextOffset;
+    page += 1;
+  }
+
+  return collected;
+}
+
+export async function getTracks() {
+  const { data } = await request("/tracks");
+  return data?.plannedTracks || [];
+}
+
+export async function authenticate(username, password) {
+  const payload = {
+    user: { name: username },
+    secret: { password },
+  };
+  const { data } = await request("/authenticate", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  if (typeof data === "string") {
+    setAuthToken(data);
+  }
+  return data;
 }

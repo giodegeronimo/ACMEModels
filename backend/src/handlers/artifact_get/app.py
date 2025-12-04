@@ -13,7 +13,7 @@ from src.models.artifacts import ArtifactType, validate_artifact_id
 from src.storage.errors import ArtifactNotFound
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
-from src.utils.auth import extract_auth_token
+from src.utils.auth import require_auth_token
 
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
@@ -24,9 +24,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for GET /artifacts/{artifact_type}/{id}."""
 
     try:
+        _require_auth(event)
         artifact_type = _parse_artifact_type(event)
         artifact_id = _parse_artifact_id(event)
-        _extract_auth_token(event)
         artifact = _METADATA_STORE.load(artifact_id)
         if artifact.metadata.type != artifact_type:
             raise ArtifactNotFound(
@@ -70,8 +70,8 @@ def _parse_artifact_id(event: Dict[str, Any]) -> str:
     return validate_artifact_id(artifact_id)
 
 
-def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    return extract_auth_token(event)
+def _require_auth(event: Dict[str, Any]) -> None:
+    require_auth_token(event, optional=False)
 
 
 def _serialize_artifact(artifact, event: Dict[str, Any]) -> Dict[str, Any]:

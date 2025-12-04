@@ -9,6 +9,7 @@ from typing import Any, Dict
 from backend.src.handlers.artifact_download import app as handler
 from src.storage.blob_store import (BlobNotFoundError, BlobStoreError,
                                     DownloadLink, StoredArtifact)
+from src.utils import auth
 
 
 class _FakeStore:
@@ -52,11 +53,12 @@ def _event(
     *,
     query: Dict[str, str] | None = None,
 ) -> Dict[str, Any]:
+    token = auth.issue_token("tester", is_admin=True)
     return {
         "pathParameters": {
             "id": artifact_id,
         },
-        "headers": {"X-Authorization": "token"},
+        "headers": {"X-Authorization": token},
         "queryStringParameters": query,
     }
 

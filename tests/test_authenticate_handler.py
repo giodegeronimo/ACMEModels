@@ -6,6 +6,7 @@ import json
 from typing import Any, Dict
 
 from backend.src.handlers.authenticate import app as handler
+from src.utils import auth
 
 _PRIMARY_PASSWORD = (
     "correcthorsebatterystaple123(!__+@**(A'\"`;"
@@ -34,22 +35,29 @@ def _payload(password: str) -> Dict[str, Any]:
 
 
 def test_authenticate_success_with_primary_password() -> None:
+    auth._reset_token_store()
     response = handler.lambda_handler(
         _event(_payload(_PRIMARY_PASSWORD)),
         None,
     )
 
     assert response["statusCode"] == 200
-    assert json.loads(response["body"]) == _EXPECTED_TOKEN
+    token = json.loads(response["body"])
+    # Token should be registered in the in-memory store and non-empty
+    assert isinstance(token, str) and token.startswith("bearer ")
+    assert auth._TOKENS[token].username == "ece30861defaultadminuser"
 
 
 def test_authenticate_success_with_alternate_password() -> None:
+    auth._reset_token_store()
     response = handler.lambda_handler(
         _event(_payload(_ALTERNATE_PASSWORD)),
         None,
     )
 
     assert response["statusCode"] == 200
+    token = json.loads(response["body"])
+    assert isinstance(token, str) and token.startswith("bearer ")
 
 
 def test_authenticate_rejects_bad_username() -> None:

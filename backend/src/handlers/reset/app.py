@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from src.logging_config import configure_logging
-from src.utils.auth import extract_auth_token
+from src.utils.auth import require_auth_token
 
 try:  # pragma: no cover - boto3 present in AWS, optional locally
     import boto3
@@ -26,7 +26,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for DELETE /reset."""
 
     try:
-        _extract_auth_token(event)
+        _require_auth(event)
     except PermissionError as error:
         return _json_response(
             HTTPStatus.FORBIDDEN,
@@ -45,8 +45,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     return _json_response(HTTPStatus.OK, {"status": "reset"})
 
 
-def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    return extract_auth_token(event)
+def _require_auth(event: Dict[str, Any]) -> None:
+    require_auth_token(event, optional=False)
 
 
 def _reset_storage() -> None:

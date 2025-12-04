@@ -8,7 +8,7 @@ from http import HTTPStatus
 from typing import Any, Dict, List
 
 from src.logging_config import configure_logging
-from src.utils.auth import extract_auth_token
+from src.utils.auth import require_auth_token
 
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     try:
         _log_request(event)
-        _extract_auth_token(event)
+        _require_auth(event)
         body = {"plannedTracks": list(_DEFAULT_TRACKS)}
         _LOGGER.info("Tracks response=%s", body)
         return _json_response(HTTPStatus.OK, body)
@@ -40,7 +40,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    return extract_auth_token(event)
+    require_auth_token(event, optional=False)
+    return None
+
+
+def _require_auth(event: Dict[str, Any]) -> None:
+    require_auth_token(event, optional=False)
 
 
 def _log_request(event: Dict[str, Any]) -> None:

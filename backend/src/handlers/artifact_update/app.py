@@ -19,7 +19,7 @@ from src.storage.errors import ArtifactNotFound
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         MetadataStoreError,
                                         build_metadata_store_from_env)
-from src.utils.auth import extract_auth_token
+from src.utils.auth import require_auth_token
 
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
@@ -31,9 +31,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point compatible with AWS Lambda."""
 
     try:
+        _require_auth(event)
         artifact_type = _parse_artifact_type(event)
         artifact_id = _parse_artifact_id(event)
-        _extract_auth_token(event)
         payload = _parse_body(event)
         incoming_meta = _parse_metadata(payload)
         incoming_data = _parse_data(payload)
@@ -89,8 +89,8 @@ def _parse_artifact_id(event: Dict[str, Any]) -> str:
     return validate_artifact_id(artifact_id)
 
 
-def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    return extract_auth_token(event)
+def _require_auth(event: Dict[str, Any]) -> None:
+    require_auth_token(event, optional=False)
 
 
 def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:

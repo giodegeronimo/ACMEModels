@@ -11,6 +11,7 @@ from backend.src.handlers.artifact_list import app as handler
 from src.models import Artifact, ArtifactData, ArtifactMetadata, ArtifactType
 from src.storage.errors import ArtifactNotFound
 from src.storage.name_index import InMemoryNameIndexStore, entry_from_metadata
+from src.utils import auth
 
 
 @pytest.fixture(autouse=True)
@@ -27,8 +28,9 @@ def _patch_stores(monkeypatch: pytest.MonkeyPatch) -> Tuple[
 
 def _event(body: Any, *, offset: str | None = None) -> Dict[str, Any]:
     payload = body if isinstance(body, str) else json.dumps(body)
+    token = auth.issue_token("tester", is_admin=True)
     event: Dict[str, Any] = {
-        "headers": {"X-Authorization": "token"},
+        "headers": {"X-Authorization": token},
         "body": payload,
         "queryStringParameters": {"offset": offset} if offset else None,
     }

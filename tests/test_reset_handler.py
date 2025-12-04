@@ -9,6 +9,7 @@ from typing import Any, Dict
 import pytest
 
 from backend.src.handlers.reset import app as handler
+from src.utils import auth
 
 
 @pytest.fixture
@@ -31,12 +32,16 @@ def _reset_env(
 
 
 def _event(headers: Dict[str, str] | None = None) -> Dict[str, Any]:
-    return {"headers": headers or {}}
+    if headers is None:
+        headers = {
+            "X-Authorization": auth.issue_token("tester", is_admin=True)
+        }
+    return {"headers": headers}
 
 
 def test_reset_calls_remote_services(fake_boto3: "_FakeBoto3") -> None:
     response = handler.lambda_handler(
-        _event({"X-Authorization": "token"}), {}
+        _event(), {}
     )
 
     assert response["statusCode"] == 200

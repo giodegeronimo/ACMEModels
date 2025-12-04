@@ -170,3 +170,12 @@ class InMemoryMetricsRepository(MetricsRepository):
             route: dict(components)
             for route, components in self._counters.items()
         }
+
+
+_LINEAGE_REPO = InMemoryLineageRepository()
+
+
+def get_lineage_repo() -> InMemoryLineageRepository:
+    """Return the singleton lineage repository for local/test use."""
+
+    return _LINEAGE_REPO

@@ -6,12 +6,14 @@ import json
 from typing import Any, Dict
 
 from backend.src.handlers.tracks import app as handler
+from src.utils import auth
 
 
 def _event() -> Dict[str, Any]:
+    token = auth.issue_token("tester", is_admin=True)
     return {
         "requestContext": {"http": {"method": "GET", "path": "/tracks"}},
-        "headers": {},
+        "headers": {"X-Authorization": token},
     }
 
 

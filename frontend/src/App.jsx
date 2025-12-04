@@ -883,7 +883,7 @@ function ResetPage() {
       <h1>Reset Registry</h1>
       <div className="panel-header">
         <h2>Admin: Reset Registry</h2>
-        <p>Restores the prototype datastore to the default records.</p>
+        <p>Restores the datastore to the default records.</p>
       </div>
       <button type="button" onClick={handleReset} disabled={loading}>
         {loading ? "Resetting…" : "Reset registry"}

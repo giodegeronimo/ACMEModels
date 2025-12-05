@@ -13,6 +13,7 @@ import {
   searchArtifactsByRegex,
   authenticate,
   getAuthToken,
+  setAuthToken,
   resetAuthTokenToDefault,
 } from "./api";
 import "./App.css";
@@ -714,6 +715,7 @@ function IngestPage() {
 function AuthPage() {
   const [username, setUsername] = useState("ece30861defaultadminuser");
   const [password, setPassword] = useState("");
+  const [manualToken, setManualToken] = useState("");
   const [status, setStatus] = useState("");
   const [token, setToken] = useState(getAuthToken() || "");
 
@@ -739,6 +741,16 @@ function AuthPage() {
     const defaultToken = getAuthToken() || "";
     setToken(defaultToken);
     setStatus("Reverted to default token.");
+  };
+
+  const applyManualToken = () => {
+    if (!manualToken.trim()) {
+      setStatus("Paste a token before applying.");
+      return;
+    }
+    setAuthToken(manualToken.trim());
+    setToken(manualToken.trim());
+    setStatus("Token applied.");
   };
 
   return (
@@ -770,6 +782,26 @@ function AuthPage() {
         />
         <button type="submit">Authenticate</button>
       </form>
+      <div className="panel-header">
+        <h2>Or paste an existing token</h2>
+        <p>Use a JWT issued by your Cognito User Pool or another provider.</p>
+      </div>
+      <label htmlFor="auth-token">Token</label>
+      <textarea
+        id="auth-token"
+        rows={3}
+        value={manualToken}
+        onChange={(event) => setManualToken(event.target.value)}
+        placeholder="eyJhbGciOi..."
+      />
+      <div className="form-inline">
+        <button type="button" onClick={applyManualToken}>
+          Apply token
+        </button>
+        <button type="button" onClick={handleReset}>
+          Use default token
+        </button>
+      </div>
       <div className="status-message" aria-live="polite" role="status">
         <p>
           <strong>Current token:</strong>{" "}
@@ -781,9 +813,6 @@ function AuthPage() {
             "not set"
           )}
         </p>
-        <button type="button" onClick={handleReset}>
-          Use default token
-        </button>
       </div>
       {status && (
         <p className="status-message" role="status" aria-live="polite">

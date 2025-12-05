@@ -48,7 +48,9 @@ function resolveUrl(path) {
 async function request(path, options = {}) {
   const headers = {
     ...BASE_HEADERS,
-    ...(authToken ? { "X-Authorization": authToken } : {}),
+    ...(authToken
+      ? { "X-Authorization": authToken, Authorization: authToken }
+      : {}),
     ...(options.headers || {}),
   };
 

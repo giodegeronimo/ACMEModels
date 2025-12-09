@@ -12,11 +12,13 @@ from src.models.artifacts import (Artifact, ArtifactData, ArtifactMetadata,
                                   ArtifactType)
 from src.storage.errors import ArtifactNotFound
 from src.storage.name_index import NameIndexEntry
+from src.utils import auth
 
 
 def _event(body: Dict[str, Any]) -> Dict[str, Any]:
+    token = auth.issue_token("tester", is_admin=True)
     return {
-        "headers": {"X-Authorization": "token"},
+        "headers": {"X-Authorization": token},
         "body": json.dumps(body),
     }
 

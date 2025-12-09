@@ -15,6 +15,7 @@ from src.storage.artifact_ingest import ArtifactBundle
 from src.storage.blob_store import StoredArtifact
 from src.storage.errors import ArtifactNotFound, ValidationError
 from src.storage.metadata_store import ArtifactMetadataStore
+from src.utils import auth
 
 
 @pytest.fixture(autouse=True)
@@ -50,9 +51,10 @@ def _reset_handler(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 
 def _event(body: Dict[str, Any]) -> Dict[str, Any]:
+    token = auth.issue_token("tester", is_admin=True)
     return {
         "pathParameters": {"artifact_type": "model", "id": "artifact123"},
-        "headers": {"X-Authorization": "token"},
+        "headers": {"X-Authorization": token},
         "body": json.dumps(body),
     }
 

@@ -16,7 +16,7 @@ from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
 from src.storage.name_index import (NameIndexEntry, NameIndexStore,
                                     build_name_index_store_from_env)
-from src.utils.auth import extract_auth_token
+from src.utils.auth import require_auth_token
 
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for POST /artifacts."""
 
     try:
-        _extract_auth_token(event)
+        _require_auth(event)
         queries = _parse_queries(event)
         start_key = _parse_offset(event)
         artifacts, next_offset = _collect_matches(queries, start_key)
@@ -71,8 +71,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     }
 
 
-def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    return extract_auth_token(event)
+def _require_auth(event: Dict[str, Any]) -> None:
+    require_auth_token(event, optional=False)
 
 
 def _parse_queries(event: Dict[str, Any]) -> List[_ParsedQuery]:

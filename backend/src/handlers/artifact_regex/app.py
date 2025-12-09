@@ -15,7 +15,7 @@ from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
 from src.storage.name_index import (NameIndexEntry, NameIndexStore,
                                     build_name_index_store_from_env)
-from src.utils.auth import extract_auth_token
+from src.utils.auth import require_auth_token
 
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for regex-based artifact search."""
 
     try:
-        _extract_auth_token(event)
+        _require_auth(event)
         regex = _parse_regex(event)
         _guard_regex(regex)
         matches = _search_name_index(regex)
@@ -134,8 +134,8 @@ def _artifact_entry_payload(entry: NameIndexEntry) -> Dict[str, Any]:
     }
 
 
-def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    return extract_auth_token(event)
+def _require_auth(event: Dict[str, Any]) -> None:
+    require_auth_token(event, optional=False)
 
 
 def _json_response(status: HTTPStatus, body: Any) -> Dict[str, Any]:

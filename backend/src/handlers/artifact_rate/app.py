@@ -13,7 +13,7 @@ from src.storage.errors import ArtifactNotFound
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
 from src.storage.ratings_store import load_rating
-from src.utils.auth import extract_auth_token
+from src.utils.auth import require_auth_token
 
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
@@ -24,8 +24,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for GET /artifact/model/{id}/rate."""
 
     try:
+        _require_auth(event)
         artifact_id = _parse_artifact_id(event)
-        _extract_auth_token(event)
         artifact = _METADATA_STORE.load(artifact_id)
         if artifact.metadata.type is not ArtifactType.MODEL:
             raise ArtifactNotFound(
@@ -61,8 +61,8 @@ def _parse_artifact_id(event: Dict[str, Any]) -> str:
     return validate_artifact_id(artifact_id)
 
 
-def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    return extract_auth_token(event)
+def _require_auth(event: Dict[str, Any]) -> None:
+    require_auth_token(event, optional=False)
 
 
 def _json_response(status: HTTPStatus, body: Dict[str, Any]) -> Dict[str, Any]:

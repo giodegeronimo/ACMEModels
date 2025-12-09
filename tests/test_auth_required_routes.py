@@ -33,7 +33,6 @@ from backend.src.handlers.tracks import app as tracks_handler
         cost_handler.lambda_handler,
         license_handler.lambda_handler,
         reset_handler.lambda_handler,
-        tracks_handler.lambda_handler,
     ],
 )
 def test_protected_routes_require_auth(handler) -> None:
@@ -49,4 +48,9 @@ def test_protected_routes_require_auth(handler) -> None:
 )
 def test_open_routes_allow_anonymous(handler, event) -> None:
     response = handler(event, {})
+    assert response["statusCode"] == 200
+
+
+def test_tracks_allows_anonymous() -> None:
+    response = tracks_handler.lambda_handler({"headers": {}}, {})
     assert response["statusCode"] == 200

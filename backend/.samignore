@@ -1,0 +1,37 @@
+# Exclude unnecessary files from Lambda deployment packages to stay under size limits
+.git/
+../.git/
+.github/
+.gitignore
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local and build artifacts
+.aws-sam/
+.venv/
+venv/
+node_modules/
+../.venv/
+../venv/
+../node_modules/
+*.log
+*.tmp
+tmp/
+
+# Project assets not needed in Lambdas
+tests/
+../tests/
+data/
+../data/
+ops/
+../ops/
+scripts/
+../scripts/
+run
+../run
+bleh.log
+../bleh.log
+../*.log

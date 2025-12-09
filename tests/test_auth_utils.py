@@ -78,3 +78,23 @@ def test_require_auth_usage_limit_exceeded() -> None:
     auth.require_auth_token(event, optional=False, max_calls=2)
     with pytest.raises(PermissionError):
         auth.require_auth_token(event, optional=False, max_calls=2)
+
+
+def test_env_configurable_expiry(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AUTH_EXPIRY_SECONDS", "1")
+    token = auth.issue_token("erin", is_admin=False)
+    record = auth._TOKENS[token]
+    record.issued_at = time.time() - 2
+
+    with pytest.raises(PermissionError):
+        auth.require_auth_token(_event(token), optional=False)
+
+
+def test_env_configurable_max_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AUTH_MAX_CALLS", "1")
+    token = auth.issue_token("frank", is_admin=False)
+    event = _event(token)
+
+    auth.require_auth_token(event, optional=False)
+    with pytest.raises(PermissionError):
+        auth.require_auth_token(event, optional=False)

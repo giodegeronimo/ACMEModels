@@ -9,6 +9,11 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, MutableMapping, Optional
 
+try:  # pragma: no cover - boto3 available in deployed Lambda
+    import boto3
+except ImportError:  # pragma: no cover
+    boto3 = None  # type: ignore[assignment]
+
 _LOGGER = logging.getLogger(__name__)
 _HEADER_KEYS = (
     "X-Authorization",
@@ -18,8 +23,9 @@ _HEADER_KEYS = (
 )
 
 # Defaults align with the spec but are configurable for tests/local runs.
-_DEFAULT_EXPIRY_SECONDS = int(os.getenv("AUTH_EXPIRY_SECONDS", "7200"))
-_DEFAULT_MAX_CALLS = int(os.getenv("AUTH_MAX_CALLS", "1000"))
+_DDB_TABLE = os.getenv("AUTH_TOKEN_TABLE")
+_DEFAULT_EXPIRY_SECONDS = 60 * 60 * 2  # 2 hours
+_DEFAULT_MAX_CALLS = 1000
 
 
 @dataclass
@@ -33,6 +39,7 @@ class TokenRecord:
 
 
 _TOKENS: MutableMapping[str, TokenRecord] = {}
+_DDB_CLIENT = None
 
 
 def extract_auth_token(
@@ -84,7 +91,10 @@ def issue_token(username: str, *, is_admin: bool) -> str:
         is_admin=is_admin,
         issued_at=time.time(),
     )
-    _TOKENS[token] = record
+    if _DDB_TABLE and _ddb_client() is not None:
+        _put_token_ddb(record)
+    else:
+        _TOKENS[token] = record
     return token
 
 
@@ -124,16 +134,24 @@ def require_auth_token(
             return None
         raise PermissionError("Missing X-Authorization header")
 
-    store = token_store if token_store is not None else _TOKENS
-    record = store.get(token_value)
+    try:
+        if _DDB_TABLE and _ddb_client() is not None and token_store is None:
+            record = _get_token_ddb(token_value)
+        else:
+            store = token_store if token_store is not None else _TOKENS
+            record = store.get(token_value)
+    except Exception as exc:  # pragma: no cover - defensive
+        _LOGGER.warning("Token lookup failed: %s", exc)
+        raise PermissionError("Invalid authentication token") from exc
+
     if record is None:
         raise PermissionError("Invalid authentication token")
 
     now = time.time()
     max_age = (
-        _DEFAULT_EXPIRY_SECONDS if expiry_seconds is None else expiry_seconds
+        _get_expiry_seconds() if expiry_seconds is None else expiry_seconds
     )
-    max_uses = _DEFAULT_MAX_CALLS if max_calls is None else max_calls
+    max_uses = _get_max_calls() if max_calls is None else max_calls
 
     if record.revoked:
         raise PermissionError("Authentication token has been revoked")
@@ -142,7 +160,20 @@ def require_auth_token(
     if record.usage_count >= max_uses:
         raise PermissionError("Authentication token usage limit exceeded")
 
-    record.usage_count += 1
+    try:
+        if _DDB_TABLE and _ddb_client() is not None and token_store is None:
+            _increment_usage_ddb(
+                token_value,
+                max_uses=max_uses,
+                max_age=max_age,
+            )
+        else:
+            record.usage_count += 1
+    except PermissionError:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive
+        _LOGGER.warning("Token usage increment failed: %s", exc)
+        raise PermissionError("Invalid authentication token") from exc
     return record
 
 
@@ -163,3 +194,113 @@ def _reset_token_store(tokens: Iterable[str] | None = None) -> None:
     for token in list(_TOKENS.keys()):
         if token not in tokens:
             _TOKENS.pop(token, None)
+
+
+def _ddb_client():
+    global _DDB_CLIENT
+    if _DDB_CLIENT is None:
+        _DDB_CLIENT = boto3.client("dynamodb") if boto3 is not None else None
+    return _DDB_CLIENT
+
+
+def _put_token_ddb(record: TokenRecord) -> None:
+    client = _ddb_client()
+    if client is None or _DDB_TABLE is None:
+        _TOKENS[record.token] = record
+        return
+    expires_at = int(record.issued_at + _get_expiry_seconds())
+    client.put_item(
+        TableName=_DDB_TABLE,
+        Item={
+            "token": {"S": record.token},
+            "username": {"S": record.username},
+            "is_admin": {"BOOL": record.is_admin},
+            "issued_at": {"N": str(int(record.issued_at))},
+            "usage_count": {"N": "0"},
+            "expires_at": {"N": str(expires_at)},
+            "revoked": {"BOOL": False},
+        },
+    )
+
+
+def _get_token_ddb(token: str) -> TokenRecord | None:
+    client = _ddb_client()
+    if client is None or _DDB_TABLE is None:
+        return _TOKENS.get(token)
+    resp = client.get_item(
+        TableName=_DDB_TABLE,
+        Key={"token": {"S": token}},
+        ConsistentRead=True,
+    )
+    item = resp.get("Item")
+    if not item:
+        return None
+    try:
+        return TokenRecord(
+            token=token,
+            username=item["username"]["S"],
+            is_admin=item.get("is_admin", {}).get("BOOL", False),
+            issued_at=float(item["issued_at"]["N"]),
+            usage_count=int(item.get("usage_count", {}).get("N", "0")),
+            revoked=item.get("revoked", {}).get("BOOL", False),
+        )
+    except Exception:
+        return None
+
+
+def _increment_usage_ddb(token: str, *, max_uses: int, max_age: int) -> None:
+    client = _ddb_client()
+    if client is None or _DDB_TABLE is None:
+        record = _TOKENS.get(token)
+        if record:
+            record.usage_count += 1
+        return
+    now = int(time.time())
+    try:
+        client.update_item(
+            TableName=_DDB_TABLE,
+            Key={"token": {"S": token}},
+            UpdateExpression="SET usage_count = usage_count + :inc",
+            ConditionExpression=(
+                "revoked = :false AND usage_count < :max_uses "
+                "AND expires_at > :now"
+            ),
+            ExpressionAttributeValues={
+                ":inc": {"N": "1"},
+                ":max_uses": {"N": str(max_uses)},
+                ":now": {"N": str(now)},
+                ":false": {"BOOL": False},
+            },
+        )
+    except Exception:
+        raise PermissionError(
+            "Authentication token has expired or exceeded usage"
+        )
+
+
+def _get_expiry_seconds() -> int:
+    raw = os.getenv("AUTH_EXPIRY_SECONDS")
+    if raw is None:
+        return _DEFAULT_EXPIRY_SECONDS
+    try:
+        value = int(raw)
+        if value <= 0:
+            raise ValueError("expiry must be positive")
+        return value
+    except Exception:
+        _LOGGER.warning("Invalid AUTH_EXPIRY_SECONDS=%s; using default", raw)
+        return _DEFAULT_EXPIRY_SECONDS
+
+
+def _get_max_calls() -> int:
+    raw = os.getenv("AUTH_MAX_CALLS")
+    if raw is None:
+        return _DEFAULT_MAX_CALLS
+    try:
+        value = int(raw)
+        if value <= 0:
+            raise ValueError("max calls must be positive")
+        return value
+    except Exception:
+        _LOGGER.warning("Invalid AUTH_MAX_CALLS=%s; using default", raw)
+        return _DEFAULT_MAX_CALLS

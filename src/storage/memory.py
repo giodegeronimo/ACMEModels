@@ -170,3 +170,19 @@ class InMemoryMetricsRepository(MetricsRepository):
             route: dict(components)
             for route, components in self._counters.items()
         }
+
+
+_GLOBAL_LINEAGE_REPO: InMemoryLineageRepository | None = None
+
+
+def get_lineage_repo() -> InMemoryLineageRepository:
+    """
+    Return a singleton lineage repository.
+
+    The in-memory implementation is sufficient for Lambda handlers that need
+    to capture lineage information during the request lifecycle.
+    """
+    global _GLOBAL_LINEAGE_REPO
+    if _GLOBAL_LINEAGE_REPO is None:
+        _GLOBAL_LINEAGE_REPO = InMemoryLineageRepository()
+    return _GLOBAL_LINEAGE_REPO

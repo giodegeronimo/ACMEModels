@@ -159,6 +159,12 @@ button[disabled] {
   cursor: not-allowed;
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .nav-list a:focus-visible,
 button:focus-visible,
 input:focus-visible,

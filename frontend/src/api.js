@@ -208,9 +208,9 @@ export async function getTracks() {
   return data?.plannedTracks || [];
 }
 
-export async function authenticate(username, password) {
+export async function authenticate(username, password, isAdmin = true) {
   const payload = {
-    user: { name: username },
+    user: { name: username, is_admin: isAdmin },
     secret: { password },
   };
   const { data } = await request("/authenticate", {

@@ -715,6 +715,7 @@ function IngestPage() {
 function AuthPage() {
   const [username, setUsername] = useState("ece30861defaultadminuser");
   const [password, setPassword] = useState("");
+  const [isAdmin, setIsAdmin] = useState(true);
   const [manualToken, setManualToken] = useState("");
   const [status, setStatus] = useState("");
   const [token, setToken] = useState(getAuthToken() || "");
@@ -727,7 +728,11 @@ function AuthPage() {
     }
     setStatus("Authenticating…");
     try {
-      const newToken = await authenticate(username.trim(), password.trim());
+      const newToken = await authenticate(
+        username.trim(),
+        password.trim(),
+        isAdmin
+      );
       setToken(newToken || "");
       setStatus("Authenticated. Token applied to future requests.");
       setPassword("");
@@ -743,7 +748,8 @@ function AuthPage() {
     setStatus("Reverted to default token.");
   };
 
-  const applyManualToken = () => {
+  const applyManualToken = (event) => {
+    event?.preventDefault();
     if (!manualToken.trim()) {
       setStatus("Paste a token before applying.");
       return;
@@ -779,29 +785,39 @@ function AuthPage() {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           placeholder="Enter admin password"
+          required
         />
+        <label className="checkbox-row" htmlFor="auth-is-admin">
+          <input
+            id="auth-is-admin"
+            type="checkbox"
+            checked={isAdmin}
+            onChange={(event) => setIsAdmin(event.target.checked)}
+          />{" "}
+          Treat this user as an admin (sent as <code>is_admin</code>)
+        </label>
         <button type="submit">Authenticate</button>
       </form>
       <div className="panel-header">
         <h2>Or paste an existing token</h2>
-        <p>Use a JWT issued by your Cognito User Pool or another provider.</p>
+        <p>Paste any token you already have and apply it to future requests.</p>
       </div>
-      <label htmlFor="auth-token">Token</label>
-      <textarea
-        id="auth-token"
-        rows={3}
-        value={manualToken}
-        onChange={(event) => setManualToken(event.target.value)}
-        placeholder="eyJhbGciOi..."
-      />
-      <div className="form-inline">
-        <button type="button" onClick={applyManualToken}>
-          Apply token
-        </button>
-        <button type="button" onClick={handleReset}>
-          Use default token
-        </button>
-      </div>
+      <form onSubmit={applyManualToken}>
+        <label htmlFor="auth-token">Token</label>
+        <textarea
+          id="auth-token"
+          rows={3}
+          value={manualToken}
+          onChange={(event) => setManualToken(event.target.value)}
+          placeholder='bearer eyJhbGciOi...'
+        />
+        <div className="form-inline">
+          <button type="submit">Apply token</button>
+          <button type="button" onClick={handleReset}>
+            Use default token
+          </button>
+        </div>
+      </form>
       <div className="status-message" aria-live="polite" role="status">
         <p>
           <strong>Current token:</strong>{" "}

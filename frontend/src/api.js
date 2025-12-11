@@ -1,7 +1,7 @@
 const DEFAULT_AUTH_TOKEN =
   import.meta.env.VITE_API_TOKEN ||
   import.meta.env.VITE_AUTH_TOKEN ||
-  "dev-token";
+  "";
 
 const AUTH_STORAGE_KEY = "acme_auth_token";
 

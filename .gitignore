@@ -37,3 +37,6 @@ dist/
 # SAM build artifacts
 backend/.aws-sam/
 
+# Local AWS/SAM tooling bundles (exclude from source and builds)
+aws/
+sam-installation/

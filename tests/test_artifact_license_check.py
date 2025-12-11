@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from src.models import Artifact, ArtifactData, ArtifactMetadata, ArtifactType
+from src.utils import auth
 
 
 class StubGitClient:
@@ -53,9 +54,13 @@ def _event(
     event = {
         "pathParameters": {"id": artifact_id},
         "body": json.dumps({"github_url": github_url} if github_url else {}),
-        "headers": headers or {},
+        "headers": _auth_header() if headers is None else headers,
     }
     return event
+
+
+def _auth_header() -> dict:
+    return {"X-Authorization": auth.issue_token("tester", is_admin=True)}
 
 
 def test_license_check_success(tmp_path, monkeypatch):
@@ -68,7 +73,7 @@ def test_license_check_success(tmp_path, monkeypatch):
         _event(
             "abc123",
             "https://github.com/org/repo",
-            {"X-Authorization": "token"},
+            _auth_header(),
         ),
         None,
     )
@@ -88,7 +93,7 @@ def test_non_model_artifact_returns_not_found(tmp_path, monkeypatch):
         _event(
             "abc123",
             "https://github.com/org/repo",
-            {"X-Authorization": "token"},
+            _auth_header(),
         ),
         None,
     )
@@ -102,7 +107,7 @@ def test_invalid_body_returns_bad_request(tmp_path, monkeypatch):
     handler._set_git_client(StubGitClient())
 
     resp = handler.lambda_handler(
-        _event("abc123", None, {"X-Authorization": "token"}),
+        _event("abc123", None, _auth_header()),
         None,
     )
 
@@ -137,7 +142,7 @@ def test_repo_not_found(tmp_path, monkeypatch):
         _event(
             "abc123",
             "https://github.com/org/repo",
-            {"X-Authorization": "token"},
+            _auth_header(),
         ),
         None,
     )
@@ -154,7 +159,7 @@ def test_external_failure_returns_bad_gateway(tmp_path, monkeypatch):
         _event(
             "abc123",
             "https://github.com/org/repo",
-            {"X-Authorization": "token"},
+            _auth_header(),
         ),
         None,
     )
@@ -180,7 +185,7 @@ def test_license_aliases_dont_reduce_compatibility(tmp_path, monkeypatch):
         _event(
             "abc123",
             "https://github.com/org/repo",
-            {"X-Authorization": "token"},
+            _auth_header(),
         ),
         None,
     )

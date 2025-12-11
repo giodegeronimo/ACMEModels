@@ -15,7 +15,7 @@ from src.storage.blob_store import BlobNotFoundError
 from src.storage.errors import ArtifactNotFound
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
-from src.utils.auth import extract_auth_token
+from src.utils.auth import require_auth_token
 
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
@@ -27,10 +27,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     try:
         _log_request(event)
+        _require_auth(event)
         artifact_id = _parse_artifact_id(event)
         artifact_type = _parse_artifact_type(event)
         include_dependencies = _parse_dependency_param(event)
-        _extract_auth_token(event)
 
         artifact = _METADATA_STORE.load(artifact_id)
         if artifact.metadata.type.value != artifact_type:
@@ -112,8 +112,8 @@ def _load_lineage_graph(
         return None
 
 
-def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    return extract_auth_token(event)
+def _require_auth(event: Dict[str, Any]) -> None:
+    require_auth_token(event, optional=False)
 
 
 def _log_request(event: Dict[str, Any]) -> None:

@@ -18,6 +18,7 @@ from src.storage.blob_store import BlobStoreError, DownloadLink, StoredArtifact
 from src.storage.errors import ArtifactNotFound, ValidationError
 from src.storage.metadata_store import ArtifactMetadataStore
 from src.storage.name_index import NameIndexEntry
+from src.utils import auth
 
 
 @pytest.fixture(autouse=True)
@@ -226,9 +227,10 @@ def _event(
     payload = json.dumps(body or {"url": "https://huggingface.co/org/model"})
     if is_base64:
         payload = base64.b64encode(payload.encode("utf-8")).decode("utf-8")
+    token = auth.issue_token("tester", is_admin=True)
     return {
         "pathParameters": {"artifact_type": artifact_type},
-        "headers": {"X-Authorization": "placeholder"},
+        "headers": {"X-Authorization": token},
         "body": payload,
         "isBase64Encoded": is_base64,
     }

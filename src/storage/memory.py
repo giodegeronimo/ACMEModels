@@ -172,17 +172,10 @@ class InMemoryMetricsRepository(MetricsRepository):
         }
 
 
-_GLOBAL_LINEAGE_REPO: InMemoryLineageRepository | None = None
+_LINEAGE_REPO = InMemoryLineageRepository()
 
 
 def get_lineage_repo() -> InMemoryLineageRepository:
-    """
-    Return a singleton lineage repository.
+    """Return the singleton lineage repository for local/test use."""
 
-    The in-memory implementation is sufficient for Lambda handlers that need
-    to capture lineage information during the request lifecycle.
-    """
-    global _GLOBAL_LINEAGE_REPO
-    if _GLOBAL_LINEAGE_REPO is None:
-        _GLOBAL_LINEAGE_REPO = InMemoryLineageRepository()
-    return _GLOBAL_LINEAGE_REPO
+    return _LINEAGE_REPO

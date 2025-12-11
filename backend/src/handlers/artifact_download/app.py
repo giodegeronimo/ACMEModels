@@ -11,7 +11,7 @@ from src.logging_config import configure_logging
 from src.models import validate_artifact_id
 from src.storage.blob_store import (ArtifactBlobStore, BlobNotFoundError,
                                     BlobStoreError, build_blob_store_from_env)
-from src.utils.auth import extract_auth_token
+from src.utils.auth import require_auth_token
 
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
@@ -22,8 +22,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for GET /download/{id}."""
 
     try:
+        _require_auth(event)
         artifact_id = _parse_artifact_id(event)
-        _extract_auth_token(event)
         link = _BLOB_STORE.generate_download_url(artifact_id)
     except ValueError as error:
         return _error_response(HTTPStatus.BAD_REQUEST, str(error))
@@ -65,8 +65,8 @@ def _parse_artifact_id(event: Dict[str, Any]) -> str:
         raise ValueError(str(exc)) from exc
 
 
-def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    return extract_auth_token(event)
+def _require_auth(event: Dict[str, Any]) -> None:
+    require_auth_token(event, optional=False)
 
 
 def _wants_json(event: Dict[str, Any]) -> bool:

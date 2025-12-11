@@ -9,6 +9,7 @@ from http import HTTPStatus
 from typing import Any, Dict
 
 from src.logging_config import configure_logging
+from src.utils import auth
 
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
@@ -25,10 +26,6 @@ _DEFAULT_PASSWORDS = {
         "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;",
     ),
 }
-_TOKEN_VALUE = os.environ.get(
-    "DEFAULT_AUTH_TOKEN",
-    "bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.default",
-)
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -39,7 +36,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         payload = _parse_body(event)
         _validate_credentials(payload)
         _LOGGER.info("Authentication success for user=%s", _DEFAULT_USERNAME)
-        return _json_response(HTTPStatus.OK, _TOKEN_VALUE)
+        token = auth.issue_token(_DEFAULT_USERNAME, is_admin=True)
+        return _json_response(HTTPStatus.OK, token)
     except ValueError as error:
         return _error_response(HTTPStatus.BAD_REQUEST, str(error))
     except PermissionError as error:

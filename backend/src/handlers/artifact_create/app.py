@@ -42,7 +42,7 @@ from src.storage.name_index import (build_name_index_store_from_env,
 from src.storage.lineage_extractor import extract_lineage_graph
 from src.storage.lineage_store import store_lineage
 from src.storage.ratings_store import store_rating
-from src.utils.auth import extract_auth_token
+from src.utils.auth import require_auth_token
 
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
@@ -66,8 +66,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return _process_async_ingest(event)
 
     try:
+        _require_auth(event)
         artifact_type = _parse_artifact_type(event)
-        _extract_auth_token(event)
         payload = _parse_body(event)
         artifact = _build_artifact(artifact_type, payload)
         source_url = payload["url"]
@@ -151,8 +151,8 @@ def _parse_artifact_type(event: Dict[str, Any]) -> ArtifactType:
         ) from exc
 
 
-def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    return extract_auth_token(event)
+def _require_auth(event: Dict[str, Any]) -> None:
+    require_auth_token(event, optional=False)
 
 
 def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:

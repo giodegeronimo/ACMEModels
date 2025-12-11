@@ -15,7 +15,7 @@ from src.models.artifacts import ArtifactType, validate_artifact_id
 from src.storage.errors import ArtifactNotFound
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
-from src.utils.auth import extract_auth_token
+from src.utils.auth import require_auth_token
 
 configure_logging()
 _LOGGER = logging.getLogger(__name__)
@@ -26,8 +26,8 @@ _GIT_CLIENT: GitClient | None = None
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for POST /artifact/model/{id}/license-check."""
     try:
+        _require_auth(event)
         artifact_id = _parse_artifact_id(event)
-        _extract_auth_token(event)
         github_url = _parse_body(event)
 
         artifact = _METADATA_STORE.load(artifact_id)
@@ -70,10 +70,10 @@ def _parse_artifact_id(event: Dict[str, Any]) -> str:
     return validate_artifact_id(artifact_id)
 
 
-def _extract_auth_token(event: Dict[str, Any]) -> str | None:
+def _require_auth(event: Dict[str, Any]) -> None:
     # Require auth header per spec; env override can still relax via
     # AUTH_OPTIONAL=1
-    return extract_auth_token(event, optional=False)
+    require_auth_token(event, optional=False)
 
 
 def _parse_body(event: Dict[str, Any]) -> str:

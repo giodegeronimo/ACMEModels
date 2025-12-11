@@ -15,7 +15,7 @@ from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
 from src.storage.name_index import (NameIndexEntry,
                                     build_name_index_store_from_env)
-from src.utils.auth import extract_auth_token
+from src.utils.auth import require_auth_token
 
 try:  # pragma: no cover
     import boto3
@@ -33,9 +33,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for DELETE /artifacts/{artifact_type}/{id}."""
 
     try:
+        _require_auth(event)
         artifact_type = _parse_artifact_type(event)
         artifact_id = _parse_artifact_id(event)
-        _extract_auth_token(event)
 
         _LOGGER.info(
             "DELETE request artifact_id=%s type=%s",
@@ -137,8 +137,8 @@ def _parse_artifact_id(event: Dict[str, Any]) -> str:
     return validate_artifact_id(artifact_id)
 
 
-def _extract_auth_token(event: Dict[str, Any]) -> str | None:
-    return extract_auth_token(event)
+def _require_auth(event: Dict[str, Any]) -> None:
+    require_auth_token(event, optional=False)
 
 
 def _delete_artifact_blob(artifact_id: str) -> None:

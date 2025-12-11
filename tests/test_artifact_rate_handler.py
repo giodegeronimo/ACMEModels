@@ -11,6 +11,7 @@ from backend.src.handlers.artifact_rate import app as handler
 from src.models import Artifact, ArtifactData, ArtifactMetadata, ArtifactType
 from src.storage.errors import ArtifactNotFound
 from src.storage.metadata_store import ArtifactMetadataStore
+from src.utils import auth
 
 
 @pytest.fixture(autouse=True)
@@ -21,9 +22,10 @@ def _reset_store(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _event(artifact_id: str = "abc123") -> Dict[str, Any]:
+    token = auth.issue_token("tester", is_admin=True)
     return {
         "pathParameters": {"id": artifact_id},
-        "headers": {"X-Authorization": "token"},
+        "headers": {"X-Authorization": token},
     }
 
 

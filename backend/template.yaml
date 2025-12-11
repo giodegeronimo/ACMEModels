@@ -7,6 +7,11 @@ Globals:
     Runtime: python3.9
     Timeout: 300
     MemorySize: 2400
+    Environment:
+      Variables:
+        AUTH_TOKEN_TABLE: !Ref AuthTokenTable
+        AUTH_EXPIRY_SECONDS: !Ref AuthExpirySeconds
+        AUTH_MAX_CALLS: !Ref AuthMaxCalls
 
 Parameters:
   ArtifactNameIndexTable:
@@ -17,11 +22,33 @@ Parameters:
     Type: String
     Default: ""
     Description: "Optional: ARN of Secrets Manager secret containing a GitHub token"
+  AuthExpirySeconds:
+    Type: Number
+    Default: 1800
+    Description: "Lifetime of authentication tokens in seconds (default 10h)"
+  AuthMaxCalls:
+    Type: Number
+    Default: 500
+    Description: "Maximum number of calls permitted per token (default 1000)"
 
 Conditions:
   HasGitHubToken: !Not [!Equals [!Ref GitHubTokenSecretArn, ""]]
 
 Resources:
+  AuthTokenTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: token
+          AttributeType: S
+      KeySchema:
+        - AttributeName: token
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
   ArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -76,6 +103,13 @@ Resources:
         - Statement:
             Effect: Allow
             Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
               - lambda:InvokeFunction
             Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-ArtifactCreateFunction*"
         - Statement:
@@ -89,6 +123,13 @@ Resources:
               - dynamodb:Scan
             Resource:
               - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
       Environment:
         Variables:
           ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
@@ -133,6 +174,13 @@ Resources:
         - Statement:
             Effect: Allow
             Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
               - s3:ListBucket
             Resource: !GetAtt ArtifactBucket.Arn
         - Statement:
@@ -143,6 +191,27 @@ Resources:
               - dynamodb:Scan
             Resource:
               - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
       Environment:
         Variables:
           ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
@@ -184,6 +253,13 @@ Resources:
               - dynamodb:Scan
             Resource:
               - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
       Events:
         RetrieveArtifact:
           Type: HttpApi
@@ -203,8 +279,6 @@ Resources:
           LOG_LEVEL: "2"
           MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
           MODEL_RESULTS_PREFIX: ratings
-          HF_HOME: /tmp/hf-cache
-          HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
 
   ArtifactRegexSearchFunction:
     Type: AWS::Serverless::Function
@@ -235,6 +309,20 @@ Resources:
               - dynamodb:Scan
             Resource:
               - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
       Environment:
         Variables:
           ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
@@ -275,6 +363,13 @@ Resources:
               - dynamodb:Scan
             Resource:
               - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
       Environment:
         Variables:
           ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
@@ -306,6 +401,13 @@ Resources:
             Action:
               - s3:ListBucket
             Resource: !GetAtt ArtifactBucket.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
       Events:
         GetArtifactRating:
           Type: HttpApi
@@ -375,6 +477,20 @@ Resources:
                 - secretsmanager:GetSecretValue
               Resource: !Ref GitHubTokenSecretArn
           - !Ref "AWS::NoValue"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
 
   ArtifactCostFunction:
     Type: AWS::Serverless::Function
@@ -409,6 +525,13 @@ Resources:
               - dynamodb:Query
             Resource:
               - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
       Environment:
         Variables:
           ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
@@ -607,6 +730,13 @@ Resources:
               - dynamodb:Query
             Resource:
               - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
       Environment:
         Variables:
           ARTIFACT_STORAGE_BUCKET: !Ref ArtifactBucket
@@ -641,6 +771,13 @@ Resources:
               - dynamodb:BatchWriteItem
             Resource:
               - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ArtifactNameIndexTable}"
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
       Events:
         ResetRegistry:
           Type: HttpApi
@@ -672,6 +809,14 @@ Resources:
             ApiId: !Ref Api
             Method: GET
             Path: /tracks
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
       Environment:
         Variables:
           HF_HOME: /tmp/hf-cache
@@ -685,6 +830,14 @@ Resources:
       Handler: backend/src/handlers/authenticate/app.lambda_handler
       EphemeralStorage:
         Size: 10240
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt AuthTokenTable.Arn
       Events:
         AuthenticateUser:
           Type: HttpApi

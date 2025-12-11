@@ -11,6 +11,7 @@ import pytest
 from backend.src.handlers.artifact_delete import app as handler
 from src.models import Artifact, ArtifactData, ArtifactMetadata, ArtifactType
 from src.storage.errors import ArtifactNotFound
+from src.utils import auth
 
 
 @pytest.fixture(autouse=True)
@@ -28,9 +29,10 @@ def _reset_stores(monkeypatch: pytest.MonkeyPatch) -> None:
 def _event(
     artifact_type: str = "model", artifact_id: str = "test123"
 ) -> Dict[str, Any]:
+    token = auth.issue_token("tester", is_admin=True)
     return {
         "pathParameters": {"artifact_type": artifact_type, "id": artifact_id},
-        "headers": {"X-Authorization": "token"},
+        "headers": {"X-Authorization": token},
     }
 
 
@@ -222,9 +224,10 @@ def test_delete_invalid_artifact_type() -> None:
 
 def test_delete_missing_artifact_id() -> None:
     """Test deletion without artifact ID returns 400."""
+    token = auth.issue_token("tester", is_admin=True)
     event = {
         "pathParameters": {"artifact_type": "model"},
-        "headers": {"X-Authorization": "token"},
+        "headers": {"X-Authorization": token},
     }
 
     response = handler.lambda_handler(event, context={})

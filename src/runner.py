@@ -251,7 +251,7 @@ def dispatch(argv: Sequence[str]) -> int:
 
     if command == "install":
         configure_logging()
-        requirements_path = Path("requirements.txt")
+        requirements_path = Path("requirements-dev.txt")
         return install_dependencies(requirements_path)
 
     if command == "test":

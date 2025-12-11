@@ -39,6 +39,8 @@ from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
 from src.storage.name_index import (build_name_index_store_from_env,
                                     entry_from_metadata)
+from src.storage.lineage_extractor import extract_lineage_graph
+from src.storage.lineage_store import store_lineage
 from src.storage.ratings_store import store_rating
 from src.utils.auth import extract_auth_token
 
@@ -87,6 +89,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 raise BlobStoreError(str(error)) from error
             _store_artifact_blob(artifact, bundle=bundle)
             _compute_and_store_rating_if_needed(artifact, source_url)
+            _extract_and_store_lineage(artifact, source_url)
             stored = _store_artifact(
                 artifact, readme_excerpt=bundle.readme_excerpt
             )
@@ -223,6 +226,28 @@ def _compute_and_store_rating_if_needed(
     except RatingComputationError as exc:
         raise ValidationError(str(exc)) from exc
     store_rating(artifact.metadata.id, rating_payload)
+
+
+def _extract_and_store_lineage(artifact: Artifact, source_url: str) -> None:
+    """Extract and store lineage graph for model artifacts."""
+    if artifact.metadata.type is not ArtifactType.MODEL:
+        return
+    try:
+        _LOGGER.info("Extracting lineage for artifact %s", artifact.metadata.id)
+        graph = extract_lineage_graph(artifact.metadata.id, source_url)
+        store_lineage(artifact.metadata.id, graph)
+        _LOGGER.info(
+            "Stored lineage for artifact %s with %d nodes and %d edges",
+            artifact.metadata.id,
+            len(graph.nodes),
+            len(graph.edges),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning(
+            "Lineage extraction failed for %s: %s",
+            artifact.metadata.id,
+            exc,
+        )
 
 
 def _derive_artifact_name(url: str) -> str:
@@ -494,6 +519,7 @@ def _process_async_ingest(event: Dict[str, Any]) -> Dict[str, Any]:
     try:
         _store_artifact_blob(artifact, bundle=bundle)
         _compute_and_store_rating_if_needed(artifact, source_url)
+        _extract_and_store_lineage(artifact, source_url)
         _store_artifact(
             artifact,
             replace=True,

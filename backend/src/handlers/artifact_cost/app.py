@@ -100,10 +100,9 @@ def _load_lineage_graph(
     if not include_dependencies:
         return None
     try:
-        from src.storage.memory import get_lineage_repo
+        from src.storage.lineage_store import load_lineage
 
-        lineage_repo = get_lineage_repo()
-        return lineage_repo.get(artifact_id)
+        return load_lineage(artifact_id)
     except Exception as exc:  # noqa: BLE001 - lineage optional
         _LOGGER.warning(
             "Failed to load lineage for artifact %s: %s",

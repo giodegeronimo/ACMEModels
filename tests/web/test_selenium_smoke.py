@@ -7,7 +7,8 @@ import pytest
 
 pytest.importorskip("selenium")
 
-from selenium.common.exceptions import WebDriverException  # type: ignore[import]
+from selenium.common.exceptions import \
+    WebDriverException  # type: ignore[import]
 from selenium.webdriver.common.by import By  # type: ignore[import]
 from werkzeug.serving import make_server
 
@@ -24,7 +25,8 @@ def _make_driver(browser_name: str):
     try:
         if name == "chrome":
             from selenium.webdriver import Chrome
-            from selenium.webdriver.chrome.options import Options as ChromeOptions
+            from selenium.webdriver.chrome.options import \
+                Options as ChromeOptions
 
             options = ChromeOptions()
             options.add_argument("--headless=new")
@@ -34,7 +36,8 @@ def _make_driver(browser_name: str):
 
         if name == "firefox":
             from selenium.webdriver import Firefox
-            from selenium.webdriver.firefox.options import Options as FirefoxOptions
+            from selenium.webdriver.firefox.options import \
+                Options as FirefoxOptions
 
             options = FirefoxOptions()
             options.add_argument("--headless")

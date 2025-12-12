@@ -4,7 +4,6 @@ import threading
 from contextlib import suppress
 
 import pytest
-from werkzeug.serving import make_server
 
 try:
     from selenium.common.exceptions import \
@@ -12,6 +11,8 @@ try:
     from selenium.webdriver.common.by import By  # type: ignore[import]
 except ImportError:
     pytestmark = pytest.mark.skip(reason="Selenium is not installed")
+
+from werkzeug.serving import make_server
 
 
 def _start_server(app):

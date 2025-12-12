@@ -29,20 +29,20 @@ def _make_driver(browser_name: str):
             from selenium.webdriver.chrome.options import \
                 Options as ChromeOptions
 
-            options = ChromeOptions()
-            options.add_argument("--headless=new")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            return Chrome(options=options)
+            chrome_options = ChromeOptions()
+            chrome_options.add_argument("--headless=new")
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            return Chrome(options=chrome_options)
 
         if name == "firefox":
             from selenium.webdriver import Firefox
             from selenium.webdriver.firefox.options import \
                 Options as FirefoxOptions
 
-            options = FirefoxOptions()
-            options.add_argument("--headless")
-            return Firefox(options=options)
+            firefox_options = FirefoxOptions()
+            firefox_options.add_argument("--headless")
+            return Firefox(options=firefox_options)
     except (ImportError, WebDriverException):
         return None
     return None

@@ -34,12 +34,15 @@ from src.storage.blob_store import (ArtifactBlobStore, BlobNotFoundError,
                                     BlobStoreError, StoredArtifact,
                                     build_blob_store_from_env)
 from src.storage.errors import ValidationError
+from src.storage.lineage_extractor import extract_lineage_graph
+from src.storage.lineage_store import store_lineage
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         MetadataStoreError,
                                         build_metadata_store_from_env)
 from src.storage.name_index import (build_name_index_store_from_env,
                                     entry_from_metadata)
-from src.storage.ratings_store import store_rating
+from src.storage.ratings_store import (RatingStoreError, load_rating,
+                                       store_rating, store_stub_rating)
 from src.utils.auth import require_auth_token
 
 configure_logging()
@@ -81,12 +84,32 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "Processing artifact_id=%s synchronously",
                 artifact.metadata.id,
             )
+
+            # Store stub rating immediately for models
+            if artifact.metadata.type is ArtifactType.MODEL:
+                try:
+                    existing = load_rating(artifact.metadata.id)
+                    if existing is None:
+                        store_stub_rating(artifact.metadata.id)
+                    else:
+                        _LOGGER.info(
+                            "Rating already exists for %s, skipping stub",
+                            artifact.metadata.id
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.warning(
+                        "Failed to check/store stub rating for %s: %s",
+                        artifact.metadata.id,
+                        exc,
+                    )
+
             try:
                 bundle = prepare_artifact_bundle(source_url)
             except ArtifactDownloadError as error:
                 raise BlobStoreError(str(error)) from error
             _store_artifact_blob(artifact, bundle=bundle)
             _compute_and_store_rating_if_needed(artifact, source_url)
+            _extract_and_store_lineage(artifact, source_url)
             stored = _store_artifact(
                 artifact, readme_excerpt=bundle.readme_excerpt
             )
@@ -220,9 +243,50 @@ def _compute_and_store_rating_if_needed(
     )
     try:
         rating_payload = compute_model_rating(source_url)
+        store_rating(artifact.metadata.id, rating_payload)
+        _LOGGER.info(
+            "Stored real rating for artifact_id=%s", artifact.metadata.id
+        )
     except RatingComputationError as exc:
-        raise ValidationError(str(exc)) from exc
-    store_rating(artifact.metadata.id, rating_payload)
+        _LOGGER.warning(
+            "Rating computation failed for artifact_id=%s: %s. "
+            "Stub will remain.",
+            artifact.metadata.id,
+            exc,
+        )
+    except RatingStoreError as exc:
+        _LOGGER.warning(
+            "Failed to store rating for artifact_id=%s: %s. "
+            "Stub will remain.",
+            artifact.metadata.id,
+            exc,
+        )
+
+
+def _extract_and_store_lineage(
+    artifact: Artifact, source_url: str
+) -> None:
+    """Extract and store lineage graph for model artifacts."""
+    if artifact.metadata.type is not ArtifactType.MODEL:
+        return
+    try:
+        _LOGGER.info(
+            "Extracting lineage for artifact %s", artifact.metadata.id
+        )
+        graph = extract_lineage_graph(artifact.metadata.id, source_url)
+        store_lineage(artifact.metadata.id, graph)
+        _LOGGER.info(
+            "Stored lineage for artifact %s with %d nodes and %d edges",
+            artifact.metadata.id,
+            len(graph.nodes),
+            len(graph.edges),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning(
+            "Lineage extraction failed for %s: %s",
+            artifact.metadata.id,
+            exc,
+        )
 
 
 def _derive_artifact_name(url: str) -> str:
@@ -483,6 +547,25 @@ def _process_async_ingest(event: Dict[str, Any]) -> Dict[str, Any]:
 
     artifact = Artifact(metadata=metadata, data=ArtifactData(url=source_url))
     _LOGGER.info("Async ingest start artifact_id=%s", metadata.id)
+
+    # Store stub rating immediately for models
+    if artifact.metadata.type is ArtifactType.MODEL:
+        try:
+            existing = load_rating(artifact.metadata.id)
+            if existing is None:
+                store_stub_rating(artifact.metadata.id)
+            else:
+                _LOGGER.info(
+                    "Rating already exists for %s, skipping stub",
+                    artifact.metadata.id
+                )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning(
+                "Failed to check/store stub rating for %s: %s",
+                artifact.metadata.id,
+                exc,
+            )
+
     try:
         bundle = prepare_artifact_bundle(source_url)
     except ArtifactDownloadError as error:
@@ -494,6 +577,7 @@ def _process_async_ingest(event: Dict[str, Any]) -> Dict[str, Any]:
     try:
         _store_artifact_blob(artifact, bundle=bundle)
         _compute_and_store_rating_if_needed(artifact, source_url)
+        _extract_and_store_lineage(artifact, source_url)
         _store_artifact(
             artifact,
             replace=True,

@@ -11,7 +11,7 @@ from src.logging_config import configure_logging
 from src.models.artifacts import ArtifactType, validate_artifact_id
 from src.models.lineage import ArtifactLineageGraph
 from src.storage.errors import ArtifactNotFound, LineageNotFound
-from src.storage.lineage_store import load_lineage
+from src.storage.lineage_store import load_complete_lineage_family
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
 from src.utils.auth import extract_auth_token
@@ -34,7 +34,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 f"Artifact '{artifact_id}' not found for type 'model'"
             )
 
-        lineage_graph = load_lineage(artifact_id)
+        lineage_graph = load_complete_lineage_family(artifact_id)
         if lineage_graph is None:
             raise LineageNotFound(
                 f"Lineage not found for artifact '{artifact_id}'"

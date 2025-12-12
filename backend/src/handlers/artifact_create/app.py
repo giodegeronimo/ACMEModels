@@ -282,10 +282,12 @@ def _extract_and_store_lineage(
             len(graph.edges),
         )
     except Exception as exc:  # noqa: BLE001
-        _LOGGER.warning(
-            "Lineage extraction failed for %s: %s",
+        _LOGGER.error(
+            "Lineage extraction failed for %s from %s: %s",
             artifact.metadata.id,
+            source_url,
             exc,
+            exc_info=True,
         )
 
 

@@ -187,3 +187,227 @@ def load_lineage(artifact_id: str) -> ArtifactLineageGraph | None:
     ]
 
     return ArtifactLineageGraph(nodes=nodes, edges=edges)
+
+
+def load_complete_lineage_family(
+    artifact_id: str,
+) -> ArtifactLineageGraph | None:
+    """Load complete lineage graph including all related artifacts.
+
+    For a given artifact, this finds ALL artifacts that share lineage
+    (both parents and children) and merges them into a unified graph.
+
+    This implements the requirement that "all three requests must produce
+    the same graph" - querying any artifact in a lineage family returns
+    the complete family tree.
+
+    Args:
+        artifact_id: The artifact to query lineage for
+
+    Returns:
+        Complete merged lineage graph, or None if no lineage found
+    """
+    # First, load the direct lineage for this artifact
+    direct_lineage = load_lineage(artifact_id)
+    if direct_lineage is None:
+        return None
+
+    # Collect all artifact IDs AND names in this lineage family
+    family_ids: set[str] = {artifact_id}
+    family_names: set[str] = set()
+    for node in direct_lineage.nodes:
+        family_ids.add(node.artifact_id)
+        if node.name:
+            family_names.add(node.name)
+
+    # Now find ALL lineage graphs that reference any of these IDs or names
+    # This captures children that have this artifact as a parent
+    all_graphs = _find_all_related_lineage_graphs(family_ids, family_names)
+
+    # Merge all graphs into one
+    return _merge_lineage_graphs(all_graphs)
+
+
+def _find_all_related_lineage_graphs(
+    seed_ids: set[str],
+    seed_names: set[str],
+) -> list[ArtifactLineageGraph]:
+    """Find all lineage graphs that contain any of the seed IDs or names.
+
+    This scans ALL stored lineage files and returns those that contain
+    any of the seed IDs OR names in their nodes. This captures both direct
+    lineage and reverse relationships (children).
+
+    Args:
+        seed_ids: Initial set of artifact IDs to search for
+        seed_names: Initial set of model names to search for
+
+    Returns:
+        List of all related lineage graphs
+    """
+    all_graphs: list[ArtifactLineageGraph] = []
+    related_artifact_ids: set[str] = set()
+    related_names: set[str] = seed_names.copy()
+
+    # Get all lineage files
+    lineage_files = _list_all_lineage_files()
+
+    # First pass: find all graphs that contain any seed ID or name
+    for file_artifact_id in lineage_files:
+        graph = load_lineage(file_artifact_id)
+        if graph is None:
+            continue
+
+        # Check if this graph contains any seed ID or name
+        graph_node_ids = {node.artifact_id for node in graph.nodes}
+        graph_node_names = {node.name for node in graph.nodes if node.name}
+
+        if (graph_node_ids & seed_ids) or (graph_node_names & seed_names):
+            all_graphs.append(graph)
+            related_artifact_ids.update(graph_node_ids)
+            related_names.update(graph_node_names)
+
+    # Second pass: find graphs that contain any newly discovered IDs or names
+    # This catches transitive relationships
+    added_files = {
+        next((n.artifact_id for n in g.nodes if n.source == "primary"), None)
+        for g in all_graphs
+    }
+
+    for file_artifact_id in lineage_files:
+        if file_artifact_id in added_files:
+            continue  # Already added
+
+        graph = load_lineage(file_artifact_id)
+        if graph is None:
+            continue
+
+        graph_node_ids = {node.artifact_id for node in graph.nodes}
+        graph_node_names = {node.name for node in graph.nodes if node.name}
+
+        has_related_id = graph_node_ids & related_artifact_ids
+        has_related_name = graph_node_names & related_names
+        if has_related_id or has_related_name:
+            all_graphs.append(graph)
+            added_files.add(file_artifact_id)
+
+    return all_graphs
+
+
+def _list_all_lineage_files() -> list[str]:
+    """List all artifact IDs that have lineage files.
+
+    Returns:
+        List of artifact IDs (file basenames without .json)
+    """
+    if os.environ.get("AWS_SAM_LOCAL"):
+        if not _LOCAL_LINEAGE_DIR.exists():
+            return []
+        return [
+            p.stem
+            for p in _LOCAL_LINEAGE_DIR.iterdir()
+            if p.suffix == ".json"
+        ]
+
+    bucket = os.environ.get("MODEL_RESULTS_BUCKET")
+    if not bucket:
+        return []
+
+    prefix = "lineage/"
+    client = _build_s3_client()
+
+    try:
+        artifact_ids: list[str] = []
+        paginator = client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                # Extract artifact ID from key: lineage/{id}.json
+                if key.startswith(prefix) and key.endswith(".json"):
+                    # Remove prefix and .json suffix
+                    artifact_id = key[len(prefix):-5]
+                    artifact_ids.append(artifact_id)
+        return artifact_ids
+    except Exception as exc:  # pragma: no cover
+        _LOGGER.error("Failed to list lineage files: %s", exc)
+        return []
+
+
+def _merge_lineage_graphs(
+    graphs: list[ArtifactLineageGraph],
+) -> ArtifactLineageGraph:
+    """Merge multiple lineage graphs into one.
+
+    Deduplicates nodes by NAME (not artifact_id) and remaps edges.
+    This handles the case where the same model appears with
+    different IDs (e.g., as a real artifact vs as a parent-*
+    synthetic ID).
+
+    Args:
+        graphs: List of lineage graphs to merge
+
+    Returns:
+        Single merged lineage graph with nodes deduplicated by name
+    """
+    from src.models.lineage import ArtifactLineageEdge, ArtifactLineageNode
+
+    # Deduplicate nodes by name, preferring primary sources
+    nodes_by_name: dict[str, ArtifactLineageNode] = {}
+    id_to_canonical_id: dict[str, str] = {}  # Map all IDs to canonical ID
+
+    for graph in graphs:
+        for node in graph.nodes:
+            name = node.name
+            if name is None:
+                # Skip nodes without names
+                continue
+            if name not in nodes_by_name:
+                # First occurrence of this name
+                nodes_by_name[name] = node
+                id_to_canonical_id[node.artifact_id] = node.artifact_id
+            else:
+                # Prefer "primary" source over synthetic parent IDs
+                existing = nodes_by_name[name]
+                if node.source == "primary" and existing.source != "primary":
+                    # Replace with primary version
+                    old_canonical_id = existing.artifact_id
+                    nodes_by_name[name] = node
+                    # Update all mappings
+                    for k, v in list(id_to_canonical_id.items()):
+                        if v == old_canonical_id:
+                            id_to_canonical_id[k] = node.artifact_id
+                else:
+                    # Map this ID to the existing canonical ID
+                    id_to_canonical_id[node.artifact_id] = existing.artifact_id
+
+    # Deduplicate and remap edges
+    edge_set: set[tuple[str, str, str]] = set()
+    edges: list[ArtifactLineageEdge] = []
+
+    for graph in graphs:
+        for edge in graph.edges:
+            # Map edge IDs to canonical IDs
+            from_id = id_to_canonical_id.get(
+                edge.from_node_artifact_id,
+                edge.from_node_artifact_id,
+            )
+            to_id = id_to_canonical_id.get(
+                edge.to_node_artifact_id,
+                edge.to_node_artifact_id,
+            )
+
+            edge_tuple = (from_id, to_id, edge.relationship)
+            if edge_tuple not in edge_set:
+                edge_set.add(edge_tuple)
+                edges.append(
+                    ArtifactLineageEdge(
+                        from_node_artifact_id=from_id,
+                        to_node_artifact_id=to_id,
+                        relationship=edge.relationship,
+                    )
+                )
+
+    return ArtifactLineageGraph(
+        nodes=list(nodes_by_name.values()),
+        edges=edges,
+    )

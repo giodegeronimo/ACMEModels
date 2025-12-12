@@ -41,12 +41,8 @@ from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
 from src.storage.name_index import (build_name_index_store_from_env,
                                     entry_from_metadata)
-from src.storage.ratings_store import (
-    RatingStoreError,
-    load_rating,
-    store_rating,
-    store_stub_rating,
-)
+from src.storage.ratings_store import (RatingStoreError, load_rating,
+                                       store_rating, store_stub_rating)
 from src.utils.auth import require_auth_token
 
 configure_logging()

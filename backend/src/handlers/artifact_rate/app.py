@@ -6,10 +6,8 @@ import json
 import logging
 import os
 import time
-from concurrent.futures import (
-    ThreadPoolExecutor,
-    TimeoutError as FuturesTimeoutError,
-)
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from http import HTTPStatus
 from typing import Any, Dict
 

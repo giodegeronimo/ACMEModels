@@ -13,7 +13,8 @@ from src.metrics.ratings import RatingComputationError
 from src.models import Artifact, ArtifactData, ArtifactMetadata, ArtifactType
 from src.storage.errors import ArtifactNotFound
 from src.storage.metadata_store import ArtifactMetadataStore
-from src.storage.ratings_store import RatingStoreError, RatingStoreThrottledError
+from src.storage.ratings_store import (RatingStoreError,
+                                       RatingStoreThrottledError)
 from src.utils import auth
 
 

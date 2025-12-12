@@ -14,11 +14,8 @@ from typing import Any, Mapping, Optional
 from urllib.parse import urlparse
 
 from src.clients.hf_client import HFClient
-from src.models.lineage import (
-    ArtifactLineageEdge,
-    ArtifactLineageGraph,
-    ArtifactLineageNode,
-)
+from src.models.lineage import (ArtifactLineageEdge, ArtifactLineageGraph,
+                                ArtifactLineageNode)
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -122,3 +122,55 @@ def load_rating(artifact_id: str) -> Dict[str, Any] | None:
             exc,
         )
         return None
+
+
+def create_stub_rating() -> Dict[str, Any]:
+    """Create a stub rating with all maximum values (1.0).
+
+    Used as a placeholder during artifact creation to ensure ratings
+    are immediately available while real computation happens asynchronously.
+    """
+    return {
+        "name": "stub",
+        "category": "MODEL",
+        "net_score": 1.0,
+        "net_score_latency": 0.0,
+        "ramp_up_time": 1.0,
+        "ramp_up_time_latency": 0.0,
+        "bus_factor": 1.0,
+        "bus_factor_latency": 0.0,
+        "performance_claims": 1.0,
+        "performance_claims_latency": 0.0,
+        "license": 1.0,
+        "license_latency": 0.0,
+        "dataset_and_code_score": 1.0,
+        "dataset_and_code_score_latency": 0.0,
+        "dataset_quality": 1.0,
+        "dataset_quality_latency": 0.0,
+        "code_quality": 1.0,
+        "code_quality_latency": 0.0,
+        "reproducibility": 1.0,
+        "reproducibility_latency": 0.0,
+        "reviewedness": 1.0,
+        "reviewedness_latency": 0.0,
+        "tree_score": 1.0,
+        "tree_score_latency": 0.0,
+        "size_score": {
+            "raspberry_pi": 1.0,
+            "jetson_nano": 1.0,
+            "desktop_pc": 1.0,
+            "aws_server": 1.0,
+        },
+        "size_score_latency": 0.0,
+    }
+
+
+def store_stub_rating(artifact_id: str) -> None:
+    """Store a stub rating for the given artifact.
+
+    Args:
+        artifact_id: The artifact identifier
+    """
+    stub = create_stub_rating()
+    store_rating(artifact_id, stub)
+    _LOGGER.info("Stored stub rating for artifact_id=%s", artifact_id)

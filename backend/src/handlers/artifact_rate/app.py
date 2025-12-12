@@ -96,6 +96,12 @@ def _load_rating_with_fallback(artifact: Artifact) -> Dict[str, Any]:
         raise ServiceUnavailableError("Unable to load rating") from error
 
     if rating is not None:
+        # Check if this is a stub rating
+        if rating.get("name") == "stub":
+            _LOGGER.warning(
+                "Returning stub rating for artifact_id=%s - real rating not yet computed",
+                artifact_id
+            )
         return rating
 
     _LOGGER.warning(

@@ -41,7 +41,9 @@ from src.storage.name_index import (build_name_index_store_from_env,
                                     entry_from_metadata)
 from src.storage.lineage_extractor import extract_lineage_graph
 from src.storage.lineage_store import store_lineage
-from src.storage.ratings_store import store_rating
+from src.storage.ratings_store import (RatingStoreError,
+                                       RatingStoreThrottledError,
+                                       load_rating, store_rating, store_stub_rating)
 from src.utils.auth import require_auth_token
 
 configure_logging()
@@ -83,6 +85,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "Processing artifact_id=%s synchronously",
                 artifact.metadata.id,
             )
+
+            # Store stub rating immediately for models
+            if artifact.metadata.type is ArtifactType.MODEL:
+                try:
+                    existing = load_rating(artifact.metadata.id)
+                    if existing is None:
+                        store_stub_rating(artifact.metadata.id)
+                    else:
+                        _LOGGER.info(
+                            "Rating already exists for %s, skipping stub",
+                            artifact.metadata.id
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.warning(
+                        "Failed to check/store stub rating for %s: %s",
+                        artifact.metadata.id,
+                        exc,
+                    )
+
             try:
                 bundle = prepare_artifact_bundle(source_url)
             except ArtifactDownloadError as error:
@@ -508,6 +529,25 @@ def _process_async_ingest(event: Dict[str, Any]) -> Dict[str, Any]:
 
     artifact = Artifact(metadata=metadata, data=ArtifactData(url=source_url))
     _LOGGER.info("Async ingest start artifact_id=%s", metadata.id)
+
+    # Store stub rating immediately for models
+    if artifact.metadata.type is ArtifactType.MODEL:
+        try:
+            existing = load_rating(artifact.metadata.id)
+            if existing is None:
+                store_stub_rating(artifact.metadata.id)
+            else:
+                _LOGGER.info(
+                    "Rating already exists for %s, skipping stub",
+                    artifact.metadata.id
+                )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning(
+                "Failed to check/store stub rating for %s: %s",
+                artifact.metadata.id,
+                exc,
+            )
+
     try:
         bundle = prepare_artifact_bundle(source_url)
     except ArtifactDownloadError as error:

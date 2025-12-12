@@ -1,6 +1,6 @@
-"""Utilities for transforming metric results into CLI output records."""
-
 from __future__ import annotations
+
+"""Utilities for transforming metric results into CLI output records."""
 
 import json
 from decimal import ROUND_HALF_UP, Decimal
@@ -31,8 +31,6 @@ OUTPUT_FIELD_ORDER: Sequence[str] = (
     "dataset_quality_latency",
     "code_quality",
     "code_quality_latency",
-    "reproducibility",
-    "reproducibility_latency",
 )
 
 SIZE_SCORE_DEVICE_ORDER: Sequence[str] = (

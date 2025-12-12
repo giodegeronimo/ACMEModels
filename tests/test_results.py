@@ -1,5 +1,3 @@
-"""Tests for test results module."""
-
 from __future__ import annotations
 
 from types import MappingProxyType
@@ -124,7 +122,6 @@ def test_formatter_uses_specified_field_order() -> None:
     url_records = [{"hf_url": "https://huggingface.co/org/model"}]
     metrics = [
         _metric(key="code_quality", value=0.11, latency_ms=70),
-        _metric(key="reproducibility", value=0.4, latency_ms=45),
         _metric(key="net_score", value=0.2, latency_ms=10),
         _metric(
             key="size_score",

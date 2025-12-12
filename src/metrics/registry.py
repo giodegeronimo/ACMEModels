@@ -1,6 +1,6 @@
-"""Dispatcher that evaluates metrics for URL records."""
-
 from __future__ import annotations
+
+"""Dispatcher that evaluates metrics for URL records."""
 
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Dict, Iterable, List, Optional, Sequence

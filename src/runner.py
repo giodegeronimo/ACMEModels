@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import importlib
 import io
 import os
 import re
@@ -13,8 +14,27 @@ from pathlib import Path
 from typing import (Any, Callable, Iterable, Mapping, Optional, Sequence,
                     Tuple, Union)
 
-from .logging_config import configure_logging
-from .utils.env import validate_runtime_environment
+_PACKAGE_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _PACKAGE_DIR.parent
+if __package__ in (None, ""):
+    if str(_PACKAGE_DIR) not in sys.path:
+        sys.path.insert(0, str(_PACKAGE_DIR))
+    if str(_PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(_PROJECT_ROOT))
+    _PKG_PREFIX = ""
+else:
+    _PKG_PREFIX = __package__
+
+
+def _import_from_src(module: str):
+    full_name = f"{_PKG_PREFIX}.{module}" if _PKG_PREFIX else module
+    return importlib.import_module(full_name)
+
+
+configure_logging = _import_from_src("logging_config").configure_logging
+validate_runtime_environment = _import_from_src(
+    "utils.env"
+).validate_runtime_environment
 
 _CLI_MAIN: Optional[Callable[[Optional[Sequence[str]]], int]] = None
 PYTHON_BIN = "python3"
@@ -25,9 +45,8 @@ def _get_cli_main() -> Callable[[Optional[Sequence[str]]], int]:
     """Lazy-load CLI main entry point to avoid import-time dependencies."""
     global _CLI_MAIN
     if _CLI_MAIN is None:
-        from .CLIApp import main as cli_main
-
-        _CLI_MAIN = cli_main
+        cli_module = _import_from_src("CLIApp")
+        _CLI_MAIN = cli_module.main
     return _CLI_MAIN
 
 
@@ -227,7 +246,10 @@ def run_pytest(additional_args: Optional[Sequence[str]] = None) -> int:
 def dispatch(argv: Sequence[str]) -> int:
     """Route ./run invocations to the appropriate helper."""
     if len(argv) < 2:
-        print("Usage: ./run <install|test|pytest|URL_FILE>", file=sys.stderr)
+        print(
+            "Usage: ./run <install|test|pytest|web|URL_FILE>",
+            file=sys.stderr,
+        )
         return 1
 
     command = argv[1]
@@ -245,6 +267,22 @@ def dispatch(argv: Sequence[str]) -> int:
         configure_logging()
         return run_pytest(argv[2:])
 
+    if command == "web":
+        create_app = _import_from_src("webapp").create_app
+        host = os.environ.get("ACME_WEB_HOST", "127.0.0.1")
+        port_raw = os.environ.get("ACME_WEB_PORT", "5000")
+        debug_mode = os.environ.get("FLASK_DEBUG") == "1"
+        try:
+            port = int(port_raw)
+        except ValueError:
+            print(f"Invalid ACME_WEB_PORT value: {port_raw}", file=sys.stderr)
+            return 1
+
+        configure_logging()
+        app = create_app()
+        app.run(host=host, port=port, debug=debug_mode)
+        return 0
+
     validate_runtime_environment()
     configure_logging()
 
@@ -256,3 +294,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     """Entry point shared between the CLI wrapper and direct invocation."""
     argv = list(argv or sys.argv)
     return dispatch(argv)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

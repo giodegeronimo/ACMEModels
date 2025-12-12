@@ -1,3 +1,5 @@
 huggingface_hub>=0.25
 requests>=2.31
-boto3>=1.28
+Flask>=3.0
+selenium>=4.12
+gunicorn>=21.2

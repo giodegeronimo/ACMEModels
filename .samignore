@@ -1,0 +1,19 @@
+# Exclude local tooling and caches from Lambda build context
+.aws-sam/
+backend/.aws-sam/
+aws/
+backend/aws/
+sam-installation/
+backend/sam-installation/
+*.log
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local data and repos not needed at runtime
+phase2_repo/
+__pycache__/
+*.py[cod]
+tests/

@@ -142,6 +142,7 @@ def test_rating_computation_failure_returns_503(
 ) -> None:
     _store_artifact()
     monkeypatch.setattr(handler, "load_rating", lambda artifact_id: None)
+
     def _raise(_url: str) -> Dict[str, Any]:
         raise RatingComputationError("boom")
 

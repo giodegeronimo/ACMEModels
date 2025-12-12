@@ -63,7 +63,9 @@ def _build_s3_client() -> Any:
     return _S3_CLIENT
 
 
-def store_lineage(artifact_id: str, lineage_graph: ArtifactLineageGraph) -> None:
+def store_lineage(
+    artifact_id: str, lineage_graph: ArtifactLineageGraph
+) -> None:
     """Store lineage graph to S3 or local filesystem."""
     # Serialize to dict
     lineage_dict = {
@@ -94,8 +96,11 @@ def store_lineage(artifact_id: str, lineage_graph: ArtifactLineageGraph) -> None
 
     bucket = os.environ.get("MODEL_RESULTS_BUCKET")
     if not bucket:
-        raise RuntimeError("MODEL_RESULTS_BUCKET is not configured")
-    # Use dedicated lineage prefix, not MODEL_RESULTS_PREFIX (which is for ratings)
+        raise RuntimeError(
+            "MODEL_RESULTS_BUCKET is not configured"
+        )
+    # Use dedicated lineage prefix, not MODEL_RESULTS_PREFIX
+    # (which is for ratings)
     prefix = "lineage"
     key = f"{prefix}/{artifact_id}.json"
     client = _build_s3_client()
@@ -123,12 +128,15 @@ def load_lineage(artifact_id: str) -> ArtifactLineageGraph | None:
         path = _LOCAL_LINEAGE_DIR / f"{artifact_id}.json"
         if not path.exists():
             return None
-        lineage_dict = json.loads(path.read_text(encoding="utf-8"))
+        lineage_dict = json.loads(
+            path.read_text(encoding="utf-8")
+        )
     else:
         bucket = os.environ.get("MODEL_RESULTS_BUCKET")
         if not bucket:
             return None
-        # Use dedicated lineage prefix, not MODEL_RESULTS_PREFIX (which is for ratings)
+        # Use dedicated lineage prefix, not MODEL_RESULTS_PREFIX
+    # (which is for ratings)
         prefix = "lineage"
         key = f"{prefix}/{artifact_id}.json"
         client = _build_s3_client()

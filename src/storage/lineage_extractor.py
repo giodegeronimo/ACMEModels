@@ -1,8 +1,8 @@
 """Extract lineage graph from HuggingFace model metadata.
 
-This module discovers parent models from Hugging Face metadata (card_data, config)
-and README hints (e.g., "base model", "fine-tuned from") and builds an
-ArtifactLineageGraph for storage.
+This module discovers parent models from Hugging Face metadata
+(card_data, config) and README hints (e.g., "base model",
+"fine-tuned from") and builds an ArtifactLineageGraph for storage.
 """
 
 from __future__ import annotations
@@ -76,7 +76,9 @@ def extract_lineage_graph(
             # Generate deterministic ID for parent
             parent_id = _generate_parent_id(parent_slug)
             parent_name = (
-                parent_slug.split("/")[-1] if "/" in parent_slug else parent_slug
+                parent_slug.split("/")[-1]
+                if "/" in parent_slug
+                else parent_slug
             )
 
             parent_node = ArtifactLineageNode(
@@ -161,10 +163,10 @@ def _discover_parents_with_source(
     seen: set[str] = set()
     normalized: list[tuple[str, str]] = []
     for item, source_type in parents:
-        slug = _to_repo_slug(item)
-        if slug and slug not in seen:
-            seen.add(slug)
-            normalized.append((slug, source_type))
+        normalized_slug = _to_repo_slug(item)
+        if normalized_slug is not None and normalized_slug not in seen:
+            seen.add(normalized_slug)
+            normalized.append((normalized_slug, source_type))
 
     # Limit fan-out defensively
     return normalized[:MAX_PARENT_FANOUT]

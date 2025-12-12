@@ -6,7 +6,10 @@ import json
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    TimeoutError as FuturesTimeoutError,
+)
 from http import HTTPStatus
 from typing import Any, Dict
 
@@ -19,7 +22,8 @@ from src.storage.metadata_store import (ArtifactMetadataStore,
                                         build_metadata_store_from_env)
 from src.storage.ratings_store import (RatingStoreError,
                                        RatingStoreThrottledError,
-                                       load_rating, store_rating)
+                                       create_stub_rating, load_rating,
+                                       store_rating)
 from src.utils.auth import require_auth_token
 
 configure_logging()
@@ -78,7 +82,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 def _load_rating_with_fallback(artifact: Artifact) -> Dict[str, Any]:
     artifact_id = artifact.metadata.id
     try:
-        _LOGGER.info("Attempting to load rating for artifact_id=%s", artifact_id)
+        _LOGGER.info(
+            "Attempting to load rating for artifact_id=%s", artifact_id
+        )
         rating = load_rating(artifact_id)
     except RatingStoreThrottledError as error:
         _LOGGER.warning(
@@ -96,13 +102,6 @@ def _load_rating_with_fallback(artifact: Artifact) -> Dict[str, Any]:
         raise ServiceUnavailableError("Unable to load rating") from error
 
     if rating is not None:
-        # Check if this is a stub rating
-        if rating.get("name") == "stub":
-            _LOGGER.info(
-                "Stub rating found for artifact_id=%s - computing real rating on-demand",
-                artifact_id
-            )
-            return _compute_and_store_rating(artifact)
         return rating
 
     _LOGGER.warning(
@@ -120,12 +119,12 @@ def _compute_and_store_rating(artifact: Artifact) -> Dict[str, Any]:
         rating = _run_rating_pipeline_with_timeout(source_url)
     except RatingComputationError as error:
         _LOGGER.warning(
-            "Rating computation failed for artifact_id=%s: %s. Returning stub rating.",
+            "Rating computation failed for artifact_id=%s: %s. "
+            "Returning stub rating.",
             artifact_id,
             error,
         )
         # Return stub instead of raising error
-        from src.storage.ratings_store import create_stub_rating
         return create_stub_rating()
     finally:
         elapsed = time.perf_counter() - start
@@ -172,7 +171,9 @@ def _run_rating_pipeline_with_timeout(source_url: str) -> Dict[str, Any]:
 
 
 def _validate_rating_payload(rating: Dict[str, Any]) -> None:
-    missing = [field for field in _REQUIRED_RATING_FIELDS if field not in rating]
+    missing = [
+        field for field in _REQUIRED_RATING_FIELDS if field not in rating
+    ]
     if missing:
         raise RatingComputationError(
             f"Rating payload missing required fields: {', '.join(missing)}"

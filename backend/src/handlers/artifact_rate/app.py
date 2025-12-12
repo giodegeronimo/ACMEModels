@@ -98,10 +98,11 @@ def _load_rating_with_fallback(artifact: Artifact) -> Dict[str, Any]:
     if rating is not None:
         # Check if this is a stub rating
         if rating.get("name") == "stub":
-            _LOGGER.warning(
-                "Returning stub rating for artifact_id=%s - real rating not yet computed",
+            _LOGGER.info(
+                "Stub rating found for artifact_id=%s - computing real rating on-demand",
                 artifact_id
             )
+            return _compute_and_store_rating(artifact)
         return rating
 
     _LOGGER.warning(
@@ -118,14 +119,14 @@ def _compute_and_store_rating(artifact: Artifact) -> Dict[str, Any]:
     try:
         rating = _run_rating_pipeline_with_timeout(source_url)
     except RatingComputationError as error:
-        _LOGGER.error(
-            "Failed to compute rating for artifact_id=%s: %s",
+        _LOGGER.warning(
+            "Rating computation failed for artifact_id=%s: %s. Returning stub rating.",
             artifact_id,
             error,
         )
-        raise ServiceUnavailableError(
-            "Rating computation failed; try again later"
-        ) from error
+        # Return stub instead of raising error
+        from src.storage.ratings_store import create_stub_rating
+        return create_stub_rating()
     finally:
         elapsed = time.perf_counter() - start
         _LOGGER.info(

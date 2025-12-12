@@ -258,6 +258,7 @@ Resources:
           ARTIFACT_STORAGE_PREFIX: artifacts
           ARTIFACT_STORAGE_REGION: !Ref AWS::Region
           ARTIFACT_METADATA_PREFIX: metadata
+          MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
           HF_HOME: /tmp/hf-cache
           HUGGINGFACE_HUB_CACHE: /tmp/hf-cache
 

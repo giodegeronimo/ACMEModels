@@ -244,9 +244,20 @@ def _compute_and_store_rating_if_needed(
     )
     try:
         rating_payload = compute_model_rating(source_url)
+        store_rating(artifact.metadata.id, rating_payload)
+        _LOGGER.info("Stored real rating for artifact_id=%s", artifact.metadata.id)
     except RatingComputationError as exc:
-        raise ValidationError(str(exc)) from exc
-    store_rating(artifact.metadata.id, rating_payload)
+        _LOGGER.warning(
+            "Rating computation failed for artifact_id=%s: %s. Stub will remain.",
+            artifact.metadata.id,
+            exc,
+        )
+    except RatingStoreError as exc:
+        _LOGGER.warning(
+            "Failed to store rating for artifact_id=%s: %s. Stub will remain.",
+            artifact.metadata.id,
+            exc,
+        )
 
 
 def _extract_and_store_lineage(artifact: Artifact, source_url: str) -> None:

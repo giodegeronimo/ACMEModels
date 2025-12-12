@@ -32,7 +32,9 @@ def _import_from_src(module: str):
 
 
 configure_logging = _import_from_src("logging_config").configure_logging
-validate_runtime_environment = _import_from_src("utils.env").validate_runtime_environment
+validate_runtime_environment = _import_from_src(
+    "utils.env"
+).validate_runtime_environment
 
 _CLI_MAIN: Optional[Callable[[Optional[Sequence[str]]], int]] = None
 PYTHON_BIN = "python3"
@@ -244,7 +246,10 @@ def run_pytest(additional_args: Optional[Sequence[str]] = None) -> int:
 def dispatch(argv: Sequence[str]) -> int:
     """Route ./run invocations to the appropriate helper."""
     if len(argv) < 2:
-        print("Usage: ./run <install|test|pytest|web|URL_FILE>", file=sys.stderr)
+        print(
+            "Usage: ./run <install|test|pytest|web|URL_FILE>",
+            file=sys.stderr,
+        )
         return 1
 
     command = argv[1]

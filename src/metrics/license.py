@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 import time
-from typing import Any, Dict, Optional, Protocol
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 from src.clients.hf_client import HFClient
 from src.metrics.base import Metric, MetricOutput
@@ -28,6 +32,10 @@ _FAILURE_VALUES: Dict[str, float] = {
 
 COMPAT_WEIGHT = 0.8
 CLARITY_WEIGHT = 0.2
+
+# Simple cache of regex patterns for common license slugs; can be expanded.
+_LICENSE_PATTERNS: Dict[str, re.Pattern[str]] = {}
+
 
 class _HFClientProtocol(Protocol):
     def get_model_info(self, repo_id: str) -> Any: ...

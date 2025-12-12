@@ -4,13 +4,15 @@ import threading
 from contextlib import suppress
 
 import pytest
-
-pytest.importorskip("selenium")
-
-from selenium.common.exceptions import \
-    WebDriverException  # type: ignore[import]
-from selenium.webdriver.common.by import By  # type: ignore[import]
 from werkzeug.serving import make_server
+
+try:
+    from selenium.common.exceptions import (
+        WebDriverException,
+    )  # type: ignore[import]
+    from selenium.webdriver.common.by import By  # type: ignore[import]
+except ImportError:
+    pytestmark = pytest.mark.skip(reason="Selenium is not installed")
 
 
 def _start_server(app):
@@ -50,11 +52,16 @@ def _make_driver(browser_name: str):
 @pytest.mark.selenium
 def test_dashboard_heading_visible(web_app, selenium_browser_name):
     if not selenium_browser_name:
-        pytest.skip("Selenium browser not configured. Set SELENIUM_BROWSER to enable.")
+        pytest.skip(
+            "Selenium browser not configured. "
+            "Set SELENIUM_BROWSER to enable."
+        )
 
     driver = _make_driver(selenium_browser_name)
     if driver is None:
-        pytest.skip(f"Unable to start Selenium driver for {selenium_browser_name}.")
+        pytest.skip(
+            f"Unable to start Selenium driver for {selenium_browser_name}."
+        )
 
     server, thread = _start_server(web_app)
     try:

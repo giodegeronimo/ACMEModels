@@ -7,9 +7,8 @@ import pytest
 from werkzeug.serving import make_server
 
 try:
-    from selenium.common.exceptions import (
-        WebDriverException,
-    )  # type: ignore[import]
+    from selenium.common.exceptions import \
+        WebDriverException  # type: ignore[import]
     from selenium.webdriver.common.by import By  # type: ignore[import]
 except ImportError:
     pytestmark = pytest.mark.skip(reason="Selenium is not installed")

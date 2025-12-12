@@ -137,7 +137,7 @@ def test_rating_store_throttled_returns_503(
     assert response["statusCode"] == HTTPStatus.SERVICE_UNAVAILABLE
 
 
-def test_rating_computation_failure_returns_503(
+def test_rating_computation_failure_returns_stub(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _store_artifact()
@@ -153,7 +153,10 @@ def test_rating_computation_failure_returns_503(
     )
 
     response = handler.lambda_handler(_event(), context={})
-    assert response["statusCode"] == HTTPStatus.SERVICE_UNAVAILABLE
+    assert response["statusCode"] == HTTPStatus.OK
+    body = json.loads(response["body"])
+    assert body["name"] == "stub"
+    assert body["net_score"] == 1.0
 
 
 def test_store_failure_without_cache_raises_503(

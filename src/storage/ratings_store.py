@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import math
+import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -274,7 +274,8 @@ def _sanitize_json_payload(payload: Any) -> Any:
     if isinstance(payload, float) and not math.isfinite(payload):
         return 0.0
     if isinstance(payload, dict):
-        return {key: _sanitize_json_payload(value) for key, value in payload.items()}
+        return {key: _sanitize_json_payload(value)
+                for key, value in payload.items()}
     if isinstance(payload, list):
         return [_sanitize_json_payload(value) for value in payload]
     return payload

@@ -59,7 +59,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         rating = _load_rating(artifact_id)
         if rating is None:
             _LOGGER.warning(
-                "No cached rating found for artifact_id=%s; computing on demand",
+                "No cached rating found for artifact_id=%s; \
+                 computing on demand",
                 artifact_id,
             )
             artifact = _METADATA_STORE.load(artifact_id)
@@ -175,10 +176,10 @@ def _compute_model_rating(source_url: str) -> Dict[str, Any]:
     """
 
     try:
-        from src.metrics.ratings import (  # local import to reduce cold start
-            RatingComputationError as PipelineRatingError,
-            compute_model_rating as compute_rating,
-        )
+        from src.metrics.ratings import \
+            RatingComputationError as \
+            PipelineRatingError  # local import to reduce cold start
+        from src.metrics.ratings import compute_model_rating as compute_rating
     except Exception as exc:  # noqa: BLE001
         raise RatingComputationError(
             f"Rating pipeline unavailable: {exc}"

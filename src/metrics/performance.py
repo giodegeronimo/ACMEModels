@@ -296,7 +296,8 @@ _METRIC_VALUE_PATTERN = re.compile(
 
 
 def _readme_has_numeric_claims(readme_text: str) -> bool:
-    """Heuristic detector for benchmark claims when structured metadata is absent.
+    """Heuristic detector for benchmark
+    claims when structured metadata is absent.
 
     Avoids relying on the Purdue LLM client by detecting common metric/value
     patterns (e.g. "F1: 89.5", "92% accuracy", "| BLEU | 27.1 |").

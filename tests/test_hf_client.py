@@ -101,7 +101,8 @@ def test_normalize_repo_id_handles_prefixed_url() -> None:
 
 def test_normalize_repo_id_requires_two_segments() -> None:
     # Hugging Face supports legacy single-segment model IDs that live at the
-    # root of the namespace (e.g. https://huggingface.co/distilbert-base-uncased-distilled-squad).
+    # root of the namespace (e.g. https:/
+    # /huggingface.co/distilbert-base-uncased-distilled-squad).
     assert HFClient._normalize_repo_id("https://huggingface.co/user") == "user"
 
 

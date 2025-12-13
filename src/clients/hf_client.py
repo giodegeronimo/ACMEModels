@@ -289,7 +289,8 @@ class HFClient(BaseClient[Any]):
             raise ValueError(f"Unable to extract repo id from URL: {trimmed}")
 
         # Hugging Face supports both owner/name and legacy single-segment IDs
-        # (e.g. https://huggingface.co/distilbert-base-uncased-distilled-squad).
+        # (e.g. https://huggingface.co/dist
+        # ilbert-base-uncased-distilled-squad).
         if len(segments) >= 2:
             return "/".join(segments[:2])
         return segments[0]

@@ -111,6 +111,13 @@ class PerformanceMetric(Metric):
             )
             return 0.0
 
+        if _readme_has_numeric_claims(readme_text):
+            _LOGGER.info(
+                "Performance metric: README heuristic claims detected for %s",
+                hf_url,
+            )
+            return 1.0
+
         has_claims = self._llm_detect_claims(readme_text)
         _LOGGER.info(
             "Performance metric LLM result for %s: %s",
@@ -272,3 +279,53 @@ def _parse_model_index(model_index: Sequence[Any]) -> List[Dict[str, Any]]:
 
 def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:
     return record.get("hf_url")
+
+
+_METRIC_VALUE_PATTERN = re.compile(
+    r"(?is)\b("
+    r"accuracy|acc|f1(?:-score)?|bleu|rouge(?:-[0-9l])?|wer|cer|"
+    r"mrr|ndcg|precision|recall|"
+    r"top[- ]?1|top[- ]?5|"
+    r"map|mAP|"
+    r"perplexity|ppl"
+    r")\b"
+    r"[^\n0-9]{0,30}"
+    r"([0-9]{1,4}(?:\.[0-9]+)?)"
+    r"%?"
+)
+
+
+def _readme_has_numeric_claims(readme_text: str) -> bool:
+    """Heuristic detector for benchmark claims when structured metadata is absent.
+
+    Avoids relying on the Purdue LLM client by detecting common metric/value
+    patterns (e.g. "F1: 89.5", "92% accuracy", "| BLEU | 27.1 |").
+    """
+
+    if not readme_text:
+        return False
+    if not re.search(r"\d", readme_text):
+        return False
+
+    text = re.sub(r"```.*?```", "", readme_text, flags=re.DOTALL)
+    for match in _METRIC_VALUE_PATTERN.finditer(text):
+        metric = match.group(1).strip().lower()
+        value_raw = match.group(2)
+        try:
+            value = float(value_raw)
+        except ValueError:
+            continue
+
+        # Ignore years and other likely non-metric numbers.
+        if 1900 <= value <= 2100:
+            continue
+
+        if metric in {"perplexity", "ppl"}:
+            if value <= 0:
+                continue
+            return True
+
+        if 0 <= value <= 100:
+            return True
+
+    return False

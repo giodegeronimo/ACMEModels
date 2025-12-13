@@ -12,7 +12,6 @@ from http import HTTPStatus
 from typing import Any, Dict
 
 from src.logging_config import configure_logging
-from src.metrics.ratings import RatingComputationError, compute_model_rating
 from src.models import Artifact
 from src.models.artifacts import ArtifactType, validate_artifact_id
 from src.storage.errors import ArtifactNotFound
@@ -44,6 +43,10 @@ _REQUIRED_RATING_FIELDS = (
 )
 
 
+class RatingComputationError(RuntimeError):
+    """Raised when model ratings cannot be computed."""
+
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for GET /artifact/model/{id}/rate."""
 
@@ -51,12 +54,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         _require_auth(event)
         artifact_id = _parse_artifact_id(event)
         _LOGGER.info("Fetching rating for artifact_id=%s", artifact_id)
-        artifact = _METADATA_STORE.load(artifact_id)
-        if artifact.metadata.type is not ArtifactType.MODEL:
-            raise ArtifactNotFound(
-                f"Artifact '{artifact_id}' not found for type 'model'"
+        # Fast path: load rating directly (single S3 call). Only consult the
+        # metadata store if the rating is missing and we need to compute it.
+        rating = _load_rating(artifact_id)
+        if rating is None:
+            _LOGGER.warning(
+                "No cached rating found for artifact_id=%s; computing on demand",
+                artifact_id,
             )
-        rating = _load_rating_with_fallback(artifact)
+            artifact = _METADATA_STORE.load(artifact_id)
+            if artifact.metadata.type is not ArtifactType.MODEL:
+                raise ArtifactNotFound(
+                    f"Artifact '{artifact_id}' not found for type 'model'"
+                )
+            rating = _compute_and_store_rating(artifact)
         body = rating
     except ValueError as error:
         return _error_response(HTTPStatus.BAD_REQUEST, str(error))
@@ -77,8 +88,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     return _json_response(HTTPStatus.OK, body)
 
 
-def _load_rating_with_fallback(artifact: Artifact) -> Dict[str, Any]:
-    artifact_id = artifact.metadata.id
+def _load_rating(artifact_id: str) -> Dict[str, Any] | None:
     try:
         _LOGGER.info(
             "Attempting to load rating for artifact_id=%s", artifact_id
@@ -99,14 +109,7 @@ def _load_rating_with_fallback(artifact: Artifact) -> Dict[str, Any]:
         )
         raise ServiceUnavailableError("Unable to load rating") from error
 
-    if rating is not None:
-        return rating
-
-    _LOGGER.warning(
-        "Rating not found for artifact_id=%s. Computing on-demand.",
-        artifact_id,
-    )
-    return _compute_and_store_rating(artifact)
+    return rating
 
 
 def _compute_and_store_rating(artifact: Artifact) -> Dict[str, Any]:
@@ -122,8 +125,16 @@ def _compute_and_store_rating(artifact: Artifact) -> Dict[str, Any]:
             artifact_id,
             error,
         )
-        # Return stub instead of raising error
-        return create_stub_rating()
+        stub = create_stub_rating(name=artifact.metadata.name)
+        try:
+            store_rating(artifact_id, stub)
+        except RatingStoreError as store_error:
+            _LOGGER.warning(
+                "Failed to persist stub rating for artifact_id=%s: %s",
+                artifact_id,
+                store_error,
+            )
+        return stub
     finally:
         elapsed = time.perf_counter() - start
         _LOGGER.info(
@@ -155,10 +166,38 @@ def _compute_and_store_rating(artifact: Artifact) -> Dict[str, Any]:
     return rating
 
 
+def _compute_model_rating(source_url: str) -> Dict[str, Any]:
+    """Compute the rating payload for a model URL.
+
+    Importing the full CLI rating pipeline is expensive; defer it until we
+    actually need to compute a rating. Most /rate requests should hit the S3
+    cache and never execute this path.
+    """
+
+    try:
+        from src.metrics.ratings import (  # local import to reduce cold start
+            RatingComputationError as PipelineRatingError,
+            compute_model_rating as compute_rating,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise RatingComputationError(
+            f"Rating pipeline unavailable: {exc}"
+        ) from exc
+
+    try:
+        return compute_rating(source_url)
+    except PipelineRatingError as exc:
+        raise RatingComputationError(str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise RatingComputationError(
+            f"Failed to compute rating: {exc}"
+        ) from exc
+
+
 def _run_rating_pipeline_with_timeout(source_url: str) -> Dict[str, Any]:
     timeout = max(_COMPUTE_TIMEOUT_SECONDS, 1)
     with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(compute_model_rating, source_url)
+        future = executor.submit(_compute_model_rating, source_url)
         try:
             return future.result(timeout=timeout)
         except FuturesTimeoutError as error:

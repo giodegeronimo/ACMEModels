@@ -32,7 +32,9 @@ class NetScoreCalculator:
             total_latency += metric_result.latency_ms
             value = metric_result.value
             if isinstance(value, (int, float)):
-                numeric_values.append(float(value))
+                numeric_value = float(value)
+                if 0.0 <= numeric_value <= 1.0:
+                    numeric_values.append(numeric_value)
 
         if numeric_values:
             average = sum(numeric_values) / len(numeric_values)

@@ -134,24 +134,31 @@ def require_auth_token(
             return None
         raise PermissionError("Missing X-Authorization header")
 
+    now = time.time()
+    max_age = (
+        _get_expiry_seconds() if expiry_seconds is None else expiry_seconds
+    )
+    max_uses = _get_max_calls() if max_calls is None else max_calls
+
+    if _DDB_TABLE and _ddb_client() is not None and token_store is None:
+        updated = _validate_and_increment_usage_ddb(
+            token_value,
+            max_uses=max_uses,
+            max_age=max_age,
+        )
+        if updated is None:
+            raise PermissionError("Invalid authentication token")
+        return updated
+
     try:
-        if _DDB_TABLE and _ddb_client() is not None and token_store is None:
-            record = _get_token_ddb(token_value)
-        else:
-            store = token_store if token_store is not None else _TOKENS
-            record = store.get(token_value)
+        store = token_store if token_store is not None else _TOKENS
+        record = store.get(token_value)
     except Exception as exc:  # pragma: no cover - defensive
         _LOGGER.warning("Token lookup failed: %s", exc)
         raise PermissionError("Invalid authentication token") from exc
 
     if record is None:
         raise PermissionError("Invalid authentication token")
-
-    now = time.time()
-    max_age = (
-        _get_expiry_seconds() if expiry_seconds is None else expiry_seconds
-    )
-    max_uses = _get_max_calls() if max_calls is None else max_calls
 
     if record.revoked:
         raise PermissionError("Authentication token has been revoked")
@@ -161,14 +168,7 @@ def require_auth_token(
         raise PermissionError("Authentication token usage limit exceeded")
 
     try:
-        if _DDB_TABLE and _ddb_client() is not None and token_store is None:
-            _increment_usage_ddb(
-                token_value,
-                max_uses=max_uses,
-                max_age=max_age,
-            )
-        else:
-            record.usage_count += 1
+        record.usage_count += 1
     except PermissionError:
         raise
     except Exception as exc:  # pragma: no cover - defensive
@@ -276,6 +276,59 @@ def _increment_usage_ddb(token: str, *, max_uses: int, max_age: int) -> None:
         raise PermissionError(
             "Authentication token has expired or exceeded usage"
         )
+
+
+def _validate_and_increment_usage_ddb(
+    token: str,
+    *,
+    max_uses: int,
+    max_age: int,
+) -> TokenRecord | None:
+    """Validate token constraints and increment usage in a single DDB call."""
+
+    client = _ddb_client()
+    if client is None or _DDB_TABLE is None:
+        record = _TOKENS.get(token)
+        if record:
+            record.usage_count += 1
+        return record
+
+    now = int(time.time())
+    min_issued_at = now - max_age
+    try:
+        client.update_item(
+            TableName=_DDB_TABLE,
+            Key={"token": {"S": token}},
+            UpdateExpression="SET usage_count = usage_count + :inc",
+            ConditionExpression=(
+                "attribute_exists(#token) "
+                "AND (attribute_not_exists(revoked) OR revoked = :false) "
+                "AND usage_count < :max_uses "
+                "AND issued_at >= :min_issued_at"
+            ),
+            ExpressionAttributeNames={"#token": "token"},
+            ExpressionAttributeValues={
+                ":inc": {"N": "1"},
+                ":max_uses": {"N": str(max_uses)},
+                ":min_issued_at": {"N": str(min_issued_at)},
+                ":false": {"BOOL": False},
+            },
+        )
+    except Exception as exc:
+        raise PermissionError(
+            "Authentication token has expired or exceeded usage"
+        ) from exc
+
+    # Most handlers only need validation; avoid fetching the full record to
+    # keep per-request latency low (critical for concurrent autograder calls).
+    return TokenRecord(
+        token=token,
+        username="",
+        is_admin=False,
+        issued_at=float(now),
+        usage_count=0,
+        revoked=False,
+    )
 
 
 def _get_expiry_seconds() -> int:

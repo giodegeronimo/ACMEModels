@@ -96,7 +96,7 @@ def test_performance_detects_structured_metadata() -> None:
 
 
 def test_performance_llm_positive() -> None:
-    readme = "## Results\nThis model achieves 92% accuracy on MNLI."
+    readme = "## Results\nThis model achieves strong results on MNLI."
     purdue = _FakePurdueClient(
         [
             "Analysis... Final answer: YES",
@@ -110,6 +110,16 @@ def test_performance_llm_positive() -> None:
     assert isinstance(score, float)
     assert score == pytest.approx(1.0)
     assert len(purdue.calls) == 2
+
+
+def test_performance_readme_regex_positive_without_llm() -> None:
+    readme = "## Results\nThis model achieves 92% accuracy on MNLI."
+    metric = _metric(None, readme, purdue=None)
+
+    score = metric.compute({"hf_url": "https://huggingface.co/org/model"})
+
+    assert isinstance(score, float)
+    assert score == pytest.approx(1.0)
 
 
 def test_performance_llm_negative() -> None:

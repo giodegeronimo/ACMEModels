@@ -294,6 +294,20 @@ _METRIC_VALUE_PATTERN = re.compile(
     r"%?"
 )
 
+_VALUE_METRIC_PATTERN = re.compile(
+    r"(?is)"
+    r"([0-9]{1,4}(?:\.[0-9]+)?)"
+    r"%?"
+    r"[^\nA-Za-z]{0,20}"
+    r"\b("
+    r"accuracy|acc|f1(?:-score)?|bleu|rouge(?:-[0-9l])?|wer|cer|"
+    r"mrr|ndcg|precision|recall|"
+    r"top[- ]?1|top[- ]?5|"
+    r"map|mAP|"
+    r"perplexity|ppl"
+    r")\b"
+)
+
 
 def _readme_has_numeric_claims(readme_text: str) -> bool:
     """Heuristic detector for benchmark
@@ -309,9 +323,14 @@ def _readme_has_numeric_claims(readme_text: str) -> bool:
         return False
 
     text = re.sub(r"```.*?```", "", readme_text, flags=re.DOTALL)
+    candidates: list[tuple[str, str]] = []
     for match in _METRIC_VALUE_PATTERN.finditer(text):
-        metric = match.group(1).strip().lower()
-        value_raw = match.group(2)
+        candidates.append((match.group(1), match.group(2)))
+    for match in _VALUE_METRIC_PATTERN.finditer(text):
+        candidates.append((match.group(2), match.group(1)))
+
+    for metric_raw, value_raw in candidates:
+        metric = metric_raw.strip().lower()
         try:
             value = float(value_raw)
         except ValueError:

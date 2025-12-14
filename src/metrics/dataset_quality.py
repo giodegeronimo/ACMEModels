@@ -23,7 +23,7 @@ _FAILURE_VALUES: Dict[str, float] = {
 }
 
 _DATASET_URL_PATTERN = re.compile(
-    r"https?://huggingface\.co/(?:datasets/)?[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+",
+    r"https?://huggingface\.co/datasets/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)?",
     re.IGNORECASE,
 )
 
@@ -240,9 +240,10 @@ class DatasetQualityMetric(Metric):
             return None
 
         readme = self._safe_readme(hf_url)
-        candidate_url = _extract_dataset_from_readme(readme or "")
-        if candidate_url and self._dataset_reference_is_valid(candidate_url):
-            slug = _to_dataset_slug(candidate_url)
+        for candidate in _extract_dataset_candidates_from_readme(readme or ""):
+            if not self._dataset_reference_is_valid(candidate):
+                continue
+            slug = _to_dataset_slug(candidate)
             if slug:
                 _LOGGER.info(
                     "Dataset slug inferred from README for %s: %s",
@@ -418,13 +419,21 @@ class DatasetQualityMetric(Metric):
             return 0
 
     def _dataset_reference_is_valid(self, reference: str) -> bool:
-        slug = _to_dataset_slug(reference)
-        if not slug:
-            return False
         try:
-            return self._hf_client.dataset_exists(slug)
+            slug = _to_dataset_slug(reference)
+            if not slug:
+                return False
+            if self._hf_client.dataset_exists(slug):
+                return True
+            if "/" not in slug:
+                return self._hf_client.dataset_exists(f"{slug}/{slug}")
+            return False
         except Exception as exc:  # pragma: no cover - defensive
-            _LOGGER.debug("Dataset validation failed for %s: %s", slug, exc)
+            _LOGGER.debug(
+                "Dataset validation failed for reference=%s: %s",
+                reference,
+                exc,
+            )
             return False
 
     def _safe_dataset_info(self, dataset_slug: str) -> Optional[Any]:
@@ -481,6 +490,77 @@ def _extract_dataset_from_readme(text: str) -> Optional[str]:
     return None
 
 
+def _extract_dataset_candidates_from_readme(text: str) -> list[str]:
+    candidates: list[str] = []
+    front_matter = _extract_front_matter(text)
+    if front_matter:
+        candidates.extend(_extract_datasets_from_front_matter(front_matter))
+    url = _extract_dataset_from_readme(text)
+    if url:
+        candidates.append(url)
+    # Preserve order but de-dupe.
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in candidates:
+        normalized = item.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(normalized)
+    return unique
+
+
+def _extract_front_matter(text: str) -> str | None:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    for idx in range(1, min(len(lines), 250)):
+        if lines[idx].strip() == "---":
+            return "\n".join(lines[1:idx])
+    return None
+
+
+def _extract_datasets_from_front_matter(front_matter: str) -> list[str]:
+    datasets: list[str] = []
+    lines = front_matter.splitlines()
+    in_section = False
+    section_indent = 0
+    for line in lines:
+        raw = line.rstrip()
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        if not in_section:
+            if stripped.startswith("datasets:"):
+                in_section = True
+                section_indent = len(raw) - len(raw.lstrip())
+                inline = stripped.split(":", 1)[1].strip()
+                if inline.startswith("[") and inline.endswith("]"):
+                    inner = inline[1:-1].strip()
+                    if inner:
+                        datasets.extend(
+                            [
+                                item.strip().strip("'\"")
+                                for item in inner.split(",")
+                                if item.strip()
+                            ]
+                        )
+                    in_section = False
+                elif inline:
+                    datasets.append(inline.strip().strip("'\""))
+                    in_section = False
+            continue
+
+        current_indent = len(raw) - len(raw.lstrip())
+        if current_indent <= section_indent and not stripped.startswith("-"):
+            break
+        if stripped.startswith("- "):
+            item = stripped[2:].strip().strip("'\"")
+            if item:
+                datasets.append(item)
+    return datasets
+
+
 def _to_dataset_slug(candidate: str) -> Optional[str]:
     if not candidate:
         return None
@@ -494,11 +574,10 @@ def _to_dataset_slug(candidate: str) -> Optional[str]:
             return None
         if segments[0] == "datasets":
             segments = segments[1:]
-        if len(segments) < 2:
+        if len(segments) < 1:
             return None
-        return "/".join(segments[:2])
+        if len(segments) >= 2:
+            return "/".join(segments[:2])
+        return segments[0]
 
-    if "/" in candidate:
-        return candidate
-
-    return None
+    return candidate.strip() or None

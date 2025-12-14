@@ -285,10 +285,15 @@ class HFClient(BaseClient[Any]):
         if segments[0] in {"datasets", "spaces", "models"}:
             segments = segments[1:]
 
-        if len(segments) < 2:
+        if len(segments) < 1:
             raise ValueError(f"Unable to extract repo id from URL: {trimmed}")
 
-        return "/".join(segments[:2])
+        # Hugging Face supports both owner/name and legacy single-segment IDs
+        # (e.g. https://huggingface.co/dist
+        # ilbert-base-uncased-distilled-squad).
+        if len(segments) >= 2:
+            return "/".join(segments[:2])
+        return segments[0]
 
     @staticmethod
     def _normalize_dataset_id(dataset_identifier: str) -> str:
@@ -297,8 +302,6 @@ class HFClient(BaseClient[Any]):
             raise ValueError("Dataset identifier cannot be empty.")
 
         if "://" not in trimmed:
-            if "/" not in trimmed:
-                raise ValueError("Dataset identifier must include owner/name")
             return trimmed
 
         parsed = urlparse(trimmed)
@@ -316,9 +319,11 @@ class HFClient(BaseClient[Any]):
         if segments[0] == "datasets":
             segments = segments[1:]
 
-        if len(segments) < 2:
+        if len(segments) < 1:
             raise ValueError(
                 f"Unable to extract dataset id from URL: {dataset_identifier}"
             )
 
-        return "/".join(segments[:2])
+        if len(segments) >= 2:
+            return "/".join(segments[:2])
+        return segments[0]

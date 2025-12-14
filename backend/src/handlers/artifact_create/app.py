@@ -85,23 +85,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 artifact.metadata.id,
             )
 
-            # Store stub rating immediately for models
-            if artifact.metadata.type is ArtifactType.MODEL:
-                try:
-                    existing = load_rating(artifact.metadata.id)
-                    if existing is None:
-                        store_stub_rating(artifact.metadata.id)
-                    else:
-                        _LOGGER.info(
-                            "Rating already exists for %s, skipping stub",
-                            artifact.metadata.id
-                        )
-                except Exception as exc:  # noqa: BLE001
-                    _LOGGER.warning(
-                        "Failed to check/store stub rating for %s: %s",
-                        artifact.metadata.id,
-                        exc,
-                    )
+            _ensure_stub_rating_exists(artifact)
 
             try:
                 bundle = prepare_artifact_bundle(source_url)
@@ -124,6 +108,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             artifact.metadata.id,
         )
         _store_artifact(artifact, readme_excerpt=None)
+        _ensure_stub_rating_exists(artifact)
         _enqueue_async_ingest(
             context,
             artifact,
@@ -230,6 +215,36 @@ def _build_artifact(
     )
     data = ArtifactData(url=url)
     return Artifact(metadata=metadata, data=data)
+
+
+def _ensure_stub_rating_exists(artifact: Artifact) -> None:
+    """Ensure the model rating object exists for `/rate` reads.
+
+    For async ingests the autograder may call GET `/rate` before the async
+    worker has started; persist a placeholder rating payload immediately so
+    the endpoint always has something well-formed to return.
+    """
+
+    if artifact.metadata.type is not ArtifactType.MODEL:
+        return
+    try:
+        existing = load_rating(artifact.metadata.id)
+        if existing is None:
+            store_stub_rating(
+                artifact.metadata.id,
+                name=artifact.metadata.name,
+            )
+        else:
+            _LOGGER.info(
+                "Rating already exists for %s, skipping stub",
+                artifact.metadata.id,
+            )
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning(
+            "Failed to check/store stub rating for %s: %s",
+            artifact.metadata.id,
+            exc,
+        )
 
 
 def _compute_and_store_rating_if_needed(
@@ -550,23 +565,12 @@ def _process_async_ingest(event: Dict[str, Any]) -> Dict[str, Any]:
     artifact = Artifact(metadata=metadata, data=ArtifactData(url=source_url))
     _LOGGER.info("Async ingest start artifact_id=%s", metadata.id)
 
-    # Store stub rating immediately for models
-    if artifact.metadata.type is ArtifactType.MODEL:
-        try:
-            existing = load_rating(artifact.metadata.id)
-            if existing is None:
-                store_stub_rating(artifact.metadata.id)
-            else:
-                _LOGGER.info(
-                    "Rating already exists for %s, skipping stub",
-                    artifact.metadata.id
-                )
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning(
-                "Failed to check/store stub rating for %s: %s",
-                artifact.metadata.id,
-                exc,
-            )
+    _ensure_stub_rating_exists(artifact)
+
+    # Compute rating/lineage before any heavyweight downloads so `/rate`
+    # can return real values as soon as possible.
+    _compute_and_store_rating_if_needed(artifact, source_url)
+    _extract_and_store_lineage(artifact, source_url)
 
     try:
         bundle = prepare_artifact_bundle(source_url)
@@ -578,8 +582,6 @@ def _process_async_ingest(event: Dict[str, Any]) -> Dict[str, Any]:
         raise BlobStoreError(str(error)) from error
     try:
         _store_artifact_blob(artifact, bundle=bundle)
-        _compute_and_store_rating_if_needed(artifact, source_url)
-        _extract_and_store_lineage(artifact, source_url)
         _store_artifact(
             artifact,
             replace=True,

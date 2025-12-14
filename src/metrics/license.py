@@ -12,6 +12,10 @@ from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 from src.clients.hf_client import HFClient
 from src.metrics.base import Metric, MetricOutput
+from src.services.license_analysis import (collect_hf_license_candidates,
+                                           evaluate_classification,
+                                           load_license_policy,
+                                           normalize_license_candidates)
 from src.utils.env import fail_stub_active
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,22 +33,8 @@ _FAILURE_VALUES: Dict[str, float] = {
 COMPAT_WEIGHT = 0.8
 CLARITY_WEIGHT = 0.2
 
-_LICENSE_PATTERNS: Dict[str, re.Pattern[str]] = {
-    "MIT": re.compile(r"\bmit\b", re.IGNORECASE),
-    "Apache-2.0": re.compile(r"apache\s*-?\s*2(?:\.0)?", re.IGNORECASE),
-    "BSD-2-Clause": re.compile(r"bsd\s*2\s*-?clause", re.IGNORECASE),
-    "BSD-3-Clause": re.compile(r"bsd\s*3\s*-?clause", re.IGNORECASE),
-    "MPL-2.0": re.compile(r"mpl\s*-?\s*2(?:\.0)?|mozilla", re.IGNORECASE),
-    "LGPL-2.1-only": re.compile(r"lgpl\s*(v?2\.1|2\.1)\b", re.IGNORECASE),
-    "LGPL-3.0-only": re.compile(r"lgpl\s*(v?3|3\.0)\b", re.IGNORECASE),
-    "CC-BY-4.0": re.compile(r"cc-?by-?4(?:\.0)?", re.IGNORECASE),
-    "CC0-1.0": re.compile(r"cc0|public\s+domain", re.IGNORECASE),
-    "CC-BY-SA-4.0": re.compile(r"cc-?by-?sa-?4(?:\.0)?", re.IGNORECASE),
-    "GPL-3.0-only": re.compile(r"gpl\s*(v?3|3\.0)\b", re.IGNORECASE),
-    "AGPL-3.0-only": re.compile(r"agpl\s*(v?3|3\.0)\b", re.IGNORECASE),
-    "OpenRAIL-M": re.compile(r"openrail[-_ ]?m", re.IGNORECASE),
-    "Custom": re.compile(r"custom\s+license", re.IGNORECASE),
-}
+# Simple cache of regex patterns for common license slugs; can be expanded.
+_LICENSE_PATTERNS: Dict[str, re.Pattern[str]] = {}
 
 
 class _HFClientProtocol(Protocol):
@@ -74,9 +64,11 @@ class LicenseMetric(Metric):
         if not hf_url:
             return 0.0
 
-        policy = _load_policy()
-        from_meta, from_readme = _collect_candidates(self._hf, hf_url)
-        candidates = _normalize_candidates([*from_meta, *from_readme])
+        policy = load_license_policy()
+        from_meta, from_readme = collect_hf_license_candidates(
+            self._hf, hf_url
+        )
+        candidates = normalize_license_candidates([*from_meta, *from_readme])
 
         _LOGGER.info(
             "License metric inputs for %s: metadata=%s readme=%s "
@@ -94,7 +86,7 @@ class LicenseMetric(Metric):
             )
             return 0.0
 
-        classification = _classify(candidates, policy)
+        classification = evaluate_classification(candidates, policy)
         compat = 0.0
         if classification == "compatible":
             compat = 1.0

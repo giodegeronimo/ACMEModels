@@ -100,8 +100,10 @@ def test_normalize_repo_id_handles_prefixed_url() -> None:
 
 
 def test_normalize_repo_id_requires_two_segments() -> None:
-    with pytest.raises(ValueError):
-        HFClient._normalize_repo_id("https://huggingface.co/user")
+    # Hugging Face supports legacy single-segment model IDs that live at the
+    # root of the namespace (e.g. https:/
+    # /huggingface.co/distilbert-base-uncased-distilled-squad).
+    assert HFClient._normalize_repo_id("https://huggingface.co/user") == "user"
 
 
 def test_normalize_repo_id_rejects_empty_path() -> None:

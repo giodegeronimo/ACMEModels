@@ -423,6 +423,9 @@ Resources:
     Properties:
       CodeUri: ..
       Handler: backend/src/handlers/artifact_rate/app.lambda_handler
+      AutoPublishAlias: live
+      ProvisionedConcurrencyConfig:
+        ProvisionedConcurrentExecutions: 15
       EphemeralStorage:
         Size: 10240
       Policies:
@@ -461,6 +464,8 @@ Resources:
           ARTIFACT_METADATA_PREFIX: metadata
           MODEL_RESULTS_BUCKET: !Ref ArtifactBucket
           MODEL_RESULTS_PREFIX: ratings
+          ACME_WARM_S3_ON_INIT: "1"
+          LOG_LEVEL: "1"
   ArtifactLicenseCheckFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -515,13 +520,6 @@ Resources:
                 - secretsmanager:GetSecretValue
               Resource: !Ref GitHubTokenSecretArn
           - !Ref "AWS::NoValue"
-        - Statement:
-            Effect: Allow
-            Action:
-              - dynamodb:GetItem
-              - dynamodb:PutItem
-              - dynamodb:UpdateItem
-            Resource: !GetAtt AuthTokenTable.Arn
         - Statement:
             Effect: Allow
             Action:

@@ -9,7 +9,6 @@ from typing import Any, Dict, cast
 import pytest
 
 from backend.src.handlers.artifact_rate import app as handler
-from src.metrics.ratings import RatingComputationError
 from src.models import Artifact, ArtifactData, ArtifactMetadata, ArtifactType
 from src.storage.errors import ArtifactNotFound
 from src.storage.metadata_store import ArtifactMetadataStore
@@ -144,7 +143,7 @@ def test_rating_computation_failure_returns_stub(
     monkeypatch.setattr(handler, "load_rating", lambda artifact_id: None)
 
     def _raise(_url: str) -> Dict[str, Any]:
-        raise RatingComputationError("boom")
+        raise handler.RatingComputationError("boom")
 
     monkeypatch.setattr(
         handler,
@@ -155,7 +154,7 @@ def test_rating_computation_failure_returns_stub(
     response = handler.lambda_handler(_event(), context={})
     assert response["statusCode"] == HTTPStatus.OK
     body = json.loads(response["body"])
-    assert body["name"] == "stub"
+    assert body["name"] == "demo"
     assert body["net_score"] == 1.0
 
 

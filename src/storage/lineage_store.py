@@ -353,13 +353,17 @@ def _merge_lineage_graphs(
 
     # Deduplicate nodes by name, preferring primary sources
     nodes_by_name: dict[str, ArtifactLineageNode] = {}
+    nodes_by_id: dict[str, ArtifactLineageNode] = {}  # For unnamed nodes
     id_to_canonical_id: dict[str, str] = {}  # Map all IDs to canonical ID
 
     for graph in graphs:
         for node in graph.nodes:
             name = node.name
             if name is None:
-                # Skip nodes without names
+                # Deduplicate unnamed nodes by artifact_id
+                if node.artifact_id not in nodes_by_id:
+                    nodes_by_id[node.artifact_id] = node
+                id_to_canonical_id[node.artifact_id] = node.artifact_id
                 continue
             if name not in nodes_by_name:
                 # First occurrence of this name
@@ -407,7 +411,10 @@ def _merge_lineage_graphs(
                     )
                 )
 
+    # Combine named nodes and unnamed nodes
+    all_nodes = list(nodes_by_name.values()) + list(nodes_by_id.values())
+
     return ArtifactLineageGraph(
-        nodes=list(nodes_by_name.values()),
+        nodes=all_nodes,
         edges=edges,
     )

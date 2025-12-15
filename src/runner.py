@@ -129,6 +129,7 @@ def _collect_line_coverage(data_path: Optional[Path] = None) -> float:
     """Load the latest coverage results and return the total line coverage."""
     # Local import so ./run install works before dependencies are present.
     from coverage import Coverage
+    from coverage.exceptions import NoDataError
 
     if data_path is None:
         coverage_api = Coverage()
@@ -141,10 +142,13 @@ def _collect_line_coverage(data_path: Optional[Path] = None) -> float:
 
     buffer = io.StringIO()
     include_patterns = [str(Path.cwd() / "src" / "*")]
-    total_percentage = coverage_api.report(
-        file=buffer,
-        include=include_patterns,
-    )
+    try:
+        total_percentage = coverage_api.report(
+            file=buffer,
+            include=include_patterns,
+        )
+    except NoDataError:
+        return 0.0
     return total_percentage
 
 

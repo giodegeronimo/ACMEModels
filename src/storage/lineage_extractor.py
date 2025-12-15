@@ -20,7 +20,7 @@ from src.models.lineage import (ArtifactLineageEdge, ArtifactLineageGraph,
 _LOGGER = logging.getLogger(__name__)
 
 # Defensive caps to avoid explosion
-MAX_PARENT_FANOUT = 5
+MAX_PARENT_FANOUT = 10
 
 # Regex patterns for README parsing
 _PARENT_HINT = re.compile(
@@ -50,60 +50,139 @@ def extract_lineage_graph(
     Returns:
         ArtifactLineageGraph with nodes and edges representing lineage.
         At minimum, returns a graph with just the main artifact node.
+        Includes transitive lineage (parent's parents, etc.)
     """
-    # Extract model name from URL for the main node
-    main_name = _extract_name_from_url(source_url)
+    hf = HFClient()
 
-    # Create the main artifact node
-    main_node = ArtifactLineageNode(
-        artifact_id=artifact_id,
-        name=main_name,
-        source="primary",
-    )
-
-    nodes: list[ArtifactLineageNode] = [main_node]
-    edges: list[ArtifactLineageEdge] = []
+    # Build complete lineage recursively
+    all_nodes: dict[str, ArtifactLineageNode] = {}
+    all_edges: list[ArtifactLineageEdge] = []
+    visited: set[str] = set()
 
     try:
-        # Discover parents using HF API
-        hf = HFClient()
-        parents_with_source = _discover_parents_with_source(hf, source_url)
-
-        for parent_slug, source_type in parents_with_source:
-            # Generate deterministic ID for parent
-            parent_id = _generate_parent_id(parent_slug)
-            parent_name = (
-                parent_slug.split("/")[-1]
-                if "/" in parent_slug
-                else parent_slug
-            )
-
-            parent_node = ArtifactLineageNode(
-                artifact_id=parent_id,
-                name=parent_name,
-                source=source_type,
-            )
-            nodes.append(parent_node)
-
-            # Edge from main artifact to parent (child -> parent)
-            relationship = _determine_relationship(source_type)
-            edge = ArtifactLineageEdge(
-                from_node_artifact_id=artifact_id,
-                to_node_artifact_id=parent_id,
-                relationship=relationship,
-            )
-            edges.append(edge)
-
+        _build_lineage_recursive(
+            hf=hf,
+            artifact_id=artifact_id,
+            source_url=source_url,
+            source_type="primary",
+            all_nodes=all_nodes,
+            all_edges=all_edges,
+            visited=visited,
+        )
     except Exception as exc:  # noqa: BLE001
-        _LOGGER.warning(
-            "Failed to extract lineage parents for %s: %s",
+        _LOGGER.error(
+            "Failed to extract lineage for %s from %s: %s",
             artifact_id,
+            source_url,
             exc,
+            exc_info=True,
         )
         # Return minimal graph with just main node
+        main_name = _extract_name_from_url(source_url)
+        main_node = ArtifactLineageNode(
+            artifact_id=artifact_id,
+            name=main_name,
+            source="primary",
+        )
         return ArtifactLineageGraph(nodes=[main_node], edges=[])
 
-    return ArtifactLineageGraph(nodes=nodes, edges=edges)
+    return ArtifactLineageGraph(
+        nodes=list(all_nodes.values()),
+        edges=all_edges,
+    )
+
+
+def _build_lineage_recursive(
+    hf: HFClient,
+    artifact_id: str,
+    source_url: str,
+    source_type: str,
+    all_nodes: dict[str, ArtifactLineageNode],
+    all_edges: list[ArtifactLineageEdge],
+    visited: set[str],
+    depth: int = 0,
+) -> None:
+    """Recursively build lineage graph by following parent relationships.
+
+    Args:
+        hf: HuggingFace client
+        artifact_id: Current artifact ID
+        source_url: HuggingFace URL for current artifact
+        source_type: Source type for this node
+        all_nodes: Accumulated nodes (modified in-place)
+        all_edges: Accumulated edges (modified in-place)
+        visited: Set of visited HF URLs to prevent cycles
+        depth: Current recursion depth (for logging/debugging)
+    """
+    # Prevent cycles and limit depth
+    if source_url in visited or depth > 10:
+        return
+
+    visited.add(source_url)
+
+    # Extract model name for this node
+    model_name = _extract_name_from_url(source_url)
+
+    # Create node for current artifact
+    current_node = ArtifactLineageNode(
+        artifact_id=artifact_id,
+        name=model_name,
+        source=source_type,
+    )
+    all_nodes[artifact_id] = current_node
+
+    _LOGGER.info(
+        "Processing lineage at depth %d: %s (%s)",
+        depth,
+        artifact_id,
+        source_url,
+    )
+
+    # Discover parents
+    try:
+        parents_with_source = _discover_parents_with_source(hf, source_url)
+        _LOGGER.info(
+            "Found %d parent(s) for %s at depth %d",
+            len(parents_with_source),
+            artifact_id,
+            depth,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning(
+            "Failed to discover parents for %s: %s",
+            source_url,
+            exc,
+        )
+        return
+
+    # Process each parent recursively
+    for parent_slug, parent_source_type in parents_with_source:
+        # Generate deterministic ID for parent
+        parent_id = _generate_parent_id(parent_slug)
+
+        # Create edge from current to parent (child -> parent)
+        relationship = _determine_relationship(parent_source_type)
+        edge = ArtifactLineageEdge(
+            from_node_artifact_id=artifact_id,
+            to_node_artifact_id=parent_id,
+            relationship=relationship,
+        )
+        all_edges.append(edge)
+
+        # Build HuggingFace URL for parent
+        parent_url = f"https://huggingface.co/{parent_slug}"
+
+        # Recursively process parent
+        _build_lineage_recursive(
+            hf=hf,
+            artifact_id=parent_id,
+            source_url=parent_url,
+            source_type=parent_source_type,
+            all_nodes=all_nodes,
+            all_edges=all_edges,
+            visited=visited,
+            depth=depth + 1,
+        )
 
 
 def _discover_parents_with_source(
@@ -166,6 +245,19 @@ def _discover_parents_with_source(
             normalized.append((normalized_slug, source_type))
 
     # Limit fan-out defensively
+    if len(normalized) > MAX_PARENT_FANOUT:
+        _LOGGER.warning(
+            "Found %d parents but limiting to %d for %s",
+            len(normalized),
+            MAX_PARENT_FANOUT,
+            hf_url,
+        )
+    _LOGGER.info(
+        "Discovered %d parent(s) for %s: %s",
+        len(normalized[:MAX_PARENT_FANOUT]),
+        hf_url,
+        [slug for slug, _ in normalized[:MAX_PARENT_FANOUT]],
+    )
     return normalized[:MAX_PARENT_FANOUT]
 
 
@@ -178,6 +270,9 @@ def _extract_parents_from_mapping(mapping: Mapping[str, Any]) -> list[str]:
         "parent_model",
         "parents",
         "parent_models",
+        "fine_tuned_from",
+        "finetuned_from",
+        "adapter_model",
     )
     for key in params:
         value = mapping.get(key)
@@ -193,7 +288,16 @@ def _extract_parents_from_mapping(mapping: Mapping[str, Any]) -> list[str]:
 def _extract_parents_from_object(obj: Any) -> list[str]:
     """Extract parent model slugs from an object with attributes."""
     results: list[str] = []
-    for attr in ("base_model", "parent_model", "parents", "parent_models"):
+    for attr in (
+        "base_model",
+        "base_model_id",
+        "parent_model",
+        "parents",
+        "parent_models",
+        "fine_tuned_from",
+        "finetuned_from",
+        "adapter_model",
+    ):
         if hasattr(obj, attr):
             value = getattr(obj, attr)
             if isinstance(value, str):

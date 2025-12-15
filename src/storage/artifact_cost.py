@@ -99,12 +99,17 @@ def calculate_artifact_cost(
 
     # Add each dependency
     for dep_id in dependency_ids:
-        dep_cost = _get_artifact_size_mb(s3, bucket, prefix, dep_id)
-        result[dep_id] = {
-            "standalone_cost": dep_cost,
-            "total_cost": dep_cost,
-        }
-        total_cost_sum += dep_cost
+        try:
+            dep_cost = _get_artifact_size_mb(s3, bucket, prefix, dep_id)
+            result[dep_id] = {
+                "standalone_cost": dep_cost,
+                "total_cost": dep_cost,
+            }
+            total_cost_sum += dep_cost
+        except BlobNotFoundError:
+            # Skip dependencies that don't exist in our storage
+            # (e.g., external parent models from HuggingFace)
+            continue
 
     # Set the total_cost for the main artifact
     result[artifact_id]["total_cost"] = total_cost_sum
@@ -143,14 +148,17 @@ def _extract_dependency_ids(
     """
     Extract all dependency artifact IDs from the lineage graph.
 
-    Dependencies are nodes that have edges pointing TO the root artifact.
-    (i.e., from_node -> root_artifact)
+    Dependencies are parent nodes that the root artifact depends on.
+    Edges are stored as: child -> parent
+    (from_node is child, to_node is parent)
+    So we look for edges FROM the root artifact.
     """
     dependencies = set()
 
     for edge in lineage_graph.edges:
-        # If this edge points to our root artifact, the source is a dependency
-        if edge.to_node_artifact_id == root_artifact_id:
-            dependencies.add(edge.from_node_artifact_id)
+        # If this edge originates from our root artifact,
+        # the target is a dependency
+        if edge.from_node_artifact_id == root_artifact_id:
+            dependencies.add(edge.to_node_artifact_id)
 
     return dependencies

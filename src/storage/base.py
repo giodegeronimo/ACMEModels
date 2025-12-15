@@ -1,4 +1,9 @@
-"""Abstract repository interfaces for the registry backend."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Abstract repository interfaces for the registry backend.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,9 @@
-"""Common repository errors used across storage adapters."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Common repository errors used across storage adapters.
+"""
 
 from __future__ import annotations
 

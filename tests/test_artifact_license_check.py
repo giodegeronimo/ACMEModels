@@ -1,3 +1,9 @@
+"""
+
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+"""
 from __future__ import annotations
 
 import importlib
@@ -12,12 +18,29 @@ from src.utils import auth
 
 
 class StubGitClient:
+    """
+    StubGitClient: Class description.
+    """
+
     def __init__(self, metadata=None, exc: Exception | None = None) -> None:
+        """
+        __init__: Function description.
+        :param metadata:
+        :param exc:
+        :returns:
+        """
+
         self.metadata = metadata or {}
         self.exc = exc
         self.calls: list[str] = []
 
     def get_repo_metadata(self, url: str):
+        """
+        get_repo_metadata: Function description.
+        :param url:
+        :returns:
+        """
+
         self.calls.append(url)
         if self.exc:
             raise self.exc
@@ -25,6 +48,13 @@ class StubGitClient:
 
 
 def _load_handler(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """
+    _load_handler: Function description.
+    :param tmp_path:
+    :param monkeypatch:
+    :returns:
+    """
+
     module_name = "backend.src.handlers.artifact_license_check.app"
     sys.modules.pop(module_name, None)
     monkeypatch.setenv("AWS_SAM_LOCAL", "1")
@@ -37,6 +67,14 @@ def _load_handler(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def _store_model(
     handler_module, artifact_id: str, *, artifact_type=ArtifactType.MODEL
 ):
+    """
+    _store_model: Function description.
+    :param handler_module:
+    :param artifact_id:
+    :param artifact_type:
+    :returns:
+    """
+
     artifact = Artifact(
         metadata=ArtifactMetadata(
             name="demo-model",
@@ -51,6 +89,14 @@ def _store_model(
 def _event(
     artifact_id: str, github_url: str | None, headers: dict | None = None
 ):
+    """
+    _event: Function description.
+    :param artifact_id:
+    :param github_url:
+    :param headers:
+    :returns:
+    """
+
     event = {
         "pathParameters": {"id": artifact_id},
         "body": json.dumps({"github_url": github_url} if github_url else {}),
@@ -60,10 +106,23 @@ def _event(
 
 
 def _auth_header() -> dict:
+    """
+    _auth_header: Function description.
+    :param:
+    :returns:
+    """
+
     return {"X-Authorization": auth.issue_token("tester", is_admin=True)}
 
 
 def test_license_check_success(tmp_path, monkeypatch):
+    """
+    test_license_check_success: Function description.
+    :param tmp_path:
+    :param monkeypatch:
+    :returns:
+    """
+
     handler = _load_handler(tmp_path, monkeypatch)
     _store_model(handler, "abc123")
     stub = StubGitClient(metadata={"license": {"spdx_id": "MIT"}})
@@ -84,6 +143,13 @@ def test_license_check_success(tmp_path, monkeypatch):
 
 
 def test_non_model_artifact_returns_not_found(tmp_path, monkeypatch):
+    """
+    test_non_model_artifact_returns_not_found: Function description.
+    :param tmp_path:
+    :param monkeypatch:
+    :returns:
+    """
+
     handler = _load_handler(tmp_path, monkeypatch)
     _store_model(handler, "abc123", artifact_type=ArtifactType.DATASET)
     stub = StubGitClient(metadata={"license": {"spdx_id": "MIT"}})
@@ -102,6 +168,13 @@ def test_non_model_artifact_returns_not_found(tmp_path, monkeypatch):
 
 
 def test_invalid_body_returns_bad_request(tmp_path, monkeypatch):
+    """
+    test_invalid_body_returns_bad_request: Function description.
+    :param tmp_path:
+    :param monkeypatch:
+    :returns:
+    """
+
     handler = _load_handler(tmp_path, monkeypatch)
     _store_model(handler, "abc123")
     handler._set_git_client(StubGitClient())
@@ -115,6 +188,13 @@ def test_invalid_body_returns_bad_request(tmp_path, monkeypatch):
 
 
 def test_missing_auth_returns_forbidden(tmp_path, monkeypatch):
+    """
+    test_missing_auth_returns_forbidden: Function description.
+    :param tmp_path:
+    :param monkeypatch:
+    :returns:
+    """
+
     handler = _load_handler(tmp_path, monkeypatch)
     _store_model(handler, "abc123")
     handler._set_git_client(
@@ -130,6 +210,13 @@ def test_missing_auth_returns_forbidden(tmp_path, monkeypatch):
 
 
 def test_repo_not_found(tmp_path, monkeypatch):
+    """
+    test_repo_not_found: Function description.
+    :param tmp_path:
+    :param monkeypatch:
+    :returns:
+    """
+
     handler = _load_handler(tmp_path, monkeypatch)
     _store_model(handler, "abc123")
     handler._set_git_client(
@@ -151,6 +238,13 @@ def test_repo_not_found(tmp_path, monkeypatch):
 
 
 def test_external_failure_returns_bad_gateway(tmp_path, monkeypatch):
+    """
+    test_external_failure_returns_bad_gateway: Function description.
+    :param tmp_path:
+    :param monkeypatch:
+    :returns:
+    """
+
     handler = _load_handler(tmp_path, monkeypatch)
     _store_model(handler, "abc123")
     handler._set_git_client(StubGitClient(exc=RuntimeError("timeout")))
@@ -168,6 +262,13 @@ def test_external_failure_returns_bad_gateway(tmp_path, monkeypatch):
 
 
 def test_license_aliases_dont_reduce_compatibility(tmp_path, monkeypatch):
+    """
+    test_license_aliases_dont_reduce_compatibility: Function description.
+    :param tmp_path:
+    :param monkeypatch:
+    :returns:
+    """
+
     handler = _load_handler(tmp_path, monkeypatch)
     _store_model(handler, "abc123")
     stub = StubGitClient(

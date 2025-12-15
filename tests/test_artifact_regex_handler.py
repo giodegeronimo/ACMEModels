@@ -1,4 +1,9 @@
-"""Tests for POST /artifact/byRegEx handler."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for POST /artifact/byRegEx handler.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +21,12 @@ from src.utils import auth
 
 
 def _event(body: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    _event: Function description.
+    :param body:
+    :returns:
+    """
+
     token = auth.issue_token("tester", is_admin=True)
     return {
         "headers": {"X-Authorization": token},
@@ -24,7 +35,17 @@ def _event(body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class _FakeNameIndexStore:
+    """
+    _FakeNameIndexStore: Class description.
+    """
+
     def __init__(self, entries: List[NameIndexEntry]) -> None:
+        """
+        __init__: Function description.
+        :param entries:
+        :returns:
+        """
+
         self._entries = entries
 
     def scan(
@@ -33,14 +54,37 @@ class _FakeNameIndexStore:
         start_key: Any | None = None,
         limit: int | None = None,
     ) -> Tuple[List[NameIndexEntry], Any | None]:
+        """
+        scan: Function description.
+        :param start_key:
+        :param limit:
+        :returns:
+        """
+
         return list(self._entries), None
 
 
 class _FakeMetadataStore:
+    """
+    _FakeMetadataStore: Class description.
+    """
+
     def __init__(self, records: Dict[str, Artifact]) -> None:
+        """
+        __init__: Function description.
+        :param records:
+        :returns:
+        """
+
         self._records = records
 
     def load(self, artifact_id: str) -> Artifact:
+        """
+        load: Function description.
+        :param artifact_id:
+        :returns:
+        """
+
         try:
             return self._records[artifact_id]
         except KeyError as exc:
@@ -48,6 +92,13 @@ class _FakeMetadataStore:
 
 
 def _artifact(name: str, artifact_id: str) -> Artifact:
+    """
+    _artifact: Function description.
+    :param name:
+    :param artifact_id:
+    :returns:
+    """
+
     metadata = ArtifactMetadata(
         name=name,
         id=artifact_id,
@@ -62,6 +113,12 @@ def _artifact(name: str, artifact_id: str) -> Artifact:
 def test_regex_search_returns_matches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_regex_search_returns_matches: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     entries = [
         NameIndexEntry("a1", "bert-base-uncased", ArtifactType.MODEL),
         NameIndexEntry("a2", "whisper-tiny", ArtifactType.MODEL),
@@ -88,11 +145,23 @@ def test_regex_search_returns_matches(
 
 
 def test_regex_search_handles_invalid_regex() -> None:
+    """
+    test_regex_search_handles_invalid_regex: Function description.
+    :param:
+    :returns:
+    """
+
     response = handler.lambda_handler(_event({"regex": "["}), context={})
     assert response["statusCode"] == 400
 
 
 def test_regex_search_returns_404_when_no_match() -> None:
+    """
+    test_regex_search_returns_404_when_no_match: Function description.
+    :param:
+    :returns:
+    """
+
     response = handler.lambda_handler(_event({"regex": "missing"}), context={})
     assert response["statusCode"] == 404
 
@@ -100,6 +169,12 @@ def test_regex_search_returns_404_when_no_match() -> None:
 def test_regex_search_falls_back_when_metadata_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_regex_search_falls_back_when_metadata_missing: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     entry = NameIndexEntry("missing-id", "lone-model", ArtifactType.MODEL)
     monkeypatch.setattr(handler, "_NAME_INDEX", _FakeNameIndexStore([entry]))
     monkeypatch.setattr(handler, "_METADATA_STORE", _FakeMetadataStore({}))
@@ -112,6 +187,12 @@ def test_regex_search_falls_back_when_metadata_missing(
 
 
 def test_regex_search_matches_readme(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    test_regex_search_matches_readme: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     entry = NameIndexEntry(
         "rid",
         "unrelated-name",
@@ -131,6 +212,12 @@ def test_regex_search_matches_readme(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_regex_search_detects_slow_pattern(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_regex_search_detects_slow_pattern: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     response = handler.lambda_handler(_event({"regex": "(a+)+$"}), context={})
     assert response["statusCode"] == 400
     entry = NameIndexEntry(

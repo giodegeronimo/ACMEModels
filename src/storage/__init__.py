@@ -1,4 +1,9 @@
-"""Storage layer abstractions and adapters."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Storage layer abstractions and adapters.
+"""
 
 from .base import (ArtifactRepository, AuditRepository, LineageRepository,
                    MetricsRepository)

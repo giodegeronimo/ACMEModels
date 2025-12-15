@@ -1,4 +1,9 @@
-"""Helpers for preparing artifact bundles prior to storage."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Helpers for preparing artifact bundles prior to storage.
+"""
 
 from __future__ import annotations
 
@@ -64,6 +69,13 @@ def _stream_to_temp_file(
     *,
     headers: dict[str, str] | None = None,
 ) -> tuple[Path, str | None]:
+    """
+    _stream_to_temp_file: Function description.
+    :param source_url:
+    :param headers:
+    :returns:
+    """
+
     try:
         response = requests.get(
             source_url,
@@ -94,6 +106,12 @@ def _stream_to_temp_file(
 
 
 def _is_readme_filename(name: str) -> bool:
+    """
+    _is_readme_filename: Function description.
+    :param name:
+    :returns:
+    """
+
     base = Path(name).name.lower()
     return base in {"readme", "readme.md", "readme.txt", "readme.rst"}
 
@@ -102,6 +120,13 @@ def _read_text_file(
     path: Path,
     limit: int | None = README_CAPTURE_LIMIT,
 ) -> str | None:
+    """
+    _read_text_file: Function description.
+    :param path:
+    :param limit:
+    :returns:
+    """
+
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
@@ -118,6 +143,12 @@ def _read_text_file(
 
 
 def _extract_readme_from_directory(root: Path) -> str | None:
+    """
+    _extract_readme_from_directory: Function description.
+    :param root:
+    :returns:
+    """
+
     candidates = sorted(root.rglob("*"))
     for candidate in candidates:
         if candidate.is_file() and _is_readme_filename(candidate.name):
@@ -128,6 +159,12 @@ def _extract_readme_from_directory(root: Path) -> str | None:
 
 
 def _extract_readme_from_zip(path: Path) -> str | None:
+    """
+    _extract_readme_from_zip: Function description.
+    :param path:
+    :returns:
+    """
+
     try:
         with zipfile.ZipFile(path) as archive:
             for info in archive.infolist():
@@ -150,6 +187,12 @@ def _extract_readme_from_zip(path: Path) -> str | None:
 
 
 def _download_generic_file(source_url: str) -> ArtifactBundle:
+    """
+    _download_generic_file: Function description.
+    :param source_url:
+    :returns:
+    """
+
     path, content_type = _stream_to_temp_file(source_url)
     return ArtifactBundle(
         kind="file",
@@ -163,6 +206,13 @@ def _download_huggingface_repo(
     parsed_url,
     repo_info: tuple[str, str],
 ) -> ArtifactBundle:
+    """
+    _download_huggingface_repo: Function description.
+    :param parsed_url:
+    :param repo_info:
+    :returns:
+    """
+
     os.environ.setdefault("HF_HOME", "/tmp/hf-cache")
     os.environ.setdefault("HUGGINGFACE_HUB_CACHE", "/tmp/hf-cache")
     repo_type, repo_id = repo_info
@@ -215,6 +265,12 @@ def _download_huggingface_repo(
 
 
 def _parse_hf_repo_info(path: str) -> tuple[str, str] | None:
+    """
+    _parse_hf_repo_info: Function description.
+    :param path:
+    :returns:
+    """
+
     segments = [segment for segment in path.split("/") if segment]
     if not segments:
         return None
@@ -238,12 +294,18 @@ def _parse_hf_repo_info(path: str) -> tuple[str, str] | None:
 
 
 def _parse_github_repo(path: str) -> tuple[str, str] | None:
+    """
+    _parse_github_repo: Function description.
+    :param path:
+    :returns:
+    """
+
     segments = [segment for segment in path.split("/") if segment]
     if len(segments) < 2:
         return None
     owner, repo = segments[:2]
     if owner in {"repos", "users"}:  # handle API-style URLs
-        if len(segments) >= 4:
+        if len(segments) >= 3:
             owner, repo = segments[1:3]
         else:
             return None
@@ -253,6 +315,13 @@ def _parse_github_repo(path: str) -> tuple[str, str] | None:
 
 
 def _download_github_repo(parsed_url, repo: tuple[str, str]) -> ArtifactBundle:
+    """
+    _download_github_repo: Function description.
+    :param parsed_url:
+    :param repo:
+    :returns:
+    """
+
     owner, name = repo
     branch = _resolve_github_default_branch(owner, name)
     candidate_branches = [branch] if branch else []
@@ -266,8 +335,6 @@ def _download_github_repo(parsed_url, repo: tuple[str, str]) -> ArtifactBundle:
 
     last_error: Exception | None = None
     for candidate in candidate_branches:
-        if candidate is None:
-            continue
         archive_url = (
             "https://codeload.github.com/"
             f"{owner}/{name}/zip/refs/heads/{candidate}"
@@ -295,6 +362,13 @@ def _download_github_repo(parsed_url, repo: tuple[str, str]) -> ArtifactBundle:
 
 
 def _resolve_github_default_branch(owner: str, repo: str) -> str | None:
+    """
+    _resolve_github_default_branch: Function description.
+    :param owner:
+    :param repo:
+    :returns:
+    """
+
     token = os.getenv("GITHUB_TOKEN")
     headers = {"Accept": "application/vnd.github+json"}
     if token:

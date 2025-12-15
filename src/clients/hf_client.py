@@ -1,4 +1,9 @@
-"""Hugging Face Hub client that wraps HfApi with rate limiting."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Hugging Face Hub client that wraps HfApi with rate limiting.
+"""
 
 from __future__ import annotations
 
@@ -25,6 +30,17 @@ DEFAULT_PERIOD_SECONDS = 1.0
 
 
 class _SessionWithGet(Protocol):
+    """
+    get: Function description.
+    :param url:
+    :param timeout:
+    :returns:
+    """
+
+    """
+    _SessionWithGet: Class description.
+    """
+
     def get(self, url: str, timeout: int = 30) -> Any: ...
 
 
@@ -39,6 +55,15 @@ class HFClient(BaseClient[Any]):
         logger: Optional[logging.Logger] = None,
         http_session: Optional[_SessionWithGet] = None,
     ) -> None:
+        """
+        __init__: Function description.
+        :param api:
+        :param rate_limiter:
+        :param logger:
+        :param http_session:
+        :returns:
+        """
+
         limiter = rate_limiter or RateLimiter(
             max_calls=DEFAULT_MAX_CALLS,
             period_seconds=DEFAULT_PERIOD_SECONDS,
@@ -68,6 +93,12 @@ class HFClient(BaseClient[Any]):
         normalized_repo = self._normalize_repo_id(repo_id)
 
         def _operation() -> ModelInfo:
+            """
+            _operation: Function description.
+            :param:
+            :returns:
+            """
+
             self._logger.debug("Requesting model info for %s", normalized_repo)
             return self._api.model_info(normalized_repo)
 
@@ -90,6 +121,12 @@ class HFClient(BaseClient[Any]):
         normalized_dataset = self._normalize_dataset_id(dataset_id)
 
         def _operation() -> bool:
+            """
+            _operation: Function description.
+            :param:
+            :returns:
+            """
+
             self._logger.debug(
                 "Checking dataset existence for %s", normalized_dataset
             )
@@ -114,6 +151,12 @@ class HFClient(BaseClient[Any]):
         normalized_dataset = self._normalize_dataset_id(dataset_id)
 
         def _operation() -> Any:
+            """
+            _operation: Function description.
+            :param:
+            :returns:
+            """
+
             self._logger.debug(
                 "Requesting dataset info for %s", normalized_dataset
             )
@@ -134,6 +177,12 @@ class HFClient(BaseClient[Any]):
         normalized_dataset = self._normalize_dataset_id(dataset_id)
 
         def _operation() -> int:
+            """
+            _operation: Function description.
+            :param:
+            :returns:
+            """
+
             self._logger.debug(
                 "Listing models trained on dataset %s (limit=%d)",
                 normalized_dataset,
@@ -166,6 +215,12 @@ class HFClient(BaseClient[Any]):
         normalized_repo = self._normalize_repo_id(repo_id)
 
         def _operation() -> str:
+            """
+            _operation: Function description.
+            :param:
+            :returns:
+            """
+
             self._logger.debug("Downloading README.md for %s", normalized_repo)
             url = hf_hub_url(
                 repo_id=normalized_repo,
@@ -208,6 +263,12 @@ class HFClient(BaseClient[Any]):
         normalized_repo = self._normalize_repo_id(repo_id)
 
         def _list_via_tree() -> list[tuple[str, int]]:
+            """
+            _list_via_tree: Function description.
+            :param:
+            :returns:
+            """
+
             try:
                 items = self._api.list_repo_tree(  # type: ignore[attr-defined]
                     normalized_repo,
@@ -232,6 +293,12 @@ class HFClient(BaseClient[Any]):
             return results
 
         def _list_via_siblings() -> list[tuple[str, int]]:
+            """
+            _list_via_siblings: Function description.
+            :param:
+            :returns:
+            """
+
             try:
                 info = self._api.model_info(normalized_repo)
             except Exception as exc:  # pragma: no cover - defensive
@@ -250,6 +317,12 @@ class HFClient(BaseClient[Any]):
             return results
 
         def _operation() -> list[tuple[str, int]]:
+            """
+            _operation: Function description.
+            :param:
+            :returns:
+            """
+
             files = _list_via_tree()
             if files:
                 return files
@@ -265,6 +338,12 @@ class HFClient(BaseClient[Any]):
 
     @staticmethod
     def _normalize_repo_id(repo_identifier: str) -> str:
+        """
+        _normalize_repo_id: Function description.
+        :param repo_identifier:
+        :returns:
+        """
+
         trimmed = repo_identifier.strip()
         if not trimmed:
             raise ValueError("Repository identifier cannot be empty.")
@@ -297,6 +376,12 @@ class HFClient(BaseClient[Any]):
 
     @staticmethod
     def _normalize_dataset_id(dataset_identifier: str) -> str:
+        """
+        _normalize_dataset_id: Function description.
+        :param dataset_identifier:
+        :returns:
+        """
+
         trimmed = dataset_identifier.strip()
         if not trimmed:
             raise ValueError("Dataset identifier cannot be empty.")

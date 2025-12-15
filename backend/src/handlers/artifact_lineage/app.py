@@ -1,4 +1,9 @@
-"""Lambda handler for GET /artifact/model/{id}/lineage."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Lambda handler for GET /artifact/model/{id}/lineage.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +27,15 @@ _METADATA_STORE: ArtifactMetadataStore = build_metadata_store_from_env()
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Entry point for GET /artifact/model/{id}/lineage."""
+    """Handle `GET /artifact/model/{id}/lineage`.
+
+    Loads the artifact record to ensure it exists and is of type `model`, then
+    loads the complete lineage family graph from the lineage store.
+
+    :param event: API Gateway/Lambda proxy event.
+    :param context: Lambda context (unused).
+    :returns: API Gateway/Lambda proxy response dict.
+    """
 
     try:
         artifact_id = _parse_artifact_id(event)
@@ -60,6 +73,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def _parse_artifact_id(event: Dict[str, Any]) -> str:
+    """
+    Parse and validate the `{id}` path parameter.
+
+    :param event: API Gateway/Lambda proxy event.
+    :returns: Validated artifact id string.
+    :raises ValueError: If the path parameter is missing or invalid.
+    """
+
     artifact_id = (event.get("pathParameters") or {}).get("id")
     if not artifact_id:
         raise ValueError("Path parameter 'id' is required")
@@ -67,10 +88,28 @@ def _parse_artifact_id(event: Dict[str, Any]) -> str:
 
 
 def _extract_auth_token(event: Dict[str, Any]) -> str | None:
+    """
+    Extract an auth token from the request.
+
+    This uses the shared `extract_auth_token` helper (which may be configured
+    to allow optional auth in some environments).
+
+    :param event: API Gateway/Lambda proxy event.
+    :returns: Token string when present, otherwise None.
+    :raises PermissionError: If auth is required and missing.
+    """
+
     return extract_auth_token(event)
 
 
 def _serialize_lineage_graph(graph: ArtifactLineageGraph) -> Dict[str, Any]:
+    """
+    Convert an `ArtifactLineageGraph` into a JSON-serializable dict.
+
+    :param graph: Lineage graph object.
+    :returns: Dict with `nodes` and `edges` arrays.
+    """
+
     nodes = []
     for node in graph.nodes:
         node_payload: Dict[str, Any] = {"artifact_id": node.artifact_id}
@@ -96,6 +135,14 @@ def _serialize_lineage_graph(graph: ArtifactLineageGraph) -> Dict[str, Any]:
 
 
 def _json_response(status: HTTPStatus, body: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Create a JSON API Gateway proxy response.
+
+    :param status: HTTP status enum to return.
+    :param body: JSON-serializable response body.
+    :returns: API Gateway/Lambda proxy response dict.
+    """
+
     return {
         "statusCode": status.value,
         "headers": {"Content-Type": "application/json"},
@@ -104,4 +151,12 @@ def _json_response(status: HTTPStatus, body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _error_response(status: HTTPStatus, message: str) -> Dict[str, Any]:
+    """
+    Create a JSON error response payload.
+
+    :param status: HTTP status enum to return.
+    :param message: Error message to return under the `error` key.
+    :returns: API Gateway/Lambda proxy response dict.
+    """
+
     return _json_response(status, {"error": message})

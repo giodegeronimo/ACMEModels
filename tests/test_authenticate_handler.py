@@ -1,4 +1,9 @@
-"""Tests for PUT /authenticate handler."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for PUT /authenticate handler.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,12 @@ _EXPECTED_TOKEN = "bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.default"
 
 
 def _event(body: Any | None) -> Dict[str, Any]:
+    """
+    _event: Function description.
+    :param body:
+    :returns:
+    """
+
     return {
         "requestContext": {"http": {"method": "PUT", "path": "/authenticate"}},
         "headers": {},
@@ -28,6 +39,12 @@ def _event(body: Any | None) -> Dict[str, Any]:
 
 
 def _payload(password: str) -> Dict[str, Any]:
+    """
+    _payload: Function description.
+    :param password:
+    :returns:
+    """
+
     return {
         "user": {"name": "ece30861defaultadminuser", "is_admin": True},
         "secret": {"password": password},
@@ -35,6 +52,12 @@ def _payload(password: str) -> Dict[str, Any]:
 
 
 def test_authenticate_success_with_primary_password() -> None:
+    """
+    test_authenticate_success_with_primary_password: Function description.
+    :param:
+    :returns:
+    """
+
     auth._reset_token_store()
     response = handler.lambda_handler(
         _event(_payload(_PRIMARY_PASSWORD)),
@@ -49,6 +72,12 @@ def test_authenticate_success_with_primary_password() -> None:
 
 
 def test_authenticate_success_with_alternate_password() -> None:
+    """
+    test_authenticate_success_with_alternate_password: Function description.
+    :param:
+    :returns:
+    """
+
     auth._reset_token_store()
     response = handler.lambda_handler(
         _event(_payload(_ALTERNATE_PASSWORD)),
@@ -61,6 +90,12 @@ def test_authenticate_success_with_alternate_password() -> None:
 
 
 def test_authenticate_rejects_bad_username() -> None:
+    """
+    test_authenticate_rejects_bad_username: Function description.
+    :param:
+    :returns:
+    """
+
     body = {
         "user": {"name": "nope", "is_admin": True},
         "secret": {"password": _PRIMARY_PASSWORD},
@@ -72,6 +107,12 @@ def test_authenticate_rejects_bad_username() -> None:
 
 
 def test_authenticate_requires_body() -> None:
+    """
+    test_authenticate_requires_body: Function description.
+    :param:
+    :returns:
+    """
+
     response = handler.lambda_handler(_event(None), None)
 
     assert response["statusCode"] == 400
@@ -81,6 +122,12 @@ def test_authenticate_requires_body() -> None:
 
 
 def test_authenticate_rejects_invalid_json() -> None:
+    """
+    test_authenticate_rejects_invalid_json: Function description.
+    :param:
+    :returns:
+    """
+
     event = {
         "requestContext": {
             "http": {"method": "PUT", "path": "/authenticate"},

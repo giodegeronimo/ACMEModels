@@ -1,3 +1,9 @@
+"""
+
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+"""
 from __future__ import annotations
 
 import logging
@@ -65,11 +71,19 @@ _LLM_RETRY_PROMPT = (
 
 @dataclass
 class _CodeBlock:
+    """
+    _CodeBlock: Class description.
+    """
+
     language: str
     code: str
 
 
 class _PurdueClientProtocol(Protocol):
+    """
+    _PurdueClientProtocol: Class description.
+    """
+
     def llm(
         self,
         prompt: Optional[str] = None,
@@ -110,6 +124,16 @@ _DEMO_KEYWORDS = (
 
 
 class _HFClientProtocol(Protocol):
+    """
+    get_model_readme: Function description.
+    :param repo_id:
+    :returns:
+    """
+
+    """
+    _HFClientProtocol: Class description.
+    """
+
     def get_model_readme(self, repo_id: str) -> str: ...
 
 
@@ -121,11 +145,24 @@ class ReproducibilityMetric(Metric):
         hf_client: Optional[_HFClientProtocol] = None,
         purdue_client: Optional[_PurdueClientProtocol] = None,
     ) -> None:
+        """
+        __init__: Function description.
+        :param hf_client:
+        :param purdue_client:
+        :returns:
+        """
+
         super().__init__(name="Reproducibility", key="reproducibility")
         self._hf_client: _HFClientProtocol = hf_client or HFClient()
         self._purdue_client: Optional[_PurdueClientProtocol] = purdue_client
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
+        """
+        compute: Function description.
+        :param url_record:
+        :returns:
+        """
+
         hf_url = _extract_hf_url(url_record)
         if fail_stub_active(FAIL):
             fallback_url = hf_url or _DEFAULT_URL
@@ -161,6 +198,12 @@ class ReproducibilityMetric(Metric):
         return score
 
     def _extract_code_blocks(self, readme_text: str) -> list[_CodeBlock]:
+        """
+        _extract_code_blocks: Function description.
+        :param readme_text:
+        :returns:
+        """
+
         blocks: list[_CodeBlock] = []
         for match in _CODE_BLOCK_PATTERN.finditer(readme_text):
             language = (match.group("lang") or "").strip().lower()
@@ -170,6 +213,12 @@ class ReproducibilityMetric(Metric):
         return blocks
 
     def _run_code_block(self, code_block: str) -> tuple[bool, str]:
+        """
+        _run_code_block: Function description.
+        :param code_block:
+        :returns:
+        """
+
         dedented = textwrap.dedent(code_block).strip()
         if not dedented:
             return False, "Code block is empty after dedent"
@@ -209,6 +258,13 @@ class ReproducibilityMetric(Metric):
     def _attempt_llm_fix(
         self, code_block: str, error_output: str
     ) -> tuple[bool, Optional[float]]:
+        """
+        _attempt_llm_fix: Function description.
+        :param code_block:
+        :param error_output:
+        :returns:
+        """
+
         client = self._get_purdue_client()
         if client is None:
             _LOGGER.debug("Purdue client unavailable; skipping LLM fixes")
@@ -282,6 +338,12 @@ class ReproducibilityMetric(Metric):
         return False, None
 
     def _extract_candidate_code(self, llm_response: str) -> str:
+        """
+        _extract_candidate_code: Function description.
+        :param llm_response:
+        :returns:
+        """
+
         match = re.search(
             r"```(?:python)?\s*\n(?P<code>.*?)```",
             llm_response,
@@ -292,6 +354,12 @@ class ReproducibilityMetric(Metric):
         return llm_response.strip()
 
     def _get_purdue_client(self) -> Optional[_PurdueClientProtocol]:
+        """
+        _get_purdue_client: Function description.
+        :param:
+        :returns:
+        """
+
         if self._purdue_client is not None:
             return self._purdue_client
 
@@ -308,6 +376,12 @@ class ReproducibilityMetric(Metric):
         return self._purdue_client
 
     def _safe_readme(self, hf_url: str) -> str:
+        """
+        _safe_readme: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         try:
             return self._hf_client.get_model_readme(hf_url)
         except Exception as exc:  # pragma: no cover - defensive guard
@@ -315,6 +389,12 @@ class ReproducibilityMetric(Metric):
             return ""
 
     def _score_readme(self, readme_text: str) -> float:
+        """
+        _score_readme: Function description.
+        :param readme_text:
+        :returns:
+        """
+
         blocks = self._extract_code_blocks(readme_text)
         if not blocks:
             _LOGGER.debug("No code blocks detected in README text")
@@ -351,6 +431,12 @@ class ReproducibilityMetric(Metric):
         return 0.0
 
     def _looks_like_demo(self, code_block: str) -> bool:
+        """
+        _looks_like_demo: Function description.
+        :param code_block:
+        :returns:
+        """
+
         stripped = code_block.strip()
         if not stripped:
             return False
@@ -379,9 +465,21 @@ class ReproducibilityMetric(Metric):
         return False
 
     def _has_placeholders(self, text: str) -> bool:
+        """
+        _has_placeholders: Function description.
+        :param text:
+        :returns:
+        """
+
         return any(pattern.search(text) for pattern in _PLACEHOLDER_PATTERNS)
 
     def _extract_llm_score(self, candidate_code: str) -> Optional[float]:
+        """
+        _extract_llm_score: Function description.
+        :param candidate_code:
+        :returns:
+        """
+
         for line in reversed(candidate_code.splitlines()):
             stripped = line.strip()
             if not stripped:
@@ -394,4 +492,10 @@ class ReproducibilityMetric(Metric):
 
 
 def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:
+    """
+    _extract_hf_url: Function description.
+    :param record:
+    :returns:
+    """
+
     return record.get("hf_url")

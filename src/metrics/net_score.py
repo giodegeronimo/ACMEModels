@@ -1,4 +1,8 @@
-"""Aggregate metric for computing the overall net score."""
+"""ACMEModels Repository
+
+Introductory remarks: This module aggregates individual metric results into a
+single overall net score.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +22,7 @@ class NetScoreCalculator:
     def with_net_score(
         self, metric_results: Iterable[MetricResult]
     ) -> List[MetricResult]:
+        """Prepend the computed net score to the provided metric results."""
         results_list = list(metric_results)
         net_score_result = self._create_net_score(results_list)
         return [net_score_result, *results_list]
@@ -25,6 +30,7 @@ class NetScoreCalculator:
     def _create_net_score(
         self, metric_results: List[MetricResult]
     ) -> MetricResult:
+        """Compute the net score as the average of normalized numeric metrics."""
         numeric_values: List[float] = []
         total_latency = 0
 

@@ -1,4 +1,9 @@
-"""Backend package marker for mypy."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Backend package marker for mypy.
+"""
 
 from pkgutil import extend_path
 

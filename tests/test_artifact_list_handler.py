@@ -1,4 +1,9 @@
-"""Tests for POST /artifacts listing handler."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for POST /artifacts listing handler.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +23,12 @@ from src.utils import auth
 def _patch_stores(monkeypatch: pytest.MonkeyPatch) -> Tuple[
     InMemoryNameIndexStore, "_FakeMetadataStore"
 ]:
+    """
+    _patch_stores: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     index = InMemoryNameIndexStore()
     meta_store = _FakeMetadataStore()
     monkeypatch.setattr(handler, "_NAME_INDEX", index)
@@ -27,6 +38,13 @@ def _patch_stores(monkeypatch: pytest.MonkeyPatch) -> Tuple[
 
 
 def _event(body: Any, *, offset: str | None = None) -> Dict[str, Any]:
+    """
+    _event: Function description.
+    :param body:
+    :param offset:
+    :returns:
+    """
+
     payload = body if isinstance(body, str) else json.dumps(body)
     token = auth.issue_token("tester", is_admin=True)
     event: Dict[str, Any] = {
@@ -45,6 +63,16 @@ def _store_artifact(
     name: str,
     artifact_type: ArtifactType,
 ) -> None:
+    """
+    _store_artifact: Function description.
+    :param index:
+    :param store:
+    :param artifact_id:
+    :param name:
+    :param artifact_type:
+    :returns:
+    """
+
     metadata = ArtifactMetadata(name=name, id=artifact_id, type=artifact_type)
     artifact = Artifact(metadata=metadata, data=ArtifactData(url="https://x"))
     store.records[artifact_id] = artifact
@@ -54,6 +82,12 @@ def _store_artifact(
 def test_list_all_artifacts_returns_paginated_results(
     _patch_stores: Tuple[InMemoryNameIndexStore, "_FakeMetadataStore"]
 ) -> None:
+    """
+    test_list_all_artifacts_returns_paginated_results: Function description.
+    :param _patch_stores:
+    :returns:
+    """
+
     index, store = _patch_stores
     _store_artifact(index, store, artifact_id="a1", name="alpha",
                     artifact_type=ArtifactType.MODEL)
@@ -82,6 +116,12 @@ def test_list_all_artifacts_returns_paginated_results(
 def test_filters_by_name_and_type(
     _patch_stores: Tuple[InMemoryNameIndexStore, "_FakeMetadataStore"]
 ) -> None:
+    """
+    test_filters_by_name_and_type: Function description.
+    :param _patch_stores:
+    :returns:
+    """
+
     index, store = _patch_stores
     _store_artifact(index, store, artifact_id="a1", name="alpha",
                     artifact_type=ArtifactType.MODEL)
@@ -102,11 +142,23 @@ def test_filters_by_name_and_type(
 
 
 def test_invalid_body_returns_400() -> None:
+    """
+    test_invalid_body_returns_400: Function description.
+    :param:
+    :returns:
+    """
+
     response = handler.lambda_handler(_event({"name": "*"}), {})
     assert response["statusCode"] == 400
 
 
 def test_invalid_offset_returns_400() -> None:
+    """
+    test_invalid_offset_returns_400: Function description.
+    :param:
+    :returns:
+    """
+
     response = handler.lambda_handler(
         _event([{"name": "*"}], offset="@@@"),
         {},
@@ -115,10 +167,26 @@ def test_invalid_offset_returns_400() -> None:
 
 
 class _FakeMetadataStore:
+    """
+    _FakeMetadataStore: Class description.
+    """
+
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self.records: Dict[str, Artifact] = {}
 
     def load(self, artifact_id: str) -> Artifact:
+        """
+        load: Function description.
+        :param artifact_id:
+        :returns:
+        """
+
         if artifact_id not in self.records:
             raise ArtifactNotFound(f"{artifact_id} missing")
         return self.records[artifact_id]

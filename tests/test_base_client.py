@@ -1,4 +1,9 @@
-"""Tests for test base client module."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for test base client module.
+"""
 
 from __future__ import annotations
 
@@ -12,21 +17,53 @@ from src.net.rate_limiter import RateLimiter
 
 
 class DummyRateLimiter(RateLimiter):
+    """
+    DummyRateLimiter: Class description.
+    """
+
     def __init__(self) -> None:
         # Provide dummy configuration but override acquire.
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         super().__init__(max_calls=1, period_seconds=1.0)
         self.calls: List[None] = []
 
     def acquire(self) -> None:  # type: ignore[override]
+        """
+        acquire: Function description.
+        :param:
+        :returns:
+        """
+
         self.calls.append(None)
 
 
 class SampleClient(BaseClient[Any]):
+    """
+    SampleClient: Class description.
+    """
+
     def get_value(self) -> int:
+        """
+        get_value: Function description.
+        :param:
+        :returns:
+        """
+
         return self._execute_with_rate_limit(lambda: 42, name="get_value")
 
 
 def test_base_client_executes_operation_and_observes_rate_limit() -> None:
+    """
+    test_base_client_executes_operation_and_observes_rate_limit: Function description.
+    :param:
+    :returns:
+    """
+
     limiter = DummyRateLimiter()
     client = SampleClient(limiter)
 
@@ -37,6 +74,12 @@ def test_base_client_executes_operation_and_observes_rate_limit() -> None:
 
 
 def test_base_client_logs_latency(caplog: pytest.LogCaptureFixture) -> None:
+    """
+    test_base_client_logs_latency: Function description.
+    :param caplog:
+    :returns:
+    """
+
     limiter = DummyRateLimiter()
     logger = logging.getLogger("test_logger")
     logger.setLevel(logging.DEBUG)

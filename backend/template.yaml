@@ -1,3 +1,8 @@
+#
+# ACMEModels Repository
+# Introductory remarks: This configuration is part of ACMEModels.
+#
+
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: Trustworthy Model Registry - Artifact API

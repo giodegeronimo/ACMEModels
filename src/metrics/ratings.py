@@ -1,4 +1,9 @@
-"""Helpers for computing model ratings via the CLI pipeline."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Helpers for computing model ratings via the CLI pipeline.
+"""
 
 from __future__ import annotations
 

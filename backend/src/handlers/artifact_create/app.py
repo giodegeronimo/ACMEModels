@@ -1,4 +1,8 @@
-"""Lambda handler for POST /artifact/{artifact_type}.
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Lambda handler for POST /artifact/{artifact_type}.
 
 This implementation wires the HTTP request to the in-memory storage adapter.
 Authentication/authorization is currently a placeholder – the handler merely
@@ -30,14 +34,17 @@ from src.metrics.ratings import RatingComputationError, compute_model_rating
 from src.models import Artifact, ArtifactData, ArtifactMetadata, ArtifactType
 from src.storage.artifact_ingest import (ArtifactBundle, ArtifactDownloadError,
                                          prepare_artifact_bundle)
+from src.storage.atomic_update import (AtomicUpdateError, AtomicUpdateGroup,
+                                       find_exception_in_chain)
 from src.storage.blob_store import (ArtifactBlobStore, BlobNotFoundError,
-                                    BlobStoreError, StoredArtifact,
-                                    build_blob_store_from_env)
+                                    BlobStoreError, BlobStoreUnavailableError,
+                                    StoredArtifact, build_blob_store_from_env)
 from src.storage.errors import ValidationError
 from src.storage.lineage_extractor import extract_lineage_graph
 from src.storage.lineage_store import store_lineage
 from src.storage.metadata_store import (ArtifactMetadataStore,
                                         MetadataStoreError,
+                                        MetadataStoreUnavailableError,
                                         build_metadata_store_from_env)
 from src.storage.name_index import (build_name_index_store_from_env,
                                     entry_from_metadata)
@@ -85,18 +92,61 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 artifact.metadata.id,
             )
 
-            _ensure_stub_rating_exists(artifact)
+            group = AtomicUpdateGroup.begin(f"artifact:{artifact.metadata.id}")
 
-            try:
-                bundle = prepare_artifact_bundle(source_url)
-            except ArtifactDownloadError as error:
-                raise BlobStoreError(str(error)) from error
-            _store_artifact_blob(artifact, bundle=bundle)
-            _compute_and_store_rating_if_needed(artifact, source_url)
-            _extract_and_store_lineage(artifact, source_url)
-            stored = _store_artifact(
-                artifact, readme_excerpt=bundle.readme_excerpt
+            group.add_step(
+                "ensure_stub_rating",
+                lambda _ctx: _ensure_stub_rating_exists(artifact),
             )
+
+            def _download_bundle(ctx: Dict[str, Any]) -> None:
+                """Helper function.
+
+                :param ctx:
+                :returns:
+                """
+
+                try:
+                    ctx["bundle"] = prepare_artifact_bundle(source_url)
+                except ArtifactDownloadError as error:
+                    raise BlobStoreError(str(error)) from error
+
+            group.add_step("prepare_bundle", _download_bundle)
+
+            group.add_step(
+                "store_blob",
+                lambda ctx: _store_artifact_blob(
+                    artifact, bundle=ctx["bundle"]
+                ),
+            )
+            group.add_step(
+                "store_rating",
+                lambda _ctx: _compute_and_store_rating_if_needed(
+                    artifact, source_url
+                ),
+            )
+            group.add_step(
+                "store_lineage",
+                lambda _ctx: _extract_and_store_lineage(artifact, source_url),
+            )
+
+            def _persist_metadata(ctx: Dict[str, Any]) -> None:
+                """Helper function.
+
+                :param ctx:
+                :returns:
+                """
+
+                bundle = ctx.get("bundle")
+                ctx["stored"] = _store_artifact(
+                    artifact,
+                    readme_excerpt=getattr(bundle, "readme_excerpt", None),
+                )
+
+            group.add_step("store_metadata", _persist_metadata)
+
+            ctx = group.execute()
+            stored = ctx["stored"]
             _LOGGER.info(
                 "artifact_id=%s stored synchronously",
                 stored.metadata.id,
@@ -126,6 +176,28 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return _error_response(HTTPStatus.FORBIDDEN, str(error))
     except ValidationError as error:
         return _error_response(HTTPStatus.CONFLICT, str(error))
+    except (BlobStoreUnavailableError, MetadataStoreUnavailableError) as error:
+        _LOGGER.warning("Upstream storage unavailable: %s", error)
+        return _error_response(
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            "Storage temporarily unavailable; please retry",
+        )
+    except AtomicUpdateError as error:
+        if find_exception_in_chain(
+            error,
+            (BlobStoreUnavailableError, MetadataStoreUnavailableError),
+        ):
+            _LOGGER.warning("Atomic update failed due to outage: %s", error)
+            return _error_response(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                "Storage temporarily unavailable; please retry",
+            )
+        if find_exception_in_chain(
+            error,
+            (BlobStoreError, MetadataStoreError),
+        ):
+            return _error_response(HTTPStatus.BAD_GATEWAY, str(error))
+        raise
     except BlobStoreError as error:
         return _error_response(HTTPStatus.BAD_GATEWAY, str(error))
     except MetadataStoreError as error:
@@ -144,6 +216,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def _parse_artifact_type(event: Dict[str, Any]) -> ArtifactType:
+    """Parse and validate `artifact_type` from the request.
+
+    :param event:
+    :returns:
+    """
+
     raw_type = (event.get("pathParameters") or {}).get("artifact_type")
     if not raw_type:
         raise ValueError("Path parameter 'artifact_type' is required")
@@ -157,10 +235,22 @@ def _parse_artifact_type(event: Dict[str, Any]) -> ArtifactType:
 
 
 def _require_auth(event: Dict[str, Any]) -> None:
+    """Enforce request authentication for this handler.
+
+    :param event:
+    :returns:
+    """
+
     require_auth_token(event, optional=False)
 
 
 def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
+    """Parse and validate `body` from the request.
+
+    :param event:
+    :returns:
+    """
+
     body = event.get("body")
     if body is None:
         raise ValueError("Request body is required")
@@ -195,6 +285,12 @@ def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _decode_base64_body(body: str) -> str:
+    """Decode and validate request payload data.
+
+    :param body:
+    :returns:
+    """
+
     import base64
 
     try:
@@ -206,6 +302,13 @@ def _decode_base64_body(body: str) -> str:
 def _build_artifact(
     artifact_type: ArtifactType, payload: Dict[str, Any]
 ) -> Artifact:
+    """Build a derived URL or response value.
+
+    :param artifact_type:
+    :param payload:
+    :returns:
+    """
+
     url = payload["url"]
     provided_name = payload.get("name")
     metadata = ArtifactMetadata(
@@ -250,6 +353,13 @@ def _ensure_stub_rating_exists(artifact: Artifact) -> None:
 def _compute_and_store_rating_if_needed(
     artifact: Artifact, source_url: str
 ) -> None:
+    """Helper function.
+
+    :param artifact:
+    :param source_url:
+    :returns:
+    """
+
     if artifact.metadata.type is not ArtifactType.MODEL:
         return
     _LOGGER.info(
@@ -307,6 +417,12 @@ def _extract_and_store_lineage(
 
 
 def _derive_artifact_name(url: str) -> str:
+    """Helper function.
+
+    :param url:
+    :returns:
+    """
+
     parsed = urlparse(url)
     repo_id = _resolve_hf_repo_id(parsed)
     if repo_id:
@@ -319,6 +435,12 @@ def _derive_artifact_name(url: str) -> str:
 
 
 def _resolve_hf_repo_id(parsed_url) -> str | None:
+    """Resolve configuration from environment/request context.
+
+    :param parsed_url:
+    :returns:
+    """
+
     if not (parsed_url.netloc or "").endswith("huggingface.co"):
         return None
     segments = [segment for segment in parsed_url.path.split("/") if segment]
@@ -335,6 +457,12 @@ def _resolve_hf_repo_id(parsed_url) -> str | None:
 
 
 def _extract_github_repo(parsed_url) -> tuple[str, str] | None:
+    """Helper function.
+
+    :param parsed_url:
+    :returns:
+    """
+
     netloc = (parsed_url.netloc or "").lower()
     if not netloc.endswith("github.com"):
         return None
@@ -350,6 +478,10 @@ def _extract_github_repo(parsed_url) -> tuple[str, str] | None:
 def _generate_artifact_id() -> str:
     # UUID4 hex matches the allowed `[a-zA-Z0-9-]+` regex
     # while remaining unique.
+    """Helper function.
+    :returns:
+    """
+
     return uuid4().hex
 
 
@@ -358,6 +490,13 @@ def _store_artifact_blob(
     *,
     bundle: ArtifactBundle,
 ) -> StoredArtifact:
+    """Persist data to a backing store.
+
+    :param artifact:
+    :param bundle:
+    :returns:
+    """
+
     _LOGGER.debug(
         "Storing blob artifact_id=%s kind=%s path=%s",
         artifact.metadata.id,
@@ -391,6 +530,14 @@ def _store_artifact(
     replace: bool = False,
     readme_excerpt: str | None = None,
 ) -> Artifact:
+    """Persist data to a backing store.
+
+    :param artifact:
+    :param replace:
+    :param readme_excerpt:
+    :returns:
+    """
+
     _LOGGER.info(
         "Persisting metadata/index artifact_id=%s replace=%s",
         artifact.metadata.id,
@@ -416,6 +563,13 @@ def _store_artifact(
 def _serialize_artifact(
     artifact: Artifact, event: Dict[str, Any]
 ) -> Dict[str, Any]:
+    """Serialize a domain object into a JSON payload.
+
+    :param artifact:
+    :param event:
+    :returns:
+    """
+
     metadata = artifact.metadata
     data = artifact.data
     download_url = _build_download_endpoint(metadata.id, event)
@@ -435,11 +589,24 @@ def _serialize_artifact(
 def _build_download_endpoint(
     artifact_id: str, event: Dict[str, Any]
 ) -> str:
+    """Build a derived URL or response value.
+
+    :param artifact_id:
+    :param event:
+    :returns:
+    """
+
     base = _resolve_download_base(event)
     return f"{base}/download/{artifact_id}"
 
 
 def _resolve_download_base(event: Dict[str, Any]) -> str:
+    """Resolve configuration from environment/request context.
+
+    :param event:
+    :returns:
+    """
+
     base_env = os.environ.get("ARTIFACT_DOWNLOAD_ENDPOINT_BASE")
     if base_env:
         return base_env.rstrip("/")
@@ -455,6 +622,13 @@ def _resolve_download_base(event: Dict[str, Any]) -> str:
 
 
 def _json_response(status: HTTPStatus, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a JSON API Gateway proxy response.
+
+    :param status:
+    :param body:
+    :returns:
+    """
+
     return {
         "statusCode": status.value,
         "headers": {"Content-Type": "application/json"},
@@ -463,6 +637,13 @@ def _json_response(status: HTTPStatus, body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _error_response(status: HTTPStatus, message: str) -> Dict[str, Any]:
+    """Create a JSON error response payload.
+
+    :param status:
+    :param message:
+    :returns:
+    """
+
     return _json_response(status, {"error": message})
 
 
@@ -470,6 +651,10 @@ _BLOB_STORE = build_blob_store_from_env()
 
 
 def _lambda_client():
+    """Helper function.
+    :returns:
+    """
+
     global _LAMBDA_CLIENT
     if _LAMBDA_CLIENT is None:
         if boto3 is None:  # pragma: no cover - handled in tests via patching
@@ -480,6 +665,12 @@ def _lambda_client():
 
 
 def _can_process_synchronously(source_url: str) -> bool:
+    """Helper function.
+
+    :param source_url:
+    :returns:
+    """
+
     parsed = urlparse(source_url)
     host = parsed.netloc or ""
     path = parsed.path or ""
@@ -505,6 +696,14 @@ def _enqueue_async_ingest(
     artifact: Artifact,
     source_url: str,
 ) -> None:
+    """Helper function.
+
+    :param context:
+    :param artifact:
+    :param source_url:
+    :returns:
+    """
+
     function_arn = getattr(context, "invoked_function_arn", None)
     if not function_arn:
         function_arn = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
@@ -543,6 +742,12 @@ def _enqueue_async_ingest(
 
 
 def _process_async_ingest(event: Dict[str, Any]) -> Dict[str, Any]:
+    """Helper function.
+
+    :param event:
+    :returns:
+    """
+
     artifact_payload = event.get("artifact", {})
     metadata_payload = artifact_payload.get("metadata", {})
     source_url = event.get("source_url")
@@ -599,6 +804,14 @@ def _process_async_ingest(event: Dict[str, Any]) -> Dict[str, Any]:
 def _wait_for_download_ready(
     artifact_id: str, event: Dict[str, Any], context: Any
 ) -> bool:
+    """Helper function.
+
+    :param artifact_id:
+    :param event:
+    :param context:
+    :returns:
+    """
+
     if os.environ.get("ACME_DISABLE_ASYNC") == "1":
         return True
 
@@ -632,6 +845,13 @@ def _wait_for_download_ready(
 
 
 def _log_bad_request(event: Dict[str, Any], error: Exception) -> None:
+    """Helper function.
+
+    :param event:
+    :param error:
+    :returns:
+    """
+
     try:
         body = event.get("body")
         if event.get("isBase64Encoded") and isinstance(body, str):

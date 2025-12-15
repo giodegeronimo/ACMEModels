@@ -1,4 +1,9 @@
-"""Persistent storage helpers for artifact lineage graphs."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Persistent storage helpers for artifact lineage graphs.
+"""
 
 from __future__ import annotations
 
@@ -36,6 +41,12 @@ class LineageStoreError(RuntimeError):
 
 
 def _build_s3_client() -> Any:
+    """
+    _build_s3_client: Function description.
+    :param:
+    :returns:
+    """
+
     global _S3_CLIENT
     if _S3_CLIENT is not None:
         return _S3_CLIENT

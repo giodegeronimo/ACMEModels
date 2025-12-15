@@ -1,4 +1,9 @@
-"""End-to-end and integration tests for the ACME Models CLI pipeline."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+End-to-end and integration tests for the ACME Models CLI pipeline.
+"""
 
 from __future__ import annotations
 
@@ -16,18 +21,48 @@ from src.metrics.base import Metric, MetricOutput
 
 @dataclass
 class _StubMetric(Metric):
+    """
+    _StubMetric: Class description.
+    """
+
     value: MetricOutput
 
     def __init__(self, name: str, key: str, value: MetricOutput) -> None:
+        """
+        __init__: Function description.
+        :param name:
+        :param key:
+        :param value:
+        :returns:
+        """
+
         super().__init__(name=name, key=key)
         self.value = value
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
+        """
+        compute: Function description.
+        :param url_record:
+        :returns:
+        """
+
         return self.value
 
 
 def _install_stub_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    _install_stub_metrics: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     def _factory() -> List[Metric]:
+        """
+        _factory: Function description.
+        :param:
+        :returns:
+        """
+
         return [
             _StubMetric("Ramp-up Score", "ramp_up_time", 0.8),
             _StubMetric("Bus Factor", "bus_factor", 0.6),
@@ -55,6 +90,12 @@ def _install_stub_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _write_manifest(tmp_path: Path) -> Path:
+    """
+    _write_manifest: Function description.
+    :param tmp_path:
+    :returns:
+    """
+
     url_file = tmp_path / "urls.txt"
     url_file.write_text(
         ",,https://huggingface.co/org/model-name\n",
@@ -64,6 +105,12 @@ def _write_manifest(tmp_path: Path) -> Path:
 
 
 def _load_records(output: str) -> List[Dict[str, object]]:
+    """
+    _load_records: Function description.
+    :param output:
+    :returns:
+    """
+
     return [json.loads(line) for line in output.strip().splitlines() if line]
 
 
@@ -72,6 +119,14 @@ def test_cli_app_end_to_end(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """
+    test_cli_app_end_to_end: Function description.
+    :param tmp_path:
+    :param monkeypatch:
+    :param capsys:
+    :returns:
+    """
+
     _install_stub_metrics(monkeypatch)
     url_file = _write_manifest(tmp_path)
 
@@ -103,6 +158,14 @@ def test_runner_dispatch_end_to_end(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """
+    test_runner_dispatch_end_to_end: Function description.
+    :param tmp_path:
+    :param monkeypatch:
+    :param capsys:
+    :returns:
+    """
+
     _install_stub_metrics(monkeypatch)
     url_file = _write_manifest(tmp_path)
 

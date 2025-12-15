@@ -1,4 +1,9 @@
-"""Domain model package exports."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Domain model package exports.
+"""
 
 from .artifacts import (Artifact, ArtifactData, ArtifactMetadata,
                         ArtifactQuery, ArtifactType, validate_artifact_id,

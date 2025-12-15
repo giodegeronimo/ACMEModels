@@ -1,4 +1,9 @@
-"""Performance metric detecting explicit benchmark claims for models."""
+"""ACMEModels Repository
+
+Introductory remarks: This module implements the performance-claims metric,
+which detects explicit benchmark/evaluation evidence in Hugging Face metadata
+or README text (with optional LLM fallback).
+"""
 
 from __future__ import annotations
 
@@ -48,12 +53,32 @@ EXTRACTION_USER_TEMPLATE = (
 
 
 class _HFClientProtocol(Protocol):
+    """
+    get_model_info: Function description.
+    :param repo_id:
+    :returns:
+    """
+
+    """
+    _HFClientProtocol: Class description.
+    """
+
     def get_model_info(self, repo_id: str) -> Any: ...
+
+    """
+    get_model_readme: Function description.
+    :param repo_id:
+    :returns:
+    """
 
     def get_model_readme(self, repo_id: str) -> str: ...
 
 
 class _PurdueClientProtocol(Protocol):
+    """
+    _PurdueClientProtocol: Class description.
+    """
+
     def llm(
         self,
         prompt: Optional[str] = None,
@@ -74,11 +99,19 @@ class PerformanceMetric(Metric):
         hf_client: Optional[_HFClientProtocol] = None,
         purdue_client: Optional[_PurdueClientProtocol] = None,
     ) -> None:
+        """
+        __init__: Function description.
+        :param hf_client:
+        :param purdue_client:
+        :returns:
+        """
+
         super().__init__(name="Performance Claims", key="performance_claims")
         self._hf = hf_client or HFClient()
         self._purdue_client: Optional[_PurdueClientProtocol] = purdue_client
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
+        """Return `1.0` when benchmark/evaluation claims are detected, else `0.0`."""
         hf_url = _extract_hf_url(url_record)
         if fail_stub_active(FAIL):
             time.sleep(0.05)
@@ -127,6 +160,12 @@ class PerformanceMetric(Metric):
         return 1.0 if has_claims else 0.0
 
     def _safe_model_info(self, hf_url: str) -> Optional[Any]:
+        """
+        _safe_model_info: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         try:
             return self._hf.get_model_info(hf_url)
         except Exception as exc:
@@ -137,6 +176,12 @@ class PerformanceMetric(Metric):
             return None
 
     def _safe_readme(self, hf_url: str) -> str:
+        """
+        _safe_readme: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         try:
             return self._hf.get_model_readme(hf_url)
         except Exception as exc:
@@ -147,6 +192,12 @@ class PerformanceMetric(Metric):
             return ""
 
     def _get_purdue_client(self) -> Optional[_PurdueClientProtocol]:
+        """
+        _get_purdue_client: Function description.
+        :param:
+        :returns:
+        """
+
         if self._purdue_client is not None:
             return self._purdue_client
 
@@ -163,6 +214,12 @@ class PerformanceMetric(Metric):
         return self._purdue_client
 
     def _llm_detect_claims(self, readme_text: str) -> bool:
+        """
+        _llm_detect_claims: Function description.
+        :param readme_text:
+        :returns:
+        """
+
         client = self._get_purdue_client()
         if client is None:
             return False
@@ -210,6 +267,7 @@ class PerformanceMetric(Metric):
 
 
 def _has_structured_claims(info: Optional[Any]) -> bool:
+    """Return True when model metadata includes structured evaluation results."""
     if info is None:
         return False
 
@@ -244,6 +302,7 @@ def _has_structured_claims(info: Optional[Any]) -> bool:
 
 
 def _parse_model_index(model_index: Sequence[Any]) -> List[Dict[str, Any]]:
+    """Parse Hugging Face `model-index` entries into a list of metric claims."""
     claims: List[Dict[str, Any]] = []
     for entry in model_index:
         if not isinstance(entry, dict):
@@ -278,6 +337,7 @@ def _parse_model_index(model_index: Sequence[Any]) -> List[Dict[str, Any]]:
 
 
 def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:
+    """Extract the Hugging Face URL from an input record, if present."""
     return record.get("hf_url")
 
 

@@ -1,3 +1,9 @@
+"""
+
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+"""
 from __future__ import annotations
 
 from types import MappingProxyType
@@ -17,6 +23,15 @@ def _metric(
     latency_ms: int = 12,
     name: Optional[str] = None,
 ) -> MetricResult:
+    """
+    _metric: Function description.
+    :param key:
+    :param value:
+    :param latency_ms:
+    :param name:
+    :returns:
+    """
+
     metric_name = name or key.replace("_", " ").title()
     return MetricResult(
         metric=metric_name,
@@ -27,6 +42,12 @@ def _metric(
 
 
 def test_format_records_skips_entries_without_hf_url() -> None:
+    """
+    test_format_records_skips_entries_without_hf_url: Function description.
+    :param:
+    :returns:
+    """
+
     formatter = ResultsFormatter()
 
     url_records = [
@@ -45,6 +66,12 @@ def test_format_records_skips_entries_without_hf_url() -> None:
 
 
 def test_format_records_emits_metric_values_and_latencies() -> None:
+    """
+    test_format_records_emits_metric_values_and_latencies: Function description.
+    :param:
+    :returns:
+    """
+
     formatter = ResultsFormatter()
     url_records = [
         {
@@ -81,6 +108,12 @@ def test_format_records_emits_metric_values_and_latencies() -> None:
 
 
 def test_resolve_name_handles_dataset_prefix() -> None:
+    """
+    test_resolve_name_handles_dataset_prefix: Function description.
+    :param:
+    :returns:
+    """
+
     formatter = ResultsFormatter()
 
     url_records = [
@@ -94,6 +127,12 @@ def test_resolve_name_handles_dataset_prefix() -> None:
 
 
 def test_scores_are_rounded_to_two_decimals() -> None:
+    """
+    test_scores_are_rounded_to_two_decimals: Function description.
+    :param:
+    :returns:
+    """
+
     formatter = ResultsFormatter()
     url_records = [{"hf_url": "https://huggingface.co/org/model"}]
     metrics = [
@@ -118,6 +157,12 @@ def test_scores_are_rounded_to_two_decimals() -> None:
 
 
 def test_formatter_uses_specified_field_order() -> None:
+    """
+    test_formatter_uses_specified_field_order: Function description.
+    :param:
+    :returns:
+    """
+
     formatter = ResultsFormatter()
     url_records = [{"hf_url": "https://huggingface.co/org/model"}]
     metrics = [
@@ -158,6 +203,12 @@ def test_formatter_uses_specified_field_order() -> None:
 
 
 def test_to_ndjson_line_formats_two_decimal_scores() -> None:
+    """
+    test_to_ndjson_line_formats_two_decimal_scores: Function description.
+    :param:
+    :returns:
+    """
+
     line = to_ndjson_line(
         {
             "name": "model",

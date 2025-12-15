@@ -1,4 +1,9 @@
-"""Lambda handler for POST /artifact/byRegEx searches."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Lambda handler for POST /artifact/byRegEx searches.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +31,16 @@ PAGE_SIZE = 100
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Entry point for regex-based artifact search."""
+    """Handle `POST /artifact/byRegEx` searches.
+
+    The request body includes a `regex` string. We compile it, apply a quick
+    timeout guard to reduce catastrophic backtracking risk, then scan the name
+    index and return matching artifacts.
+
+    :param event: API Gateway/Lambda proxy event.
+    :param context: Lambda context (unused).
+    :returns: API Gateway/Lambda proxy response dict.
+    """
 
     try:
         _require_auth(event)
@@ -54,6 +68,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def _parse_regex(event: Dict[str, Any]) -> Pattern[str]:
+    """
+    Parse and compile the `regex` string from the request body.
+
+    :param event: API Gateway/Lambda proxy event.
+    :returns: Compiled regex pattern.
+    :raises ValueError: If the body is missing, malformed, or the regex is invalid.
+    """
+
     body = event.get("body")
     if body is None:
         raise ValueError("Request body is required")
@@ -77,7 +99,23 @@ def _parse_regex(event: Dict[str, Any]) -> Pattern[str]:
 
 
 def _guard_regex(pattern: Pattern[str]) -> None:
+    """
+    Validate the regex won't obviously time out on a worst-case-ish probe.
+
+    This is a lightweight mitigation against ReDoS-style patterns. The handler
+    also applies timeouts during matching to avoid long-running evaluations.
+
+    :param pattern: Compiled regex pattern to validate.
+    :raises ValueError: If evaluation exceeds the timeout.
+    """
+
     def _probe() -> None:
+        """
+        Run the regex against a probe input likely to trigger backtracking.
+
+        :raises TimeoutError: If the probe evaluation exceeds the timeout.
+        """
+
         test_input = "a" * 5000 + "b"
         pattern.search(test_input)
 
@@ -88,6 +126,13 @@ def _guard_regex(pattern: Pattern[str]) -> None:
 
 
 def _search_name_index(pattern: Pattern[str]) -> List[NameIndexEntry]:
+    """
+    Scan the name index and collect entries matching the regex.
+
+    :param pattern: Compiled regex to apply.
+    :returns: Matching index entries, capped to `RESULT_LIMIT`.
+    """
+
     results: List[NameIndexEntry] = []
     start_key = None
     while len(results) < RESULT_LIMIT:
@@ -106,7 +151,25 @@ def _search_name_index(pattern: Pattern[str]) -> List[NameIndexEntry]:
 
 
 def _entry_matches(entry: NameIndexEntry, pattern: Pattern[str]) -> bool:
+    """
+    Return True when the entry matches the regex in name or README excerpt.
+
+    Matches are executed under a timeout to reduce the impact of expensive
+    regex patterns.
+
+    :param entry: Candidate index entry.
+    :param pattern: Compiled regex.
+    :returns: True if the entry matches, otherwise False.
+    :raises ValueError: If regex evaluation exceeds the timeout.
+    """
+
     def _match() -> bool:
+        """
+        Perform the actual match logic under the timeout wrapper.
+
+        :returns: Whether the entry matches.
+        """
+
         if pattern.search(entry.name):
             return True
         if entry.readme_excerpt and pattern.search(entry.readme_excerpt):
@@ -120,6 +183,16 @@ def _entry_matches(entry: NameIndexEntry, pattern: Pattern[str]) -> bool:
 
 
 def _artifact_entry_payload(entry: NameIndexEntry) -> Dict[str, Any]:
+    """
+    Construct the public response payload for a matching index entry.
+
+    Prefers canonical metadata from the metadata store, but falls back to the
+    name index if the metadata store fails (stale entries, transient errors).
+
+    :param entry: Name index entry.
+    :returns: JSON-serializable artifact payload.
+    """
+
     try:
         artifact = _METADATA_STORE.load(entry.artifact_id)
         metadata = artifact.metadata
@@ -135,10 +208,25 @@ def _artifact_entry_payload(entry: NameIndexEntry) -> Dict[str, Any]:
 
 
 def _require_auth(event: Dict[str, Any]) -> None:
+    """
+    Enforce request authentication for this handler.
+
+    :param event: API Gateway/Lambda proxy event.
+    :raises PermissionError: If authorization is missing/invalid.
+    """
+
     require_auth_token(event, optional=False)
 
 
 def _json_response(status: HTTPStatus, body: Any) -> Dict[str, Any]:
+    """
+    Create a JSON API Gateway proxy response.
+
+    :param status: HTTP status enum to return.
+    :param body: JSON-serializable body.
+    :returns: API Gateway/Lambda proxy response dict.
+    """
+
     return {
         "statusCode": status.value,
         "headers": {"Content-Type": "application/json"},
@@ -147,10 +235,26 @@ def _json_response(status: HTTPStatus, body: Any) -> Dict[str, Any]:
 
 
 def _run_with_timeout(func: Callable[[], Any], timeout: float) -> Any:
+    """
+    Execute a function with a wall-clock timeout using `SIGALRM`.
+
+    Note: `SIGALRM` only works reliably on Unix and in the main thread. This
+    is acceptable for the Lambda runtime and unit tests in this repository.
+
+    :param func: Callable to execute.
+    :param timeout: Timeout in seconds; non-positive disables the timeout.
+    :returns: Return value from `func`.
+    :raises TimeoutError: If `func` does not complete in time.
+    """
+
     if timeout <= 0:
         return func()
 
     def _handler(signum, frame):  # noqa: ANN001
+        """
+        Signal handler used to interrupt evaluation when the timer fires.
+        """
+
         raise TimeoutError
 
     previous = signal.signal(signal.SIGALRM, _handler)
@@ -164,4 +268,12 @@ def _run_with_timeout(func: Callable[[], Any], timeout: float) -> Any:
 
 
 def _error_response(status: HTTPStatus, message: str) -> Dict[str, Any]:
+    """
+    Create a JSON error response payload.
+
+    :param status: HTTP status enum to return.
+    :param message: Error message to return under the `error` key.
+    :returns: API Gateway/Lambda proxy response dict.
+    """
+
     return _json_response(status, {"error": message})

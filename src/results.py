@@ -1,6 +1,10 @@
-from __future__ import annotations
+"""
 
-"""Utilities for transforming metric results into CLI output records."""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+"""
+from __future__ import annotations
 
 import json
 from decimal import ROUND_HALF_UP, Decimal
@@ -49,6 +53,13 @@ class ResultsFormatter:
         url_records: Sequence[Dict[str, str]],
         metrics_per_record: Sequence[Sequence[MetricResult]],
     ) -> List[Dict[str, Any]]:
+        """
+        format_records: Function description.
+        :param url_records:
+        :param metrics_per_record:
+        :returns:
+        """
+
         formatted: List[Dict[str, Any]] = []
         for record, metric_results in zip(url_records, metrics_per_record):
             hf_url = record.get("hf_url")
@@ -60,6 +71,13 @@ class ResultsFormatter:
     def _format_model_record(
         self, hf_url: str, metric_results: Sequence[MetricResult]
     ) -> Dict[str, Any]:
+        """
+        _format_model_record: Function description.
+        :param hf_url:
+        :param metric_results:
+        :returns:
+        """
+
         metric_values: Dict[str, Any] = {}
         latency_values: Dict[str, int] = {}
         for metric_result in metric_results:
@@ -90,6 +108,13 @@ class ResultsFormatter:
         return ordered
 
     def _format_metric_value(self, key: str, value: Any) -> Any:
+        """
+        _format_metric_value: Function description.
+        :param key:
+        :param value:
+        :returns:
+        """
+
         if isinstance(value, Mapping):
             normalized = {
                 mapping_key: self._format_score(mapping_value)
@@ -108,6 +133,12 @@ class ResultsFormatter:
         return self._format_score(value)
 
     def _format_score(self, value: Any) -> Any:
+        """
+        _format_score: Function description.
+        :param value:
+        :returns:
+        """
+
         if isinstance(value, Real) and not isinstance(value, bool):
             decimal_value = Decimal(str(value))
             rounded = decimal_value.quantize(
@@ -118,6 +149,12 @@ class ResultsFormatter:
         return value
 
     def _resolve_model_name(self, hf_url: str) -> str:
+        """
+        _resolve_model_name: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         parsed = urlparse(hf_url)
         path = parsed.path.strip("/")
         if not path:
@@ -151,6 +188,12 @@ def to_ndjson_line(record: Mapping[str, Any]) -> str:
 
 
 def _serialize_value(value: Any) -> str:
+    """
+    _serialize_value: Function description.
+    :param value:
+    :returns:
+    """
+
     if isinstance(value, str):
         return _serialize_string(value)
     if isinstance(value, bool):
@@ -173,10 +216,22 @@ def _serialize_value(value: Any) -> str:
 
 
 def _serialize_string(value: str) -> str:
+    """
+    _serialize_string: Function description.
+    :param value:
+    :returns:
+    """
+
     return json.dumps(value)
 
 
 def _format_float(value: float) -> str:
+    """
+    _format_float: Function description.
+    :param value:
+    :returns:
+    """
+
     decimal_value = Decimal(str(value))
     rounded = decimal_value.quantize(
         Decimal("0.01"),

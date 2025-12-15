@@ -1,4 +1,9 @@
-"""Bus factor metric estimating contributor diversity and activity."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Bus factor metric estimating contributor diversity and activity.
+"""
 
 from __future__ import annotations
 
@@ -35,11 +40,37 @@ _GITHUB_URL_PATTERN = re.compile(
 
 
 class _HFClientProtocol(Protocol):
+    """
+    get_model_readme: Function description.
+    :param repo_id:
+    :returns:
+    """
+
+    """
+    _HFClientProtocol: Class description.
+    """
+
     def get_model_readme(self, repo_id: str) -> str: ...
+    """
+    get_model_info: Function description.
+    :param repo_id:
+    :returns:
+    """
+
     def get_model_info(self, repo_id: str) -> Any: ...
 
 
 class _GitClientProtocol(Protocol):
+    """
+    get_repo_metadata: Function description.
+    :param repo_url:
+    :returns:
+    """
+
+    """
+    _GitClientProtocol: Class description.
+    """
+
     def get_repo_metadata(self, repo_url: str) -> Dict[str, Any]: ...
 
     def list_repo_files(
@@ -65,11 +96,24 @@ class BusFactorMetric(Metric):
         hf_client: Optional[_HFClientProtocol] = None,
         git_client: Optional[_GitClientProtocol] = None,
     ) -> None:
+        """
+        __init__: Function description.
+        :param hf_client:
+        :param git_client:
+        :returns:
+        """
+
         super().__init__(name="Bus Factor", key="bus_factor")
         self._hf = hf_client or HFClient()
         self._git = git_client or GitClient()
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
+        """
+        compute: Function description.
+        :param url_record:
+        :returns:
+        """
+
         if fail_stub_active(FAIL):
             time.sleep(0.05)
             url = _extract_hf_url(url_record) or _DEFAULT_URL
@@ -161,6 +205,13 @@ class BusFactorMetric(Metric):
         url_record: Dict[str, str],
         readme_text: str,
     ) -> Optional[str]:
+        """
+        _select_repo_url: Function description.
+        :param url_record:
+        :param readme_text:
+        :returns:
+        """
+
         git_url = (url_record.get("git_url") or "").strip()
         if git_url:
             return _normalize_github_url(git_url)
@@ -180,6 +231,12 @@ class BusFactorMetric(Metric):
         return None
 
     def _safe_readme(self, hf_url: str) -> str:
+        """
+        _safe_readme: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         try:
             return self._hf.get_model_readme(hf_url) or ""
         except Exception as exc:
@@ -187,6 +244,12 @@ class BusFactorMetric(Metric):
             return ""
 
     def _safe_model_info(self, hf_url: str) -> Optional[Any]:
+        """
+        _safe_model_info: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         try:
             return self._hf.get_model_info(hf_url)
         except Exception as exc:
@@ -194,6 +257,12 @@ class BusFactorMetric(Metric):
             return None
 
     def _safe_repo_metadata(self, repo_url: str) -> Optional[Dict[str, Any]]:
+        """
+        _safe_repo_metadata: Function description.
+        :param repo_url:
+        :returns:
+        """
+
         try:
             return self._git.get_repo_metadata(repo_url)
         except Exception as exc:
@@ -205,6 +274,12 @@ class BusFactorMetric(Metric):
             return None
 
     def _safe_contributors(self, repo_url: str) -> List[Dict[str, Any]]:
+        """
+        _safe_contributors: Function description.
+        :param repo_url:
+        :returns:
+        """
+
         try:
             return self._git.list_repo_contributors(repo_url)
         except Exception as exc:
@@ -217,10 +292,22 @@ class BusFactorMetric(Metric):
 
 
 def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:
+    """
+    _extract_hf_url: Function description.
+    :param record:
+    :returns:
+    """
+
     return record.get("hf_url")
 
 
 def _normalize_github_url(url: str) -> Optional[str]:
+    """
+    _normalize_github_url: Function description.
+    :param url:
+    :returns:
+    """
+
     match = _GITHUB_URL_PATTERN.search(url)
     if not match:
         return None
@@ -229,6 +316,12 @@ def _normalize_github_url(url: str) -> Optional[str]:
 
 
 def _contributor_diversity(contributors: Sequence[Dict[str, Any]]) -> float:
+    """
+    _contributor_diversity: Function description.
+    :param contributors:
+    :returns:
+    """
+
     if not contributors:
         return 0.0
 
@@ -265,6 +358,13 @@ def _ownership_resilience(
     metadata: Optional[Dict[str, Any]],
     contributors: Sequence[Dict[str, Any]],
 ) -> float:
+    """
+    _ownership_resilience: Function description.
+    :param metadata:
+    :param contributors:
+    :returns:
+    """
+
     if not metadata:
         return 0.2 if len(contributors) >= 2 else 0.1
 
@@ -289,6 +389,13 @@ def _community_support(
     metadata: Optional[Dict[str, Any]],
     hf_info: Optional[Any],
 ) -> float:
+    """
+    _community_support: Function description.
+    :param metadata:
+    :param hf_info:
+    :returns:
+    """
+
     archived = False
     popularity: int = 0
     pushed_at: Optional[str] = None
@@ -363,6 +470,12 @@ KNOWN_ORG_OWNERS = {
 
 
 def _hf_metadata_fallback(hf_info: Optional[Any]) -> Optional[float]:
+    """
+    _hf_metadata_fallback: Function description.
+    :param hf_info:
+    :returns:
+    """
+
     if hf_info is None:
         return None
 
@@ -421,6 +534,14 @@ def _hf_community_score(
     likes: int,
     last_modified: Optional[str],
 ) -> float:
+    """
+    _hf_community_score: Function description.
+    :param downloads:
+    :param likes:
+    :param last_modified:
+    :returns:
+    """
+
     popularity = max(downloads, likes)
     if popularity >= 500000:
         popularity_score = 1.0
@@ -452,6 +573,12 @@ def _hf_community_score(
 
 
 def _hf_card_data(hf_info: Any) -> Dict[str, Any]:
+    """
+    _hf_card_data: Function description.
+    :param hf_info:
+    :returns:
+    """
+
     card = getattr(hf_info, "card_data", None)
     if card is None:
         card = getattr(hf_info, "cardData", None)
@@ -461,6 +588,12 @@ def _hf_card_data(hf_info: Any) -> Dict[str, Any]:
 
 
 def _hf_maintainers(card: Dict[str, Any]) -> List[str]:
+    """
+    _hf_maintainers: Function description.
+    :param card:
+    :returns:
+    """
+
     maintainers_field = card.get("maintainers")
     names: List[str] = []
     if isinstance(maintainers_field, list):
@@ -480,6 +613,12 @@ def _hf_maintainers(card: Dict[str, Any]) -> List[str]:
 
 
 def _hf_owner(hf_info: Any) -> Optional[str]:
+    """
+    _hf_owner: Function description.
+    :param hf_info:
+    :returns:
+    """
+
     identifier = getattr(hf_info, "id", "")
     if isinstance(identifier, str) and "/" in identifier:
         return identifier.split("/", 1)[0]
@@ -487,6 +626,12 @@ def _hf_owner(hf_info: Any) -> Optional[str]:
 
 
 def _maintainer_count_score(count: int) -> float:
+    """
+    _maintainer_count_score: Function description.
+    :param count:
+    :returns:
+    """
+
     if count >= 5:
         return 1.0
     if count >= 3:
@@ -499,6 +644,12 @@ def _maintainer_count_score(count: int) -> float:
 
 
 def _days_since(timestamp: str) -> Optional[float]:
+    """
+    _days_since: Function description.
+    :param timestamp:
+    :returns:
+    """
+
     try:
         parsed = _parse_iso_datetime(timestamp)
     except ValueError:
@@ -508,6 +659,12 @@ def _days_since(timestamp: str) -> Optional[float]:
 
 
 def _parse_iso_datetime(timestamp: str) -> datetime:
+    """
+    _parse_iso_datetime: Function description.
+    :param timestamp:
+    :returns:
+    """
+
     cleaned = timestamp.strip()
     if cleaned.endswith("Z"):
         cleaned = cleaned[:-1] + "+00:00"
@@ -515,6 +672,12 @@ def _parse_iso_datetime(timestamp: str) -> datetime:
 
 
 def _extract_readme_maintainers(text: str) -> List[str]:
+    """
+    _extract_readme_maintainers: Function description.
+    :param text:
+    :returns:
+    """
+
     if not text:
         return []
     if not enable_readme_fallback():
@@ -545,6 +708,12 @@ def _extract_readme_maintainers(text: str) -> List[str]:
 
 
 def _extract_names_from_section(section: str) -> List[str]:
+    """
+    _extract_names_from_section: Function description.
+    :param section:
+    :returns:
+    """
+
     pattern = re.compile(
         r"^(?:[-*]|\d+\.)\s+(.+)$",
         re.MULTILINE,
@@ -558,6 +727,12 @@ def _extract_names_from_section(section: str) -> List[str]:
 
 
 def _readme_contributor_score(names: Sequence[str]) -> float:
+    """
+    _readme_contributor_score: Function description.
+    :param names:
+    :returns:
+    """
+
     count = len(names)
     if count >= 5:
         return 0.8

@@ -1,4 +1,8 @@
-"""Extract lineage graph from HuggingFace model metadata.
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Extract lineage graph from HuggingFace model metadata.
 
 This module discovers parent models from Hugging Face metadata
 (card_data, config) and README hints (e.g., "base model",
@@ -10,7 +14,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Protocol
 from urllib.parse import urlparse
 
 from src.clients.hf_client import HFClient
@@ -38,6 +42,28 @@ _HF_LINK = re.compile(
 )
 
 
+class HFClientLike(Protocol):
+    """
+    get_model_info: Function description.
+    :param hf_url:
+    :returns:
+    """
+
+    """
+    HFClientLike: Class description.
+    """
+
+    def get_model_info(self, hf_url: str) -> Any: ...
+
+    """
+    get_model_readme: Function description.
+    :param hf_url:
+    :returns:
+    """
+
+    def get_model_readme(self, hf_url: str) -> str: ...
+
+
 def extract_lineage_graph(
     artifact_id: str, source_url: str
 ) -> ArtifactLineageGraph:
@@ -52,7 +78,21 @@ def extract_lineage_graph(
         At minimum, returns a graph with just the main artifact node.
         Includes transitive lineage (parent's parents, etc.)
     """
-    hf = HFClient()
+    try:
+        hf = HFClient()
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.error(
+            "Failed to initialize Hugging Face client: %s",
+            exc,
+            exc_info=True,
+        )
+        main_name = _extract_name_from_url(source_url)
+        main_node = ArtifactLineageNode(
+            artifact_id=artifact_id,
+            name=main_name,
+            source="primary",
+        )
+        return ArtifactLineageGraph(nodes=[main_node], edges=[])
 
     # Build complete lineage recursively
     all_nodes: dict[str, ArtifactLineageNode] = {}
@@ -93,7 +133,7 @@ def extract_lineage_graph(
 
 
 def _build_lineage_recursive(
-    hf: HFClient,
+    hf: HFClientLike,
     artifact_id: str,
     source_url: str,
     source_type: str,
@@ -186,7 +226,7 @@ def _build_lineage_recursive(
 
 
 def _discover_parents_with_source(
-    hf: HFClient, hf_url: str
+    hf: HFClientLike, hf_url: str
 ) -> list[tuple[str, str]]:
     """Discover parent model slugs with their source type.
 

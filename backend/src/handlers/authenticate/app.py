@@ -1,4 +1,9 @@
-"""Lambda handler for PUT /authenticate."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Lambda handler for PUT /authenticate.
+"""
 
 from __future__ import annotations
 
@@ -50,6 +55,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
+    """Parse and validate `body` from the request.
+
+    :param event:
+    :returns:
+    """
+
     body = event.get("body")
     if body is None:
         raise ValueError("Request body is required")
@@ -68,6 +79,12 @@ def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _validate_credentials(payload: Dict[str, Any]) -> None:
+    """Validate request inputs against stored state.
+
+    :param payload:
+    :returns:
+    """
+
     user = payload.get("user")
     secret = payload.get("secret")
     if not isinstance(user, dict) or not isinstance(secret, dict):
@@ -90,6 +107,13 @@ def _validate_credentials(payload: Dict[str, Any]) -> None:
 
 
 def _json_response(status: HTTPStatus, body: Any) -> Dict[str, Any]:
+    """Create a JSON API Gateway proxy response.
+
+    :param status:
+    :param body:
+    :returns:
+    """
+
     return {
         "statusCode": status.value,
         "headers": {"Content-Type": "application/json"},
@@ -98,10 +122,23 @@ def _json_response(status: HTTPStatus, body: Any) -> Dict[str, Any]:
 
 
 def _error_response(status: HTTPStatus, message: str) -> Dict[str, Any]:
+    """Create a JSON error response payload.
+
+    :param status:
+    :param message:
+    :returns:
+    """
+
     return _json_response(status, {"error": message})
 
 
 def _log_request(event: Dict[str, Any]) -> None:
+    """Helper function.
+
+    :param event:
+    :returns:
+    """
+
     http_ctx = (event.get("requestContext") or {}).get("http", {})
     _LOGGER.info(
         "Auth request path=%s headers=%s",

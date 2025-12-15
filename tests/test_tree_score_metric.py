@@ -1,4 +1,9 @@
-"""Tests for tree score metric module."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for tree score metric module.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +18,10 @@ from src.metrics import tree_score
 
 @dataclass
 class _FakeModelInfo:
+    """
+    _FakeModelInfo: Class description.
+    """
+
     card_data: Optional[Mapping[str, Any]] = None
     config: Optional[Mapping[str, Any]] = None
     base_model: Optional[str] = None
@@ -23,6 +32,10 @@ class _FakeModelInfo:
 
 
 class _FakeHFClient:
+    """
+    _FakeHFClient: Class description.
+    """
+
     def __init__(
         self,
         *,
@@ -31,6 +44,15 @@ class _FakeHFClient:
         info_error: Optional[Exception] = None,
         readme_error: Optional[Exception] = None,
     ) -> None:
+        """
+        __init__: Function description.
+        :param info:
+        :param readme:
+        :param info_error:
+        :param readme_error:
+        :returns:
+        """
+
         self._info = info
         self._readme = readme
         self._info_error = info_error
@@ -39,12 +61,24 @@ class _FakeHFClient:
         self.readme_calls: List[str] = []
 
     def get_model_info(self, repo_id: str) -> Any:
+        """
+        get_model_info: Function description.
+        :param repo_id:
+        :returns:
+        """
+
         self.info_calls.append(repo_id)
         if self._info_error is not None:
             raise self._info_error
         return self._info
 
     def get_model_readme(self, repo_id: str) -> str:
+        """
+        get_model_readme: Function description.
+        :param repo_id:
+        :returns:
+        """
+
         self.readme_calls.append(repo_id)
         if self._readme_error is not None:
             raise self._readme_error
@@ -52,6 +86,12 @@ class _FakeHFClient:
 
 
 def _metric(hf: Optional[_FakeHFClient] = None) -> tree_score.TreeScoreMetric:
+    """
+    _metric: Function description.
+    :param hf:
+    :returns:
+    """
+
     client = cast(HFClient, hf or _FakeHFClient())
     return tree_score.TreeScoreMetric(hf_client=client)
 
@@ -59,6 +99,12 @@ def _metric(hf: Optional[_FakeHFClient] = None) -> tree_score.TreeScoreMetric:
 def test_tree_score_fail_stub_returns_known_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_tree_score_fail_stub_returns_known_value: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     monkeypatch.delenv("ACME_IGNORE_FAIL", raising=False)
     metric = _metric()
 
@@ -74,6 +120,12 @@ def test_tree_score_fail_stub_returns_known_value(
 
 
 def test_tree_score_missing_url_defaults_to_half() -> None:
+    """
+    test_tree_score_missing_url_defaults_to_half: Function description.
+    :param:
+    :returns:
+    """
+
     metric = _metric()
 
     value = metric.compute({})
@@ -84,9 +136,21 @@ def test_tree_score_missing_url_defaults_to_half() -> None:
 def test_tree_score_no_parents_falls_back_to_target_score(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_tree_score_no_parents_falls_back_to_target_score: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     calls: List[str] = []
 
     def _fake_parent_score(slug: str) -> Optional[float]:
+        """
+        _fake_parent_score: Function description.
+        :param slug:
+        :returns:
+        """
+
         calls.append(slug)
         return 0.42
 
@@ -107,17 +171,38 @@ def test_tree_score_no_parents_falls_back_to_target_score(
 def test_tree_score_no_ancestor_scores_falls_back_to_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_tree_score_no_ancestor_scores_falls_back_to_default: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     chains = {"parent/model": {"parent/model": 0, "upstream/root": 1}}
     compute_calls: List[str] = []
 
     def _fake_collect(
         _hf: Any, slug: str, _depth: int, visited: Optional[set[str]] = None
     ) -> Dict[str, int]:
+        """
+        _fake_collect: Function description.
+        :param _hf:
+        :param slug:
+        :param _depth:
+        :param visited:
+        :returns:
+        """
+
         if visited is not None:
             visited.update(chains[slug].keys())
         return dict(chains[slug])
 
     def _fake_score(slug: str) -> Optional[float]:
+        """
+        _fake_score: Function description.
+        :param slug:
+        :returns:
+        """
+
         compute_calls.append(slug)
         return None
 
@@ -145,6 +230,12 @@ def test_tree_score_no_ancestor_scores_falls_back_to_default(
 def test_tree_score_success_weights_ancestors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_tree_score_success_weights_ancestors: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     chains = {
         "owner/base": {"owner/base": 0, "shared/root": 1},
         "owner/alt": {
@@ -163,11 +254,26 @@ def test_tree_score_success_weights_ancestors(
     def _fake_collect(
         _hf: Any, slug: str, _depth: int, visited: Optional[set[str]] = None
     ) -> Dict[str, int]:
+        """
+        _fake_collect: Function description.
+        :param _hf:
+        :param slug:
+        :param _depth:
+        :param visited:
+        :returns:
+        """
+
         if visited is not None:
             visited.update(chains[slug].keys())
         return dict(chains[slug])
 
     def _fake_score(slug: str) -> Optional[float]:
+        """
+        _fake_score: Function description.
+        :param slug:
+        :returns:
+        """
+
         return scores.get(slug)
 
     monkeypatch.setattr(
@@ -193,6 +299,12 @@ def test_tree_score_success_weights_ancestors(
 def test_collect_ancestors_with_depth_handles_cycles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_collect_ancestors_with_depth_handles_cycles: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     graph = {
         "root/base": ["loop/parent"],
         "loop/parent": ["root/base", "leaf/model"],
@@ -202,6 +314,13 @@ def test_collect_ancestors_with_depth_handles_cycles(
     }
 
     def _fake_discover(_hf: Any, url: str) -> List[str]:
+        """
+        _fake_discover: Function description.
+        :param _hf:
+        :param url:
+        :returns:
+        """
+
         slug = url.removeprefix("https://huggingface.co/")
         return graph.get(slug, [])
 
@@ -224,6 +343,12 @@ def test_collect_ancestors_with_depth_handles_cycles(
 
 
 def test_discover_parents_aggregates_metadata_and_readme() -> None:
+    """
+    test_discover_parents_aggregates_metadata_and_readme: Function description.
+    :param:
+    :returns:
+    """
+
     info = _FakeModelInfo(
         card_data={
             "base_model": "owner/base",
@@ -257,6 +382,12 @@ def test_discover_parents_aggregates_metadata_and_readme() -> None:
 
 
 def test_discover_parents_handles_failures() -> None:
+    """
+    test_discover_parents_handles_failures: Function description.
+    :param:
+    :returns:
+    """
+
     hf = _FakeHFClient(
         info_error=RuntimeError("fail info"),
         readme_error=RuntimeError("fail readme"),
@@ -271,6 +402,12 @@ def test_discover_parents_handles_failures() -> None:
 
 
 def test_extract_helpers_cover_edge_cases() -> None:
+    """
+    test_extract_helpers_cover_edge_cases: Function description.
+    :param:
+    :returns:
+    """
+
     mapping = {
         "base_model": "owner/base",
         "parent_models": ["owner/alt", b"owner/base"],
@@ -278,6 +415,10 @@ def test_extract_helpers_cover_edge_cases() -> None:
     }
 
     class _Obj:
+        """
+        _Obj: Class description.
+        """
+
         base_model = "owner/base"
         parent_model = ["owner/fourth", b"owner/fifth"]
 
@@ -306,6 +447,12 @@ def test_extract_helpers_cover_edge_cases() -> None:
 
 
 def test_extract_hf_url_and_slug_helpers() -> None:
+    """
+    test_extract_hf_url_and_slug_helpers: Function description.
+    :param:
+    :returns:
+    """
+
     record = {"hf_url": "https://huggingface.co/owner/model"}
     assert tree_score._extract_hf_url(record) == record["hf_url"]
     assert tree_score._extract_hf_url({"hf_url": 123}) is None
@@ -318,6 +465,12 @@ def test_extract_hf_url_and_slug_helpers() -> None:
 
 
 def test_to_numeric_metric_variants() -> None:
+    """
+    test_to_numeric_metric_variants: Function description.
+    :param:
+    :returns:
+    """
+
     assert tree_score._to_numeric_metric(1) == 1.0
     assert tree_score._to_numeric_metric(
         {"desktop_pc": 0.9, "edge": 0.4}
@@ -332,18 +485,48 @@ def test_to_numeric_metric_variants() -> None:
 def test_compute_parent_net_score_averages_metrics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_compute_parent_net_score_averages_metrics: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     class _StubMetric:
+        """
+        _StubMetric: Class description.
+        """
+
         def __init__(self, name: str, output: Any) -> None:
+            """
+            __init__: Function description.
+            :param name:
+            :param output:
+            :returns:
+            """
+
             self.name = name
             self.key = name
             self._output = output
 
         def compute(self, _record: Mapping[str, str]) -> Any:
+            """
+            compute: Function description.
+            :param _record:
+            :returns:
+            """
+
             if isinstance(self._output, Exception):
                 raise self._output
             return self._output
 
     def _factory(name: str, output: Any) -> Any:
+        """
+        _factory: Function description.
+        :param name:
+        :param output:
+        :returns:
+        """
+
         return _StubMetric(name, output)
 
     monkeypatch.setattr(
@@ -393,18 +576,48 @@ def test_compute_parent_net_score_averages_metrics(
 def test_compute_parent_net_score_returns_none_when_no_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_compute_parent_net_score_returns_none_when_no_values: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     class _StubMetric:
+        """
+        _StubMetric: Class description.
+        """
+
         def __init__(self, name: str, output: Any) -> None:
+            """
+            __init__: Function description.
+            :param name:
+            :param output:
+            :returns:
+            """
+
             self.name = name
             self.key = name
             self._output = output
 
         def compute(self, _record: Mapping[str, str]) -> Any:
+            """
+            compute: Function description.
+            :param _record:
+            :returns:
+            """
+
             if isinstance(self._output, Exception):
                 raise self._output
             return self._output
 
     def _factory(name: str, output: Any) -> Any:
+        """
+        _factory: Function description.
+        :param name:
+        :param output:
+        :returns:
+        """
+
         return _StubMetric(name, output)
 
     monkeypatch.setattr(

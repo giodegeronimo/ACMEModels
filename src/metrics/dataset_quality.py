@@ -1,4 +1,9 @@
-"""Dataset quality metric focusing on documentation and freshness."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Dataset quality metric focusing on documentation and freshness.
+"""
 
 from __future__ import annotations
 
@@ -57,13 +62,47 @@ OSI_LICENSES = {
 
 
 class _HFClientProtocol(Protocol):
+    """
+    dataset_exists: Function description.
+    :param dataset_id:
+    :returns:
+    """
+
+    """
+    _HFClientProtocol: Class description.
+    """
+
     def dataset_exists(self, dataset_id: str) -> bool: ...
+
+    """
+    get_dataset_info: Function description.
+    :param dataset_id:
+    :returns:
+    """
 
     def get_dataset_info(self, dataset_id: str) -> Any: ...
 
+    """
+    get_model_info: Function description.
+    :param repo_id:
+    :returns:
+    """
+
     def get_model_info(self, repo_id: str) -> Any: ...
 
+    """
+    get_model_readme: Function description.
+    :param repo_id:
+    :returns:
+    """
+
     def get_model_readme(self, repo_id: str) -> str: ...
+
+    """
+    count_models_trained_on_dataset: Function description.
+    :param dataset_id:
+    :returns:
+    """
 
     def count_models_trained_on_dataset(self, dataset_id: str) -> int: ...
 
@@ -72,10 +111,22 @@ class DatasetQualityMetric(Metric):
     """Quality assessment for datasets referenced by a model."""
 
     def __init__(self, hf_client: Optional[_HFClientProtocol] = None) -> None:
+        """
+        __init__: Function description.
+        :param hf_client:
+        :returns:
+        """
+
         super().__init__(name="Dataset Quality", key="dataset_quality")
         self._hf_client: _HFClientProtocol = hf_client or HFClient()
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
+        """
+        compute: Function description.
+        :param url_record:
+        :returns:
+        """
+
         hf_url = _extract_hf_url(url_record)
         if fail_stub_active(FAIL):
             fallback_url = hf_url or _DEFAULT_URL
@@ -155,6 +206,13 @@ class DatasetQualityMetric(Metric):
         url_record: Dict[str, str],
         hf_url: Optional[str],
     ) -> Optional[str]:
+        """
+        _find_dataset_slug: Function description.
+        :param url_record:
+        :param hf_url:
+        :returns:
+        """
+
         slug = self._slug_from_manifest(url_record, hf_url)
         if slug:
             return slug
@@ -174,6 +232,13 @@ class DatasetQualityMetric(Metric):
         url_record: Dict[str, str],
         hf_url: Optional[str],
     ) -> Optional[str]:
+        """
+        _slug_from_manifest: Function description.
+        :param url_record:
+        :param hf_url:
+        :returns:
+        """
+
         ds_url = url_record.get("ds_url")
         if not ds_url:
             return None
@@ -196,6 +261,12 @@ class DatasetQualityMetric(Metric):
         return None
 
     def _slug_from_metadata(self, hf_url: Optional[str]) -> Optional[str]:
+        """
+        _slug_from_metadata: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         if not hf_url:
             return None
 
@@ -230,6 +301,12 @@ class DatasetQualityMetric(Metric):
         return None
 
     def _slug_from_readme(self, hf_url: Optional[str]) -> Optional[str]:
+        """
+        _slug_from_readme: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         if not hf_url:
             return None
         if not enable_readme_fallback():
@@ -255,6 +332,12 @@ class DatasetQualityMetric(Metric):
         return None
 
     def _first_valid_dataset(self, entries: list[str]) -> Optional[str]:
+        """
+        _first_valid_dataset: Function description.
+        :param entries:
+        :returns:
+        """
+
         for entry in entries:
             if self._dataset_reference_is_valid(entry):
                 slug = _to_dataset_slug(entry)
@@ -263,6 +346,12 @@ class DatasetQualityMetric(Metric):
         return None
 
     def _score_metadata(self, dataset_info: Any) -> float:
+        """
+        _score_metadata: Function description.
+        :param dataset_info:
+        :returns:
+        """
+
         card_data = getattr(dataset_info, "card_data", {}) or {}
         description = getattr(dataset_info, "description", None)
 
@@ -292,6 +381,12 @@ class DatasetQualityMetric(Metric):
         return score
 
     def _score_splits(self, dataset_info: Any) -> float:
+        """
+        _score_splits: Function description.
+        :param dataset_info:
+        :returns:
+        """
+
         card_data = getattr(dataset_info, "card_data", {}) or {}
         dataset_info_section = card_data.get("dataset_info", {})
         splits = None
@@ -312,6 +407,12 @@ class DatasetQualityMetric(Metric):
         return score
 
     def _score_license(self, dataset_info: Any) -> float:
+        """
+        _score_license: Function description.
+        :param dataset_info:
+        :returns:
+        """
+
         card_data = getattr(dataset_info, "card_data", {}) or {}
         license_field = card_data.get("license")
         licenses: list[str] = []
@@ -335,6 +436,13 @@ class DatasetQualityMetric(Metric):
         dataset_info: Any,
         models_count: int,
     ) -> float:
+        """
+        _score_adoption: Function description.
+        :param dataset_info:
+        :param models_count:
+        :returns:
+        """
+
         downloads = getattr(dataset_info, "downloads", 0) or 0
         likes = getattr(dataset_info, "likes", 0) or 0
 
@@ -355,6 +463,12 @@ class DatasetQualityMetric(Metric):
         return score
 
     def _score_freshness(self, dataset_info: Any) -> float:
+        """
+        _score_freshness: Function description.
+        :param dataset_info:
+        :returns:
+        """
+
         last_modified = getattr(dataset_info, "last_modified", None)
         if not isinstance(last_modified, datetime):
             return 0.0
@@ -387,6 +501,13 @@ class DatasetQualityMetric(Metric):
         url_record: Dict[str, str],
         hf_url: Optional[str],
     ) -> float:
+        """
+        _dataset_score_from_manifest: Function description.
+        :param url_record:
+        :param hf_url:
+        :returns:
+        """
+
         ds_url = url_record.get("ds_url")
         if not ds_url or not ds_url.strip():
             _LOGGER.debug("No dataset URL in manifest for %s", hf_url)
@@ -408,6 +529,12 @@ class DatasetQualityMetric(Metric):
         return 0.0
 
     def _count_models_using_dataset(self, slug: str) -> int:
+        """
+        _count_models_using_dataset: Function description.
+        :param slug:
+        :returns:
+        """
+
         try:
             return self._hf_client.count_models_trained_on_dataset(slug)
         except Exception as exc:  # pragma: no cover - defensive
@@ -419,6 +546,12 @@ class DatasetQualityMetric(Metric):
             return 0
 
     def _dataset_reference_is_valid(self, reference: str) -> bool:
+        """
+        _dataset_reference_is_valid: Function description.
+        :param reference:
+        :returns:
+        """
+
         try:
             slug = _to_dataset_slug(reference)
             if not slug:
@@ -437,6 +570,12 @@ class DatasetQualityMetric(Metric):
             return False
 
     def _safe_dataset_info(self, dataset_slug: str) -> Optional[Any]:
+        """
+        _safe_dataset_info: Function description.
+        :param dataset_slug:
+        :returns:
+        """
+
         try:
             return self._hf_client.get_dataset_info(dataset_slug)
         except Exception as exc:
@@ -448,6 +587,12 @@ class DatasetQualityMetric(Metric):
             return None
 
     def _safe_model_info(self, hf_url: str) -> Optional[Any]:
+        """
+        _safe_model_info: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         try:
             return self._hf_client.get_model_info(hf_url)
         except Exception as exc:
@@ -455,6 +600,12 @@ class DatasetQualityMetric(Metric):
             return None
 
     def _safe_readme(self, hf_url: str) -> Optional[str]:
+        """
+        _safe_readme: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         try:
             readme = self._hf_client.get_model_readme(hf_url)
         except Exception as exc:
@@ -464,10 +615,22 @@ class DatasetQualityMetric(Metric):
 
 
 def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:
+    """
+    _extract_hf_url: Function description.
+    :param record:
+    :returns:
+    """
+
     return record.get("hf_url")
 
 
 def _flatten_dataset_entries(entry: Any) -> list[str]:
+    """
+    _flatten_dataset_entries: Function description.
+    :param entry:
+    :returns:
+    """
+
     if entry is None:
         return []
 
@@ -482,6 +645,12 @@ def _flatten_dataset_entries(entry: Any) -> list[str]:
 
 
 def _extract_dataset_from_readme(text: str) -> Optional[str]:
+    """
+    _extract_dataset_from_readme: Function description.
+    :param text:
+    :returns:
+    """
+
     if not text:
         return None
     match = _DATASET_URL_PATTERN.search(text)
@@ -491,6 +660,12 @@ def _extract_dataset_from_readme(text: str) -> Optional[str]:
 
 
 def _extract_dataset_candidates_from_readme(text: str) -> list[str]:
+    """
+    _extract_dataset_candidates_from_readme: Function description.
+    :param text:
+    :returns:
+    """
+
     candidates: list[str] = []
     front_matter = _extract_front_matter(text)
     if front_matter:
@@ -511,6 +686,12 @@ def _extract_dataset_candidates_from_readme(text: str) -> list[str]:
 
 
 def _extract_front_matter(text: str) -> str | None:
+    """
+    _extract_front_matter: Function description.
+    :param text:
+    :returns:
+    """
+
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         return None
@@ -521,6 +702,12 @@ def _extract_front_matter(text: str) -> str | None:
 
 
 def _extract_datasets_from_front_matter(front_matter: str) -> list[str]:
+    """
+    _extract_datasets_from_front_matter: Function description.
+    :param front_matter:
+    :returns:
+    """
+
     datasets: list[str] = []
     lines = front_matter.splitlines()
     in_section = False
@@ -562,6 +749,12 @@ def _extract_datasets_from_front_matter(front_matter: str) -> list[str]:
 
 
 def _to_dataset_slug(candidate: str) -> Optional[str]:
+    """
+    _to_dataset_slug: Function description.
+    :param candidate:
+    :returns:
+    """
+
     if not candidate:
         return None
 

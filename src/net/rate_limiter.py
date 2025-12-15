@@ -1,4 +1,9 @@
-"""Simple token-bucket rate limiter for external service clients."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Simple token-bucket rate limiter for external service clients.
+"""
 
 from __future__ import annotations
 
@@ -24,6 +29,15 @@ class RateLimiter:
         time_fn: Optional[Callable[[], float]] = None,
         sleep_fn: Optional[Callable[[float], None]] = None,
     ) -> None:
+        """
+        __init__: Function description.
+        :param max_calls:
+        :param period_seconds:
+        :param time_fn:
+        :param sleep_fn:
+        :returns:
+        """
+
         if max_calls <= 0:
             raise ValueError("max_calls must be positive.")
         if period_seconds <= 0:
@@ -59,6 +73,12 @@ class RateLimiter:
             self._sleep_fn(wait_time)
 
     def _refill_tokens(self, now: float) -> None:
+        """
+        _refill_tokens: Function description.
+        :param now:
+        :returns:
+        """
+
         elapsed = now - self._last_refill
         if elapsed <= 0:
             return

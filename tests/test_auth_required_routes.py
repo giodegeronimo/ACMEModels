@@ -1,4 +1,9 @@
-"""Table-driven checks for auth-required vs open routes."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Table-driven checks for auth-required vs open routes.
+"""
 
 from __future__ import annotations
 
@@ -36,6 +41,12 @@ from backend.src.handlers.tracks import app as tracks_handler
     ],
 )
 def test_protected_routes_require_auth(handler) -> None:
+    """
+    test_protected_routes_require_auth: Function description.
+    :param handler:
+    :returns:
+    """
+
     response = handler({"headers": {}}, {})
     assert response["statusCode"] == 403
 
@@ -47,10 +58,23 @@ def test_protected_routes_require_auth(handler) -> None:
     ],
 )
 def test_open_routes_allow_anonymous(handler, event) -> None:
+    """
+    test_open_routes_allow_anonymous: Function description.
+    :param handler:
+    :param event:
+    :returns:
+    """
+
     response = handler(event, {})
     assert response["statusCode"] == 200
 
 
 def test_tracks_allows_anonymous() -> None:
+    """
+    test_tracks_allows_anonymous: Function description.
+    :param:
+    :returns:
+    """
+
     response = tracks_handler.lambda_handler({"headers": {}}, {})
     assert response["statusCode"] == 200

@@ -1,4 +1,9 @@
-"""Lineage graph domain models."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Lineage graph domain models.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +23,12 @@ class ArtifactLineageNode:
     metadata: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
+        """
+        __post_init__: Function description.
+        :param:
+        :returns:
+        """
+
         validate_artifact_id(self.artifact_id)
 
 
@@ -30,6 +41,12 @@ class ArtifactLineageEdge:
     relationship: str
 
     def __post_init__(self) -> None:
+        """
+        __post_init__: Function description.
+        :param:
+        :returns:
+        """
+
         validate_artifact_id(self.from_node_artifact_id)
         validate_artifact_id(self.to_node_artifact_id)
         if not self.relationship:
@@ -44,5 +61,11 @@ class ArtifactLineageGraph:
     edges: Sequence[ArtifactLineageEdge]
 
     def __post_init__(self) -> None:
+        """
+        __post_init__: Function description.
+        :param:
+        :returns:
+        """
+
         if not self.nodes:
             raise ValueError("Lineage graph must include at least one node")

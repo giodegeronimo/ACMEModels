@@ -1,4 +1,9 @@
-"""Tests for test size metric module."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for test size metric module.
+"""
 
 from __future__ import annotations
 
@@ -10,22 +15,51 @@ from src.metrics.size import SizeMetric
 
 
 class _FakeHFClient:
+    """
+    _FakeHFClient: Class description.
+    """
+
     def __init__(self, files: Iterable[Tuple[str, int]]) -> None:
+        """
+        __init__: Function description.
+        :param files:
+        :returns:
+        """
+
         self._files = list(files)
         self.calls: list[str] = []
 
     def list_model_files(
         self, repo_id: str, *, recursive: bool = True
     ) -> list[tuple[str, int]]:
+        """
+        list_model_files: Function description.
+        :param repo_id:
+        :param recursive:
+        :returns:
+        """
+
         self.calls.append(repo_id)
         return list(self._files)
 
 
 def _gb(gb: float) -> int:
+    """
+    _gb: Function description.
+    :param gb:
+    :returns:
+    """
+
     return int(gb * (1024 ** 3))
 
 
 def test_size_metric_chooses_best_variant() -> None:
+    """
+    test_size_metric_chooses_best_variant: Function description.
+    :param:
+    :returns:
+    """
+
     files = [
         ("pytorch_model-00001-of-00002.bin", _gb(2.0)),
         ("pytorch_model-00002-of-00002.bin", _gb(2.0)),
@@ -49,6 +83,12 @@ def test_size_metric_chooses_best_variant() -> None:
 
 
 def test_size_metric_filters_non_weight_files() -> None:
+    """
+    test_size_metric_filters_non_weight_files: Function description.
+    :param:
+    :returns:
+    """
+
     files = [
         ("README.md", 10_000),
         ("config.json", 1_000),
@@ -64,12 +104,24 @@ def test_size_metric_filters_non_weight_files() -> None:
 
 
 def test_size_metric_no_hf_url_returns_zeros() -> None:
+    """
+    test_size_metric_no_hf_url_returns_zeros: Function description.
+    :param:
+    :returns:
+    """
+
     metric = SizeMetric(hf_client=_FakeHFClient([]))
     scores = metric.compute({})
     assert all(value == pytest.approx(0.0) for value in scores.values())
 
 
 def test_size_metric_no_weight_files_returns_zeros() -> None:
+    """
+    test_size_metric_no_weight_files_returns_zeros: Function description.
+    :param:
+    :returns:
+    """
+
     files = [("README.md", 1000), ("config.json", 2000)]
     metric = SizeMetric(hf_client=_FakeHFClient(files))
 

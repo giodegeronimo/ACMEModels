@@ -1,4 +1,9 @@
-"""Domain models for artifacts and related helpers."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Domain models for artifacts and related helpers.
+"""
 
 from __future__ import annotations
 
@@ -66,6 +71,12 @@ class ArtifactData:
 
     def __post_init__(self) -> None:
         # Ensure the ingest URL is a valid absolute URI.
+        """
+        __post_init__: Function description.
+        :param:
+        :returns:
+        """
+
         validate_url(self.url)
 
 
@@ -78,6 +89,12 @@ class ArtifactMetadata:
     type: ArtifactType
 
     def __post_init__(self) -> None:
+        """
+        __post_init__: Function description.
+        :param:
+        :returns:
+        """
+
         validate_artifact_name(self.name, allow_wildcard=False)
         validate_artifact_id(self.id)
         if not isinstance(self.type, ArtifactType):
@@ -102,6 +119,12 @@ class ArtifactQuery:
     types: Optional[list[ArtifactType]] = None
 
     def __post_init__(self) -> None:
+        """
+        __post_init__: Function description.
+        :param:
+        :returns:
+        """
+
         validate_artifact_name(self.name, allow_wildcard=True)
         if self.types:
             for t in self.types:

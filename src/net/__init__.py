@@ -1,1 +1,6 @@
-"""Networking utilities for the ACME Models CLI."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Networking utilities for the ACME Models CLI.
+"""

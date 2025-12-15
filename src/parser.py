@@ -1,4 +1,9 @@
-"""Manifest parser for newline-delimited model URL files."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Manifest parser for newline-delimited model URL files.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,12 @@ class Parser:
     EXPECTED_FIELDS = ("git_url", "ds_url", "hf_url")
 
     def __init__(self, url_file: Union[Path, str]) -> None:
+        """
+        __init__: Function description.
+        :param url_file:
+        :returns:
+        """
+
         self._url_file = Path(url_file)
 
     def parse(self) -> List[Dict[str, str]]:

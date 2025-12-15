@@ -1,4 +1,9 @@
-"""Lambda handler for POST /artifact/model/{id}/license-check."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Lambda handler for POST /artifact/model/{id}/license-check.
+"""
 
 from __future__ import annotations
 
@@ -64,6 +69,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def _parse_artifact_id(event: Dict[str, Any]) -> str:
+    """Parse and validate `artifact_id` from the request.
+
+    :param event:
+    :returns:
+    """
+
     artifact_id = (event.get("pathParameters") or {}).get("id")
     if not artifact_id:
         raise ValueError("Path parameter 'id' is required")
@@ -73,10 +84,22 @@ def _parse_artifact_id(event: Dict[str, Any]) -> str:
 def _require_auth(event: Dict[str, Any]) -> None:
     # Require auth header per spec; env override can still relax via
     # AUTH_OPTIONAL=1
+    """Enforce request authentication for this handler.
+
+    :param event:
+    :returns:
+    """
+
     require_auth_token(event, optional=False)
 
 
 def _parse_body(event: Dict[str, Any]) -> str:
+    """Parse and validate `body` from the request.
+
+    :param event:
+    :returns:
+    """
+
     body = event.get("body")
     if body is None:
         raise ValueError("Request body is required")
@@ -111,6 +134,12 @@ def _parse_body(event: Dict[str, Any]) -> str:
 
 
 def _evaluate_license(github_url: str) -> bool:
+    """Helper function.
+
+    :param github_url:
+    :returns:
+    """
+
     client = _git_client()
     metadata = client.get_repo_metadata(github_url)
     candidates = _extract_license_candidates(metadata)
@@ -123,6 +152,12 @@ def _evaluate_license(github_url: str) -> bool:
 
 
 def _extract_license_candidates(metadata: Dict[str, Any]) -> List[str]:
+    """Helper function.
+
+    :param metadata:
+    :returns:
+    """
+
     license_field = metadata.get("license")
     values: list[str] = []
     if isinstance(license_field, dict):
@@ -138,6 +173,12 @@ def _extract_license_candidates(metadata: Dict[str, Any]) -> List[str]:
 
 
 def _normalize_candidates(values: Iterable[str]) -> List[str]:
+    """Helper function.
+
+    :param values:
+    :returns:
+    """
+
     normalized: list[str] = []
     for value in values:
         slug = _normalize_slug(value)
@@ -155,6 +196,12 @@ def _normalize_candidates(values: Iterable[str]) -> List[str]:
 
 
 def _map_external_error(error: RuntimeError) -> HTTPStatus:
+    """Helper function.
+
+    :param error:
+    :returns:
+    """
+
     msg = str(error).lower()
     if "404" in msg or "not found" in msg:
         return HTTPStatus.NOT_FOUND
@@ -162,6 +209,10 @@ def _map_external_error(error: RuntimeError) -> HTTPStatus:
 
 
 def _git_client() -> GitClient:
+    """Helper function.
+    :returns:
+    """
+
     global _GIT_CLIENT
     if _GIT_CLIENT is None:
         _GIT_CLIENT = GitClient()
@@ -169,6 +220,13 @@ def _git_client() -> GitClient:
 
 
 def _json_response(status: HTTPStatus, body: Any) -> Dict[str, Any]:
+    """Create a JSON API Gateway proxy response.
+
+    :param status:
+    :param body:
+    :returns:
+    """
+
     return {
         "statusCode": status.value,
         "headers": {"Content-Type": "application/json"},
@@ -177,10 +235,23 @@ def _json_response(status: HTTPStatus, body: Any) -> Dict[str, Any]:
 
 
 def _error_response(status: HTTPStatus, message: str) -> Dict[str, Any]:
+    """Create a JSON error response payload.
+
+    :param status:
+    :param message:
+    :returns:
+    """
+
     return _json_response(status, {"error": message})
 
 
 # Exposed for tests
 def _set_git_client(client: GitClient | None) -> None:
+    """Helper function.
+
+    :param client:
+    :returns:
+    """
+
     global _GIT_CLIENT
     _GIT_CLIENT = client

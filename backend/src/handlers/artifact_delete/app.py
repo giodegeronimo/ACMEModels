@@ -1,4 +1,9 @@
-"""Lambda handler for DELETE /artifacts/{artifact_type}/{id}."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Lambda handler for DELETE /artifacts/{artifact_type}/{id}.
+"""
 
 from __future__ import annotations
 
@@ -118,6 +123,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def _parse_artifact_type(event: Dict[str, Any]) -> ArtifactType:
+    """Parse and validate `artifact_type` from the request.
+
+    :param event:
+    :returns:
+    """
+
     raw_type = (event.get("pathParameters") or {}).get("artifact_type")
     if not raw_type:
         raise ValueError("Path parameter 'artifact_type' is required")
@@ -131,6 +142,12 @@ def _parse_artifact_type(event: Dict[str, Any]) -> ArtifactType:
 
 
 def _parse_artifact_id(event: Dict[str, Any]) -> str:
+    """Parse and validate `artifact_id` from the request.
+
+    :param event:
+    :returns:
+    """
+
     artifact_id = (event.get("pathParameters") or {}).get("id")
     if not artifact_id:
         raise ValueError("Path parameter 'id' is required")
@@ -138,6 +155,12 @@ def _parse_artifact_id(event: Dict[str, Any]) -> str:
 
 
 def _require_auth(event: Dict[str, Any]) -> None:
+    """Enforce request authentication for this handler.
+
+    :param event:
+    :returns:
+    """
+
     require_auth_token(event, optional=False)
 
 
@@ -225,6 +248,10 @@ def _delete_artifact_from_name_index(
 
 
 def _success_response() -> Dict[str, Any]:
+    """Create an API Gateway proxy response payload.
+    :returns:
+    """
+
     return {
         "statusCode": HTTPStatus.OK.value,
         "headers": {"Content-Type": "application/json"},
@@ -233,6 +260,13 @@ def _success_response() -> Dict[str, Any]:
 
 
 def _error_response(status: HTTPStatus, message: str) -> Dict[str, Any]:
+    """Create a JSON error response payload.
+
+    :param status:
+    :param message:
+    :returns:
+    """
+
     return {
         "statusCode": status.value,
         "headers": {"Content-Type": "application/json"},

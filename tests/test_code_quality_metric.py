@@ -1,4 +1,9 @@
-"""Tests for test code quality metric module."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for test code quality metric module.
+"""
 
 from __future__ import annotations
 
@@ -12,13 +17,27 @@ from src.metrics.code_quality import CodeQualityMetric
 
 @dataclass
 class _FakeHFClient:
+    """
+    _FakeHFClient: Class description.
+    """
+
     readme: str
 
     def get_model_readme(self, repo_id: str) -> str:
+        """
+        get_model_readme: Function description.
+        :param repo_id:
+        :returns:
+        """
+
         return self.readme
 
 
 class _FakeGitClient:
+    """
+    _FakeGitClient: Class description.
+    """
+
     def __init__(
         self,
         *,
@@ -26,6 +45,14 @@ class _FakeGitClient:
         files: Optional[List[str]] = None,
         fail_tree: bool = False,
     ) -> None:
+        """
+        __init__: Function description.
+        :param metadata:
+        :param files:
+        :param fail_tree:
+        :returns:
+        """
+
         self._metadata = metadata
         self._files = files or []
         self._fail_tree = fail_tree
@@ -33,6 +60,12 @@ class _FakeGitClient:
         self.tree_calls: List[str] = []
 
     def get_repo_metadata(self, repo_url: str) -> Dict[str, Any]:
+        """
+        get_repo_metadata: Function description.
+        :param repo_url:
+        :returns:
+        """
+
         self.metadata_calls.append(repo_url)
         if self._metadata is None:
             raise RuntimeError("metadata missing")
@@ -44,6 +77,13 @@ class _FakeGitClient:
         *,
         branch: Optional[str] = None,
     ) -> List[str]:
+        """
+        list_repo_files: Function description.
+        :param repo_url:
+        :param branch:
+        :returns:
+        """
+
         self.tree_calls.append(f"{repo_url}@{branch}")
         if self._fail_tree:
             raise RuntimeError("tree missing")
@@ -51,6 +91,13 @@ class _FakeGitClient:
 
 
 def _metric(readme: str, git_client: _FakeGitClient) -> CodeQualityMetric:
+    """
+    _metric: Function description.
+    :param readme:
+    :param git_client:
+    :returns:
+    """
+
     return CodeQualityMetric(
         hf_client=_FakeHFClient(readme=readme),
         git_client=git_client,
@@ -58,6 +105,12 @@ def _metric(readme: str, git_client: _FakeGitClient) -> CodeQualityMetric:
 
 
 def test_code_quality_scores_high_with_repo_signals() -> None:
+    """
+    test_code_quality_scores_high_with_repo_signals: Function description.
+    :param:
+    :returns:
+    """
+
     readme = (
         "# Project\n"
         "## Installation\nRun the installer.\n"
@@ -96,6 +149,12 @@ def test_code_quality_scores_high_with_repo_signals() -> None:
 
 
 def test_code_quality_uses_readme_repo_link() -> None:
+    """
+    test_code_quality_uses_readme_repo_link: Function description.
+    :param:
+    :returns:
+    """
+
     readme = (
         "Code at https://github.com/example/repo\n"
         "## Usage\nDetails\n"
@@ -113,6 +172,12 @@ def test_code_quality_uses_readme_repo_link() -> None:
 
 
 def test_code_quality_handles_missing_repo() -> None:
+    """
+    test_code_quality_handles_missing_repo: Function description.
+    :param:
+    :returns:
+    """
+
     readme = "Short README"
     metric = _metric(readme, _FakeGitClient(metadata=None, files=[]))
 
@@ -123,6 +188,12 @@ def test_code_quality_handles_missing_repo() -> None:
 
 
 def test_code_quality_handles_git_failures() -> None:
+    """
+    test_code_quality_handles_git_failures: Function description.
+    :param:
+    :returns:
+    """
+
     readme = (
         "## Testing\nDocumented\n"
         "## Contributing\nGuidelines\n"

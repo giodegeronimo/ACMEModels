@@ -1,4 +1,9 @@
-"""Central configuration constants for the ACME Models CLI."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Central configuration constants for the ACME Models CLI.
+"""
 
 from __future__ import annotations
 

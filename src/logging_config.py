@@ -1,4 +1,9 @@
-"""Central logging configuration aligned with project requirements."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Central logging configuration aligned with project requirements.
+"""
 
 from __future__ import annotations
 
@@ -45,6 +50,12 @@ def configure_logging() -> None:
 
 
 def _read_level(raw: str) -> Optional[int]:
+    """
+    _read_level: Function description.
+    :param raw:
+    :returns:
+    """
+
     try:
         return int(raw)
     except ValueError:
@@ -52,6 +63,12 @@ def _read_level(raw: str) -> Optional[int]:
 
 
 def _map_level(level: int) -> int:
+    """
+    _map_level: Function description.
+    :param level:
+    :returns:
+    """
+
     if level >= 2:
         return logging.DEBUG
     return logging.INFO

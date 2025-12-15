@@ -1,4 +1,9 @@
-"""Tests for test rate limiter module."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for test rate limiter module.
+"""
 
 from __future__ import annotations
 
@@ -10,19 +15,47 @@ from src.net.rate_limiter import RateLimiter
 
 
 class FakeClock:
+    """
+    FakeClock: Class description.
+    """
+
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self._now = 0.0
         self.sleeps: List[float] = []
 
     def time(self) -> float:
+        """
+        time: Function description.
+        :param:
+        :returns:
+        """
+
         return self._now
 
     def sleep(self, duration: float) -> None:
+        """
+        sleep: Function description.
+        :param duration:
+        :returns:
+        """
+
         self.sleeps.append(duration)
         self._now += duration
 
 
 def test_rate_limiter_allows_initial_burst() -> None:
+    """
+    test_rate_limiter_allows_initial_burst: Function description.
+    :param:
+    :returns:
+    """
+
     clock = FakeClock()
     limiter = RateLimiter(
         max_calls=3,
@@ -39,6 +72,12 @@ def test_rate_limiter_allows_initial_burst() -> None:
 
 
 def test_rate_limiter_blocks_when_tokens_exhausted() -> None:
+    """
+    test_rate_limiter_blocks_when_tokens_exhausted: Function description.
+    :param:
+    :returns:
+    """
+
     clock = FakeClock()
     limiter = RateLimiter(
         max_calls=2,
@@ -57,6 +96,12 @@ def test_rate_limiter_blocks_when_tokens_exhausted() -> None:
 
 
 def test_rate_limiter_rejects_invalid_configuration() -> None:
+    """
+    test_rate_limiter_rejects_invalid_configuration: Function description.
+    :param:
+    :returns:
+    """
+
     with pytest.raises(ValueError):
         RateLimiter(max_calls=0, period_seconds=1.0)
 

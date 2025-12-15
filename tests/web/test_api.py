@@ -1,9 +1,21 @@
+"""
+
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+"""
 from __future__ import annotations
 
 import pytest
 
 
 def test_list_models_returns_results(client):
+    """
+    test_list_models_returns_results: Function description.
+    :param client:
+    :returns:
+    """
+
     response = client.get("/api/models?limit=2")
     assert response.status_code == 200
     payload = response.get_json()
@@ -13,6 +25,12 @@ def test_list_models_returns_results(client):
 
 
 def test_model_regex_validation(client):
+    """
+    test_model_regex_validation: Function description.
+    :param client:
+    :returns:
+    """
+
     response = client.get("/api/models?q=*invalid[")
     assert response.status_code == 400
     payload = response.get_json()
@@ -20,6 +38,12 @@ def test_model_regex_validation(client):
 
 
 def test_ingest_rejects_low_scores(client):
+    """
+    test_ingest_rejects_low_scores: Function description.
+    :param client:
+    :returns:
+    """
+
     payload = {
         "name": "hf/some-model",
         "source_url": "https://huggingface.co/some-model",
@@ -48,6 +72,13 @@ def test_ingest_rejects_low_scores(client):
     ],
 )
 def test_lineage_available(client, model_id):
+    """
+    test_lineage_available: Function description.
+    :param client:
+    :param model_id:
+    :returns:
+    """
+
     response = client.get(f"/api/models/{model_id}/lineage")
     assert response.status_code == 200
     payload = response.get_json()
@@ -57,6 +88,12 @@ def test_lineage_available(client, model_id):
 
 
 def test_license_assessment_requires_fields(client):
+    """
+    test_license_assessment_requires_fields: Function description.
+    :param client:
+    :returns:
+    """
+
     response = client.post("/api/license-check", json={})
     assert response.status_code == 400
     assert "required" in response.get_json()["error"]

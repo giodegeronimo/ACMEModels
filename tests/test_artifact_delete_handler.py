@@ -1,4 +1,9 @@
-"""Tests for DELETE /artifacts/{artifact_type}/{id} handler."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for DELETE /artifacts/{artifact_type}/{id} handler.
+"""
 
 from __future__ import annotations
 
@@ -29,6 +34,13 @@ def _reset_stores(monkeypatch: pytest.MonkeyPatch) -> None:
 def _event(
     artifact_type: str = "model", artifact_id: str = "test123"
 ) -> Dict[str, Any]:
+    """
+    _event: Function description.
+    :param artifact_type:
+    :param artifact_id:
+    :returns:
+    """
+
     token = auth.issue_token("tester", is_admin=True)
     return {
         "pathParameters": {"artifact_type": artifact_type, "id": artifact_id},
@@ -236,14 +248,37 @@ def test_delete_missing_artifact_id() -> None:
 
 
 class _FakeMetadataStore:
+    """
+    _FakeMetadataStore: Class description.
+    """
+
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self.records: dict[str, Artifact] = {}
 
     def save(self, artifact: Artifact, *, overwrite: bool = False) -> None:
+        """
+        save: Function description.
+        :param artifact:
+        :param overwrite:
+        :returns:
+        """
+
         artifact_id = artifact.metadata.id
         self.records[artifact_id] = artifact
 
     def load(self, artifact_id: str) -> Artifact:
+        """
+        load: Function description.
+        :param artifact_id:
+        :returns:
+        """
+
         try:
             return self.records[artifact_id]
         except KeyError:
@@ -253,9 +288,25 @@ class _FakeMetadataStore:
 
 
 class _FakeNameIndex:
+    """
+    _FakeNameIndex: Class description.
+    """
+
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self.should_fail = False
 
     def delete(self, entry: Any) -> None:
+        """
+        delete: Function description.
+        :param entry:
+        :returns:
+        """
+
         if self.should_fail:
             raise Exception("Name index deletion failed")

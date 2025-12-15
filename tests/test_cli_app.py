@@ -1,4 +1,9 @@
-"""Tests for test cli app module."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for test cli app module.
+"""
 
 
 from __future__ import annotations
@@ -14,6 +19,12 @@ from src.metrics.registry import default_metrics
 
 
 def _parse_ndjson(text: str) -> list[dict[str, Any]]:
+    """
+    _parse_ndjson: Function description.
+    :param text:
+    :returns:
+    """
+
     lines = [line for line in text.strip().splitlines() if line.strip()]
     return [json.loads(line) for line in lines]
 
@@ -21,6 +32,13 @@ def _parse_ndjson(text: str) -> list[dict[str, Any]]:
 def test_cli_app_run_outputs_expected_json(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """
+    test_cli_app_run_outputs_expected_json: Function description.
+    :param tmp_path:
+    :param capsys:
+    :returns:
+    """
+
     url_file = tmp_path / "urls.txt"
     url_file.write_text(
         (
@@ -58,6 +76,13 @@ def test_cli_app_run_outputs_expected_json(
 def test_cli_main_calls_cli_app(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """
+    test_cli_main_calls_cli_app: Function description.
+    :param tmp_path:
+    :param capsys:
+    :returns:
+    """
+
     url_file = tmp_path / "urls.txt"
     url_file.write_text(
         ",,https://hf.co/model\n",
@@ -73,6 +98,12 @@ def test_cli_main_calls_cli_app(
 
 
 def test_build_arg_parser_requires_url_file() -> None:
+    """
+    test_build_arg_parser_requires_url_file: Function description.
+    :param:
+    :returns:
+    """
+
     parser = build_arg_parser()
     namespace = parser.parse_args(["/tmp/input.txt"])
     assert Path(namespace.url_file) == Path("/tmp/input.txt")

@@ -91,7 +91,7 @@ def test_atomic_group_serializes_concurrent_executes() -> None:
         :returns:
         """
 
-        gate.wait(timeout=1.0)
+        assert gate.wait(timeout=1.0)
         timeline.append("t2-enter")
         timeline.append("t2-exit")
 
@@ -101,9 +101,12 @@ def test_atomic_group_serializes_concurrent_executes() -> None:
     t1 = threading.Thread(target=group1.execute)
     t2 = threading.Thread(target=group2.execute)
     t1.start()
+    assert gate.wait(timeout=1.0)
     t2.start()
     t1.join(timeout=2)
     t2.join(timeout=2)
+    assert not t1.is_alive()
+    assert not t2.is_alive()
 
     assert "t1-enter" in timeline and "t2-enter" in timeline
     assert timeline.index("t1-exit") < timeline.index("t2-enter")

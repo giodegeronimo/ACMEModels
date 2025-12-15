@@ -220,7 +220,14 @@ def _ddb_client():
 
     global _DDB_CLIENT
     if _DDB_CLIENT is None:
-        _DDB_CLIENT = boto3.client("dynamodb") if boto3 is not None else None
+        if boto3 is None:
+            _DDB_CLIENT = None
+        else:
+            try:
+                _DDB_CLIENT = boto3.client("dynamodb")
+            except Exception as exc:  # pragma: no cover - environment dependent
+                _LOGGER.debug("Failed to initialize DynamoDB client: %s", exc)
+                _DDB_CLIENT = None
     return _DDB_CLIENT
 
 
@@ -231,8 +238,11 @@ def _put_token_ddb(record: TokenRecord) -> None:
     :returns:
     """
 
+    if _DDB_TABLE is None:
+        _TOKENS[record.token] = record
+        return
     client = _ddb_client()
-    if client is None or _DDB_TABLE is None:
+    if client is None:
         _TOKENS[record.token] = record
         return
     expires_at = int(record.issued_at + _get_expiry_seconds())
@@ -257,8 +267,10 @@ def _get_token_ddb(token: str) -> TokenRecord | None:
     :returns:
     """
 
+    if _DDB_TABLE is None:
+        return _TOKENS.get(token)
     client = _ddb_client()
-    if client is None or _DDB_TABLE is None:
+    if client is None:
         return _TOKENS.get(token)
     resp = client.get_item(
         TableName=_DDB_TABLE,
@@ -290,8 +302,13 @@ def _increment_usage_ddb(token: str, *, max_uses: int, max_age: int) -> None:
     :returns:
     """
 
+    if _DDB_TABLE is None:
+        record = _TOKENS.get(token)
+        if record:
+            record.usage_count += 1
+        return
     client = _ddb_client()
-    if client is None or _DDB_TABLE is None:
+    if client is None:
         record = _TOKENS.get(token)
         if record:
             record.usage_count += 1
@@ -327,8 +344,13 @@ def _validate_and_increment_usage_ddb(
 ) -> TokenRecord | None:
     """Validate token constraints and increment usage in a single DDB call."""
 
+    if _DDB_TABLE is None:
+        record = _TOKENS.get(token)
+        if record:
+            record.usage_count += 1
+        return record
     client = _ddb_client()
-    if client is None or _DDB_TABLE is None:
+    if client is None:
         record = _TOKENS.get(token)
         if record:
             record.usage_count += 1

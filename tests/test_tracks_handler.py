@@ -1,4 +1,9 @@
-"""Tests for GET /tracks handler."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for GET /tracks handler.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +14,12 @@ from backend.src.handlers.tracks import app as handler
 
 
 def _event() -> Dict[str, Any]:
+    """
+    _event: Function description.
+    :param:
+    :returns:
+    """
+
     return {
         "requestContext": {"http": {"method": "GET", "path": "/tracks"}},
         "headers": {},
@@ -16,6 +27,12 @@ def _event() -> Dict[str, Any]:
 
 
 def test_tracks_handler_returns_default_tracks(monkeypatch) -> None:
+    """
+    test_tracks_handler_returns_default_tracks: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     response = handler.lambda_handler(_event(), None)
 
     assert response["statusCode"] == 200

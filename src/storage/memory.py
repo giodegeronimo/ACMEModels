@@ -1,4 +1,9 @@
-"""In-memory repository implementations for development and tests."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+In-memory repository implementations for development and tests.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +22,13 @@ from .errors import (ArtifactNotFound, AuditLogNotFound, LineageNotFound,
 def _artifact_matches_query(
     metadata: ArtifactMetadata, query: ArtifactQuery
 ) -> bool:
+    """
+    _artifact_matches_query: Function description.
+    :param metadata:
+    :param query:
+    :returns:
+    """
+
     if query.name != "*" and metadata.name != query.name:
         return False
     if query.types:
@@ -30,9 +42,21 @@ class InMemoryArtifactRepository(ArtifactRepository):
     """Dictionary-backed artifact store."""
 
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self._artifacts: Dict[str, Artifact] = {}
 
     def create(self, artifact: Artifact) -> Artifact:
+        """
+        create: Function description.
+        :param artifact:
+        :returns:
+        """
+
         artifact_id = artifact.metadata.id
         if artifact_id in self._artifacts:
             raise ValidationError(f"Artifact '{artifact_id}' already exists")
@@ -40,6 +64,12 @@ class InMemoryArtifactRepository(ArtifactRepository):
         return artifact
 
     def update(self, artifact: Artifact) -> Artifact:
+        """
+        update: Function description.
+        :param artifact:
+        :returns:
+        """
+
         artifact_id = artifact.metadata.id
         if artifact_id not in self._artifacts:
             raise ArtifactNotFound(f"Artifact '{artifact_id}' does not exist")
@@ -47,6 +77,12 @@ class InMemoryArtifactRepository(ArtifactRepository):
         return artifact
 
     def get(self, artifact_id: str) -> Artifact:
+        """
+        get: Function description.
+        :param artifact_id:
+        :returns:
+        """
+
         try:
             return self._artifacts[artifact_id]
         except KeyError as exc:
@@ -55,6 +91,12 @@ class InMemoryArtifactRepository(ArtifactRepository):
             ) from exc
 
     def get_metadata(self, artifact_id: str) -> ArtifactMetadata:
+        """
+        get_metadata: Function description.
+        :param artifact_id:
+        :returns:
+        """
+
         return self.get(artifact_id).metadata
 
     def enumerate(
@@ -64,6 +106,14 @@ class InMemoryArtifactRepository(ArtifactRepository):
         offset: int = 0,
         limit: int = 50,
     ) -> Sequence[ArtifactMetadata]:
+        """
+        enumerate: Function description.
+        :param queries:
+        :param offset:
+        :param limit:
+        :returns:
+        """
+
         if limit < 0 or offset < 0:
             raise ValidationError("offset and limit must be non-negative")
 
@@ -94,10 +144,22 @@ class InMemoryLineageRepository(LineageRepository):
     """Store lineage graphs keyed by artifact id."""
 
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self._graphs: Dict[str, ArtifactLineageGraph] = {}
 
     @staticmethod
     def _validate_graph(graph: ArtifactLineageGraph) -> None:
+        """
+        _validate_graph: Function description.
+        :param graph:
+        :returns:
+        """
+
         node_ids = {node.artifact_id for node in graph.nodes}
         for edge in graph.edges:
             if edge.from_node_artifact_id not in node_ids:
@@ -112,10 +174,23 @@ class InMemoryLineageRepository(LineageRepository):
                 )
 
     def upsert(self, artifact_id: str, graph: ArtifactLineageGraph) -> None:
+        """
+        upsert: Function description.
+        :param artifact_id:
+        :param graph:
+        :returns:
+        """
+
         self._validate_graph(graph)
         self._graphs[artifact_id] = graph
 
     def get(self, artifact_id: str) -> ArtifactLineageGraph:
+        """
+        get: Function description.
+        :param artifact_id:
+        :returns:
+        """
+
         try:
             return self._graphs[artifact_id]
         except KeyError as exc:
@@ -128,10 +203,22 @@ class InMemoryAuditRepository(AuditRepository):
     """Append-only audit log stored in memory."""
 
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self._entries: Dict[str, List[ArtifactAuditEntry]]
         self._entries = defaultdict(list)
 
     def append(self, entry: ArtifactAuditEntry) -> None:
+        """
+        append: Function description.
+        :param entry:
+        :returns:
+        """
+
         artifact_id = entry.artifact.id
         self._entries[artifact_id].append(entry)
 
@@ -141,6 +228,13 @@ class InMemoryAuditRepository(AuditRepository):
         *,
         limit: int = 100,
     ) -> Sequence[ArtifactAuditEntry]:
+        """
+        list: Function description.
+        :param artifact_id:
+        :param limit:
+        :returns:
+        """
+
         events = self._entries.get(artifact_id)
         if not events:
             raise AuditLogNotFound(
@@ -156,16 +250,35 @@ class InMemoryMetricsRepository(MetricsRepository):
     """Route/component counter store."""
 
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self._counters: Dict[str, Dict[str, int]]
         self._counters = defaultdict(dict)
 
     def increment(self, route: str, component: str) -> None:
+        """
+        increment: Function description.
+        :param route:
+        :param component:
+        :returns:
+        """
+
         if not route or not component:
             raise ValidationError("route and component must be provided")
         component_counts = self._counters.setdefault(route, {})
         component_counts[component] = component_counts.get(component, 0) + 1
 
     def snapshot(self) -> Dict[str, Dict[str, int]]:
+        """
+        snapshot: Function description.
+        :param:
+        :returns:
+        """
+
         return {
             route: dict(components)
             for route, components in self._counters.items()

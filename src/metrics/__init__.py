@@ -1,4 +1,9 @@
-"""Metric definitions for the ACME Models CLI."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Metric definitions for the ACME Models CLI.
+"""
 
 from __future__ import annotations
 

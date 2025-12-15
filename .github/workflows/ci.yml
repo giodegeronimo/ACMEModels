@@ -1,3 +1,8 @@
+#
+# ACMEModels Repository
+# Introductory remarks: This configuration is part of ACMEModels.
+#
+
 name: CI
 
 on:

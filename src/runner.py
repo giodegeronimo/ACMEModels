@@ -1,4 +1,9 @@
-"""Helper routines for the top-level `run` launcher."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Helper routines for the top-level `run` launcher.
+"""
 
 from __future__ import annotations
 
@@ -27,6 +32,12 @@ else:
 
 
 def _import_from_src(module: str):
+    """
+    _import_from_src: Function description.
+    :param module:
+    :returns:
+    """
+
     full_name = f"{_PKG_PREFIX}.{module}" if _PKG_PREFIX else module
     return importlib.import_module(full_name)
 
@@ -89,11 +100,23 @@ class _PytestStats:
     """Capture pytest statistics for the ./run test summary."""
 
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self.passed = 0
         self.total = 0
 
     def pytest_runtest_logreport(self, report: Any) -> None:
         # Count only the call phase to skip setup/teardown bookkeeping.
+        """
+        pytest_runtest_logreport: Function description.
+        :param report:
+        :returns:
+        """
+
         if report.when != "call":
             return
 

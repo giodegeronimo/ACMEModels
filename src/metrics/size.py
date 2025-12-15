@@ -1,4 +1,9 @@
-"""Model size metric computing deployability across hardware tiers."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Model size metric computing deployability across hardware tiers.
+"""
 
 from __future__ import annotations
 
@@ -86,6 +91,10 @@ _DEVICE_BINS: dict[str, Tuple[float, float]] = {
 
 
 class _HFClientProtocol(Protocol):
+    """
+    _HFClientProtocol: Class description.
+    """
+
     def list_model_files(
         self, repo_id: str, *, recursive: bool = True
     ) -> list[tuple[str, int]]: ...
@@ -101,10 +110,22 @@ class SizeMetric(Metric):
     """
 
     def __init__(self, hf_client: Optional[_HFClientProtocol] = None) -> None:
+        """
+        __init__: Function description.
+        :param hf_client:
+        :returns:
+        """
+
         super().__init__(name="Size Score", key="size_score")
         self._hf: _HFClientProtocol = hf_client or HFClient()
 
     def compute(self, url_record: Dict[str, str]) -> Mapping[str, float]:
+        """
+        compute: Function description.
+        :param url_record:
+        :returns:
+        """
+
         hf_url = _extract_hf_url(url_record)
         if fail_stub_active(FAIL):
             time.sleep(0.05)
@@ -168,6 +189,12 @@ class SizeMetric(Metric):
 
 
 def _zero_scores() -> Dict[str, float]:
+    """
+    _zero_scores: Function description.
+    :param:
+    :returns:
+    """
+
     return {
         "raspberry_pi": 0.0,
         "jetson_nano": 0.0,
@@ -179,6 +206,12 @@ def _zero_scores() -> Dict[str, float]:
 def _filter_weight_files(
     files: Iterable[tuple[str, int]]
 ) -> list[tuple[str, int]]:
+    """
+    _filter_weight_files: Function description.
+    :param files:
+    :returns:
+    """
+
     results: list[tuple[str, int]] = []
     for path, size in files:
         lower = path.lower()
@@ -191,6 +224,12 @@ def _filter_weight_files(
 
 
 def _group_by_variant(files: Iterable[tuple[str, int]]) -> Dict[str, int]:
+    """
+    _group_by_variant: Function description.
+    :param files:
+    :returns:
+    """
+
     buckets: Dict[str, int] = {}
     for path, size in files:
         name = path.lower()
@@ -204,6 +243,14 @@ def _group_by_variant(files: Iterable[tuple[str, int]]) -> Dict[str, int]:
 
 
 def _piecewise_linear_score(x_gb: float, ideal: float, hard: float) -> float:
+    """
+    _piecewise_linear_score: Function description.
+    :param x_gb:
+    :param ideal:
+    :param hard:
+    :returns:
+    """
+
     if x_gb <= ideal:
         return 1.0
     if x_gb >= hard:
@@ -212,4 +259,10 @@ def _piecewise_linear_score(x_gb: float, ideal: float, hard: float) -> float:
 
 
 def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:
+    """
+    _extract_hf_url: Function description.
+    :param record:
+    :returns:
+    """
+
     return record.get("hf_url")

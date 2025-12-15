@@ -1,4 +1,9 @@
-"""Tests for the POST /artifact/{artifact_type} Lambda handler."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for the POST /artifact/{artifact_type} Lambda handler.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +28,13 @@ from src.utils import auth
 
 @pytest.fixture(autouse=True)
 def _reset_handler(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """
+    _reset_handler: Function description.
+    :param monkeypatch:
+    :param tmp_path:
+    :returns:
+    """
+
     handler._METADATA_STORE = cast(
         ArtifactMetadataStore, _FakeMetadataStore()
     )
@@ -38,6 +50,12 @@ def _reset_handler(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     )
 
     def _fake_prepare(url: str) -> ArtifactBundle:
+        """
+        _fake_prepare: Function description.
+        :param url:
+        :returns:
+        """
+
         bundle_path = tmp_path / f"bundle_{uuid4().hex}.bin"
         bundle_path.write_text("content", encoding="utf-8")
         return ArtifactBundle(
@@ -84,7 +102,17 @@ def _reset_handler(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     fake_client = _FakeLambdaClient()
 
     class _FakeBoto3:
+        """
+        _FakeBoto3: Class description.
+        """
+
         def client(self, service: str):
+            """
+            client: Function description.
+            :param service:
+            :returns:
+            """
+
             assert service == "lambda"
             return fake_client
 
@@ -93,7 +121,17 @@ def _reset_handler(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 
 class _FakeBlobStore:
+    """
+    _FakeBlobStore: Class description.
+    """
+
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self.saved_files: list[tuple[str, Path]] = []
         self.saved_dirs: list[tuple[str, Path]] = []
 
@@ -104,6 +142,14 @@ class _FakeBlobStore:
         *,
         content_type: str | None = None,
     ) -> StoredArtifact:
+        """
+        store_file: Function description.
+        :param artifact_id:
+        :param file_path:
+        :param content_type:
+        :returns:
+        """
+
         self.saved_files.append((artifact_id, file_path))
         return StoredArtifact(
             artifact_id=artifact_id,
@@ -119,6 +165,14 @@ class _FakeBlobStore:
         *,
         content_type: str | None = None,
     ) -> StoredArtifact:
+        """
+        store_directory: Function description.
+        :param artifact_id:
+        :param directory:
+        :param content_type:
+        :returns:
+        """
+
         self.saved_dirs.append((artifact_id, directory))
         return StoredArtifact(
             artifact_id=artifact_id,
@@ -130,6 +184,13 @@ class _FakeBlobStore:
     def generate_download_url(
         self, artifact_id: str, *, expires_in: int = 900
     ) -> DownloadLink:
+        """
+        generate_download_url: Function description.
+        :param artifact_id:
+        :param expires_in:
+        :returns:
+        """
+
         return DownloadLink(
             artifact_id=artifact_id,
             url=f"https://downloads/{artifact_id}?ttl={expires_in}",
@@ -138,16 +199,39 @@ class _FakeBlobStore:
 
 
 class _FakeMetadataStore(ArtifactMetadataStore):
+    """
+    _FakeMetadataStore: Class description.
+    """
+
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self.records: dict[str, Artifact] = {}
 
     def save(self, artifact: Artifact, *, overwrite: bool = False) -> None:
+        """
+        save: Function description.
+        :param artifact:
+        :param overwrite:
+        :returns:
+        """
+
         artifact_id = artifact.metadata.id
         if not overwrite and artifact_id in self.records:
             raise ValidationError(f"Artifact '{artifact_id}' already exists")
         self.records[artifact_id] = artifact
 
     def load(self, artifact_id: str) -> Artifact:
+        """
+        load: Function description.
+        :param artifact_id:
+        :returns:
+        """
+
         try:
             return self.records[artifact_id]
         except KeyError as exc:
@@ -157,7 +241,17 @@ class _FakeMetadataStore(ArtifactMetadataStore):
 
 
 class _FakeLambdaClient:
+    """
+    _FakeLambdaClient: Class description.
+    """
+
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self.invocations: list[dict[str, Any]] = []
 
     def invoke(
@@ -167,6 +261,14 @@ class _FakeLambdaClient:
         InvocationType: str,
         Payload: bytes,
     ) -> dict[str, Any]:
+        """
+        invoke: Function description.
+        :param FunctionName:
+        :param InvocationType:
+        :param Payload:
+        :returns:
+        """
+
         self.invocations.append(
             {
                 "function": FunctionName,
@@ -178,6 +280,10 @@ class _FakeLambdaClient:
 
 
 class _FailingStore(_FakeBlobStore):
+    """
+    _FailingStore: Class description.
+    """
+
     def store_file(
         self,
         artifact_id: str,
@@ -185,6 +291,14 @@ class _FailingStore(_FakeBlobStore):
         *,
         content_type: str | None = None,
     ) -> StoredArtifact:
+        """
+        store_file: Function description.
+        :param artifact_id:
+        :param file_path:
+        :param content_type:
+        :returns:
+        """
+
         raise BlobStoreError("boom")
 
     def store_directory(
@@ -194,17 +308,47 @@ class _FailingStore(_FakeBlobStore):
         *,
         content_type: str | None = None,
     ) -> StoredArtifact:
+        """
+        store_directory: Function description.
+        :param artifact_id:
+        :param directory:
+        :param content_type:
+        :returns:
+        """
+
         raise BlobStoreError("boom")
 
 
 class _FakeNameIndexStore:
+    """
+    _FakeNameIndexStore: Class description.
+    """
+
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self.entries: list[NameIndexEntry] = []
 
     def save(self, entry: NameIndexEntry) -> None:
+        """
+        save: Function description.
+        :param entry:
+        :returns:
+        """
+
         self.entries.append(entry)
 
     def delete(self, entry: NameIndexEntry) -> None:
+        """
+        delete: Function description.
+        :param entry:
+        :returns:
+        """
+
         self.entries = [
             existing for existing in self.entries if existing != entry
         ]
@@ -215,6 +359,13 @@ class _FakeNameIndexStore:
         start_key: Any | None = None,
         limit: int | None = None,
     ) -> tuple[list[NameIndexEntry], Any | None]:
+        """
+        scan: Function description.
+        :param start_key:
+        :param limit:
+        :returns:
+        """
+
         return list(self.entries), None
 
 
@@ -224,6 +375,14 @@ def _event(
     body: Dict[str, Any] | None = None,
     is_base64: bool = False,
 ) -> Dict[str, Any]:
+    """
+    _event: Function description.
+    :param artifact_type:
+    :param body:
+    :param is_base64:
+    :returns:
+    """
+
     payload = json.dumps(body or {"url": "https://huggingface.co/org/model"})
     if is_base64:
         payload = base64.b64encode(payload.encode("utf-8")).decode("utf-8")
@@ -237,6 +396,12 @@ def _event(
 
 
 def test_create_artifact_success() -> None:
+    """
+    test_create_artifact_success: Function description.
+    :param:
+    :returns:
+    """
+
     context = type("Ctx", (), {"invoked_function_arn": "arn:aws:lambda:test"})
     response = handler.lambda_handler(_event(), context=context)
 
@@ -248,6 +413,12 @@ def test_create_artifact_success() -> None:
 
 
 def test_create_artifact_rejects_invalid_type() -> None:
+    """
+    test_create_artifact_rejects_invalid_type: Function description.
+    :param:
+    :returns:
+    """
+
     response = handler.lambda_handler(
         _event(artifact_type="invalid"), context={}
     )
@@ -257,6 +428,12 @@ def test_create_artifact_rejects_invalid_type() -> None:
 
 
 def test_create_artifact_requires_url_field() -> None:
+    """
+    test_create_artifact_requires_url_field: Function description.
+    :param:
+    :returns:
+    """
+
     bad_event = _event(body={"not_url": "value"})
     response = handler.lambda_handler(bad_event, context={})
 
@@ -265,6 +442,12 @@ def test_create_artifact_requires_url_field() -> None:
 
 
 def test_create_artifact_accepts_name_field() -> None:
+    """
+    test_create_artifact_accepts_name_field: Function description.
+    :param:
+    :returns:
+    """
+
     body = {
         "url": "https://huggingface.co/org/model",
         "name": "custom-name",
@@ -277,6 +460,12 @@ def test_create_artifact_accepts_name_field() -> None:
 
 
 def test_create_artifact_ignores_unknown_fields() -> None:
+    """
+    test_create_artifact_ignores_unknown_fields: Function description.
+    :param:
+    :returns:
+    """
+
     body = {
         "url": "https://huggingface.co/org/model",
         "unknown": "value",
@@ -290,6 +479,12 @@ def test_create_artifact_ignores_unknown_fields() -> None:
 def test_create_artifact_handles_duplicate_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_create_artifact_handles_duplicate_ids: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     duplicate_id = "deadbeefdeadbeefdeadbeefdeadbeef"
     monkeypatch.setattr(handler, "_generate_artifact_id", lambda: duplicate_id)
 
@@ -304,6 +499,12 @@ def test_create_artifact_handles_duplicate_ids(
 
 
 def test_store_artifact_records_readme_excerpt(tmp_path: Path) -> None:
+    """
+    test_store_artifact_records_readme_excerpt: Function description.
+    :param tmp_path:
+    :returns:
+    """
+
     metadata = ArtifactMetadata(
         name="example",
         id="artifact-id",
@@ -322,6 +523,12 @@ def test_store_artifact_records_readme_excerpt(tmp_path: Path) -> None:
 
 
 def test_derive_artifact_name_hf_resolve_model() -> None:
+    """
+    test_derive_artifact_name_hf_resolve_model: Function description.
+    :param:
+    :returns:
+    """
+
     url = (
         "https://huggingface.co/openai/whisper-tiny/resolve/main/config.json"
     )
@@ -329,6 +536,12 @@ def test_derive_artifact_name_hf_resolve_model() -> None:
 
 
 def test_derive_artifact_name_hf_resolve_dataset() -> None:
+    """
+    test_derive_artifact_name_hf_resolve_dataset: Function description.
+    :param:
+    :returns:
+    """
+
     url = (
         "https://huggingface.co/datasets/acme/sentiment/resolve/main/data.txt"
     )
@@ -336,6 +549,12 @@ def test_derive_artifact_name_hf_resolve_dataset() -> None:
 
 
 def test_create_artifact_accepts_base64_body() -> None:
+    """
+    test_create_artifact_accepts_base64_body: Function description.
+    :param:
+    :returns:
+    """
+
     context = type("Ctx", (), {"invoked_function_arn": "arn"})
     response = handler.lambda_handler(
         _event(is_base64=True), context=context
@@ -345,7 +564,20 @@ def test_create_artifact_accepts_base64_body() -> None:
 
 
 def test_create_artifact_blob_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    test_create_artifact_blob_failure: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     def _fail(*args, **kwargs):
+        """
+        _fail: Function description.
+        :param *args:
+        :param **kwargs:
+        :returns:
+        """
+
         raise BlobStoreError("boom")
 
     monkeypatch.setattr(handler, "_enqueue_async_ingest", _fail)
@@ -358,6 +590,12 @@ def test_create_artifact_blob_failure(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_create_artifact_returns_202_when_pending(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_create_artifact_returns_202_when_pending: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     monkeypatch.setenv("ACME_DISABLE_ASYNC", "0")
     monkeypatch.setattr(
         handler,
@@ -370,6 +608,12 @@ def test_create_artifact_returns_202_when_pending(
 
 
 def test_async_worker_processes_ingest() -> None:
+    """
+    test_async_worker_processes_ingest: Function description.
+    :param:
+    :returns:
+    """
+
     event = {
         "task": "ingest",
         "artifact": {

@@ -1,3 +1,9 @@
+"""
+
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+"""
 from __future__ import annotations
 
 from typing import Dict
@@ -30,34 +36,85 @@ from src.metrics.size import SizeMetric
     ],
 )
 def test_metric_metadata(metric_cls) -> None:
+    """
+    test_metric_metadata: Function description.
+    :param metric_cls:
+    :returns:
+    """
+
     metric = metric_cls()
     assert metric.name
     assert metric.key
 
 
 def test_default_metrics_have_unique_keys() -> None:
+    """
+    test_default_metrics_have_unique_keys: Function description.
+    :param:
+    :returns:
+    """
+
     keys = [metric.key for metric in default_metrics()]
     assert len(keys) == len(set(keys))
 
 
 class StaticMetric(Metric):
+    """
+    StaticMetric: Class description.
+    """
+
     def __init__(self, key: str, value: float) -> None:
+        """
+        __init__: Function description.
+        :param key:
+        :param value:
+        :returns:
+        """
+
         super().__init__(name=f"Static {key}", key=key)
         self._value = value
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
+        """
+        compute: Function description.
+        :param url_record:
+        :returns:
+        """
+
         return self._value
 
 
 class FaultyMetric(Metric):
+    """
+    FaultyMetric: Class description.
+    """
+
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         super().__init__(name="Faulty", key="faulty")
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
+        """
+        compute: Function description.
+        :param url_record:
+        :returns:
+        """
+
         raise RuntimeError("boom")
 
 
 def test_dispatcher_collects_results() -> None:
+    """
+    test_dispatcher_collects_results: Function description.
+    :param:
+    :returns:
+    """
+
     dispatcher = MetricDispatcher(
         [StaticMetric("a", 0.1), StaticMetric("b", 0.2)]
     )
@@ -70,6 +127,12 @@ def test_dispatcher_collects_results() -> None:
 
 
 def test_dispatcher_handles_errors() -> None:
+    """
+    test_dispatcher_handles_errors: Function description.
+    :param:
+    :returns:
+    """
+
     dispatcher = MetricDispatcher([FaultyMetric()])
     results = dispatcher.compute([{}])
     faulty = results[0][0]
@@ -80,6 +143,12 @@ def test_dispatcher_handles_errors() -> None:
 
 
 def test_net_score_calculator_averages_numeric_metrics() -> None:
+    """
+    test_net_score_calculator_averages_numeric_metrics: Function description.
+    :param:
+    :returns:
+    """
+
     calculator = NetScoreCalculator()
     input_results = [
         MetricResult(
@@ -106,6 +175,12 @@ def test_net_score_calculator_averages_numeric_metrics() -> None:
 
 
 def test_net_score_calculator_ignores_non_numeric_values() -> None:
+    """
+    test_net_score_calculator_ignores_non_numeric_values: Function description.
+    :param:
+    :returns:
+    """
+
     calculator = NetScoreCalculator()
     input_results = [
         MetricResult("A", "a", {"key": 0.5}, latency_ms=5),

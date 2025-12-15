@@ -1,4 +1,9 @@
-"""Tests for the in-memory repository implementations."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for the in-memory repository implementations.
+"""
 
 from __future__ import annotations
 
@@ -21,12 +26,26 @@ from src.storage.memory import (InMemoryArtifactRepository,
 def _make_artifact(
     artifact_id: str, name: str, type_: ArtifactType
 ) -> Artifact:
+    """
+    _make_artifact: Function description.
+    :param artifact_id:
+    :param name:
+    :param type_:
+    :returns:
+    """
+
     metadata = ArtifactMetadata(name=name, id=artifact_id, type=type_)
     data = ArtifactData(url=f"https://example.com/{artifact_id}.zip")
     return Artifact(metadata=metadata, data=data)
 
 
 def test_artifact_repository_create_and_enumerate() -> None:
+    """
+    test_artifact_repository_create_and_enumerate: Function description.
+    :param:
+    :returns:
+    """
+
     repo = InMemoryArtifactRepository()
     repo.create(_make_artifact("id-1", "alpha", ArtifactType.MODEL))
     repo.create(_make_artifact("id-2", "beta", ArtifactType.DATASET))
@@ -47,6 +66,12 @@ def test_artifact_repository_create_and_enumerate() -> None:
 
 
 def test_artifact_repository_update_and_duplicates() -> None:
+    """
+    test_artifact_repository_update_and_duplicates: Function description.
+    :param:
+    :returns:
+    """
+
     repo = InMemoryArtifactRepository()
     artifact = _make_artifact("id-1", "alpha", ArtifactType.MODEL)
     repo.create(artifact)
@@ -63,6 +88,12 @@ def test_artifact_repository_update_and_duplicates() -> None:
 
 
 def test_lineage_repository_validates_edges() -> None:
+    """
+    test_lineage_repository_validates_edges: Function description.
+    :param:
+    :returns:
+    """
+
     repo = InMemoryLineageRepository()
     nodes = [
         ArtifactLineageNode(artifact_id="root", name="root"),
@@ -93,6 +124,12 @@ def test_lineage_repository_validates_edges() -> None:
 
 
 def test_audit_repository_orders_latest_first() -> None:
+    """
+    test_audit_repository_orders_latest_first: Function description.
+    :param:
+    :returns:
+    """
+
     repo = InMemoryAuditRepository()
     user = User(name="Casey", is_admin=False)
     artifact = ArtifactMetadata(
@@ -124,6 +161,12 @@ def test_audit_repository_orders_latest_first() -> None:
 
 
 def test_metrics_repository_counts() -> None:
+    """
+    test_metrics_repository_counts: Function description.
+    :param:
+    :returns:
+    """
+
     repo = InMemoryMetricsRepository()
     repo.increment("/health", "lambda")
     repo.increment("/health", "lambda")
@@ -135,3 +178,15 @@ def test_metrics_repository_counts() -> None:
 
     with pytest.raises(ValidationError):
         repo.increment("", "component")
+
+
+def test_artifact_repository_enumerate_rejects_negative_paging() -> None:
+    """
+    test_artifact_repository_enumerate_rejects_negative_paging: Function description.
+    :param:
+    :returns:
+    """
+
+    repo = InMemoryArtifactRepository()
+    with pytest.raises(ValidationError, match="offset and limit must be non-negative"):
+        repo.enumerate([], offset=-1, limit=1)

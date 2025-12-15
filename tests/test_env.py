@@ -1,4 +1,9 @@
-"""Tests for test env module."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for test env module.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +19,13 @@ def test_load_dotenv_populates_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_load_dotenv_populates_environment: Function description.
+    :param tmp_path:
+    :param monkeypatch:
+    :returns:
+    """
+
     dotenv = tmp_path / ".env"
     dotenv.write_text("GEN_AI_STUDIO_API_KEY=demo-token\n# comment\nEMPTY=\n")
 
@@ -30,6 +42,13 @@ def test_load_dotenv_is_idempotent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_load_dotenv_is_idempotent: Function description.
+    :param tmp_path:
+    :param monkeypatch:
+    :returns:
+    """
+
     dotenv = tmp_path / ".env"
     dotenv.write_text("GEN_AI_STUDIO_API_KEY=first\n")
 
@@ -44,6 +63,12 @@ def test_load_dotenv_is_idempotent(
 
 
 def test_parse_line_helpers() -> None:
+    """
+    test_parse_line_helpers: Function description.
+    :param:
+    :returns:
+    """
+
     assert env._parse_line("KEY=value") == ("KEY", "value")
     assert env._parse_line("   # comment") is None
     assert env._parse_line("   ") is None
@@ -51,6 +76,12 @@ def test_parse_line_helpers() -> None:
 
 
 def _reset_env_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    _reset_env_module: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     monkeypatch.setattr(env, "_ENV_LOADED", False)
 
 
@@ -58,6 +89,13 @@ def test_validate_runtime_environment_succeeds(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_validate_runtime_environment_succeeds: Function description.
+    :param tmp_path:
+    :param monkeypatch:
+    :returns:
+    """
+
     log_file = tmp_path / "logs" / "app.log"
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_valid_token")
     monkeypatch.setenv("LOG_FILE", str(log_file))
@@ -83,6 +121,16 @@ def test_validate_runtime_environment_token_errors(
     token: str,
     expected: str,
 ) -> None:
+    """
+    test_validate_runtime_environment_token_errors: Function description.
+    :param tmp_path:
+    :param monkeypatch:
+    :param capsys:
+    :param token:
+    :param expected:
+    :returns:
+    """
+
     log_file = tmp_path / "app.log"
     monkeypatch.setenv("GITHUB_TOKEN", token)
     monkeypatch.setenv("LOG_FILE", str(log_file))
@@ -100,6 +148,13 @@ def test_validate_runtime_environment_logfile_error(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """
+    test_validate_runtime_environment_logfile_error: Function description.
+    :param monkeypatch:
+    :param tmp_path:
+    :returns:
+    """
+
     existing_dir = tmp_path / "logs"
     log_path = existing_dir / "app.log"
     log_path.mkdir(parents=True)
@@ -120,6 +175,14 @@ def test_validate_runtime_environment_logfile_extension(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """
+    test_validate_runtime_environment_logfile_extension: Function description.
+    :param monkeypatch:
+    :param tmp_path:
+    :param capsys:
+    :returns:
+    """
+
     log_file = tmp_path / "logs" / "app.txt"
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_test_token")
     monkeypatch.setenv("LOG_FILE", str(log_file))

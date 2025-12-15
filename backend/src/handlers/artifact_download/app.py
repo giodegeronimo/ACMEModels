@@ -1,4 +1,9 @@
-"""Lambda handler for generating download URLs."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Lambda handler for generating download URLs.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +15,8 @@ from typing import Any, Dict
 from src.logging_config import configure_logging
 from src.models import validate_artifact_id
 from src.storage.blob_store import (ArtifactBlobStore, BlobNotFoundError,
-                                    BlobStoreError, build_blob_store_from_env)
+                                    BlobStoreError, BlobStoreUnavailableError,
+                                    build_blob_store_from_env)
 from src.utils.auth import require_auth_token
 
 configure_logging()
@@ -31,6 +37,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return _error_response(HTTPStatus.FORBIDDEN, str(error))
     except BlobNotFoundError as error:
         return _error_response(HTTPStatus.NOT_FOUND, str(error))
+    except BlobStoreUnavailableError as error:
+        _LOGGER.warning("Blob store temporarily unavailable: %s", error)
+        return _error_response(
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            "Storage temporarily unavailable; please retry",
+        )
     except BlobStoreError as error:
         _LOGGER.exception("Blob store error: %s", error)
         return _error_response(
@@ -56,6 +68,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def _parse_artifact_id(event: Dict[str, Any]) -> str:
+    """Parse and validate `artifact_id` from the request.
+
+    :param event:
+    :returns:
+    """
+
     artifact_id = (event.get("pathParameters") or {}).get("id")
     if not artifact_id:
         raise ValueError("Path parameter 'id' is required")
@@ -66,16 +84,35 @@ def _parse_artifact_id(event: Dict[str, Any]) -> str:
 
 
 def _require_auth(event: Dict[str, Any]) -> None:
+    """Enforce request authentication for this handler.
+
+    :param event:
+    :returns:
+    """
+
     require_auth_token(event, optional=False)
 
 
 def _wants_json(event: Dict[str, Any]) -> bool:
+    """Helper function.
+
+    :param event:
+    :returns:
+    """
+
     params = event.get("queryStringParameters") or {}
     fmt = (params.get("format") or "").lower()
     return fmt == "json"
 
 
 def _json_response(status: HTTPStatus, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a JSON API Gateway proxy response.
+
+    :param status:
+    :param body:
+    :returns:
+    """
+
     return {
         "statusCode": status.value,
         "headers": {"Content-Type": "application/json"},
@@ -84,6 +121,13 @@ def _json_response(status: HTTPStatus, body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _redirect_response(location: str, expires_in: int) -> Dict[str, Any]:
+    """Create an API Gateway proxy response payload.
+
+    :param location:
+    :param expires_in:
+    :returns:
+    """
+
     return {
         "statusCode": HTTPStatus.FOUND.value,
         "headers": {
@@ -95,4 +139,11 @@ def _redirect_response(location: str, expires_in: int) -> Dict[str, Any]:
 
 
 def _error_response(status: HTTPStatus, message: str) -> Dict[str, Any]:
+    """Create a JSON error response payload.
+
+    :param status:
+    :param message:
+    :returns:
+    """
+
     return _json_response(status, {"error": message})

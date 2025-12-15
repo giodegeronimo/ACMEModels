@@ -1,4 +1,9 @@
-"""Artifact blob storage abstractions."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Artifact blob storage abstractions.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,59 @@ class BlobStoreError(RuntimeError):
 
 class BlobNotFoundError(BlobStoreError):
     """Raised when a requested blob cannot be located."""
+
+
+class BlobStoreUnavailableError(BlobStoreError):
+    """Raised when blob storage is temporarily unavailable (e.g. S3 outage)."""
+
+
+def _looks_like_transient_cloud_failure(exc: Exception) -> bool:
+    """
+    _looks_like_transient_cloud_failure: Function description.
+    :param exc:
+    :returns:
+    """
+
+    code = None
+    response = getattr(exc, "response", None)
+    if isinstance(response, dict):
+        error = response.get("Error")
+        if isinstance(error, dict):
+            code = error.get("Code")
+    if isinstance(code, str) and code:
+        if code in {
+            "SlowDown",
+            "Throttling",
+            "ThrottlingException",
+            "RequestTimeout",
+            "RequestTimeoutException",
+            "ServiceUnavailable",
+            "InternalError",
+            "503",
+        }:
+            return True
+    name = exc.__class__.__name__
+    if name in {
+        "EndpointConnectionError",
+        "ConnectTimeoutError",
+        "ReadTimeoutError",
+        "ConnectionClosedError",
+    }:
+        return True
+    message = str(exc).lower()
+    return any(
+        token in message
+        for token in (
+            "timed out",
+            "timeout",
+            "temporarily unavailable",
+            "service unavailable",
+            "connection reset",
+            "connection aborted",
+            "connection refused",
+            "endpoint connection error",
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -75,10 +133,22 @@ class LocalArtifactBlobStore:
     """Persist artifacts to a local directory (useful for dev/tests)."""
 
     def __init__(self, base_dir: Path) -> None:
+        """
+        __init__: Function description.
+        :param base_dir:
+        :returns:
+        """
+
         self._base_dir = base_dir
         self._base_dir.mkdir(parents=True, exist_ok=True)
 
     def _artifact_path(self, artifact_id: str) -> Path:
+        """
+        _artifact_path: Function description.
+        :param artifact_id:
+        :returns:
+        """
+
         return self._base_dir / artifact_id
 
     def store_file(
@@ -88,6 +158,14 @@ class LocalArtifactBlobStore:
         *,
         content_type: str | None = None,
     ) -> StoredArtifact:
+        """
+        store_file: Function description.
+        :param artifact_id:
+        :param file_path:
+        :param content_type:
+        :returns:
+        """
+
         destination = self._artifact_path(artifact_id)
         shutil.copyfile(file_path, destination)
         bytes_written = destination.stat().st_size
@@ -105,6 +183,14 @@ class LocalArtifactBlobStore:
         *,
         content_type: str | None = "application/gzip",
     ) -> StoredArtifact:
+        """
+        store_directory: Function description.
+        :param artifact_id:
+        :param directory:
+        :param content_type:
+        :returns:
+        """
+
         temp_tar = Path(tempfile.NamedTemporaryFile(delete=False).name)
         try:
             with tarfile.open(temp_tar, "w:gz") as tar:
@@ -118,6 +204,13 @@ class LocalArtifactBlobStore:
     def generate_download_url(
         self, artifact_id: str, *, expires_in: int = 900
     ) -> DownloadLink:
+        """
+        generate_download_url: Function description.
+        :param artifact_id:
+        :param expires_in:
+        :returns:
+        """
+
         destination = self._artifact_path(artifact_id)
         if not destination.exists():
             raise BlobNotFoundError(
@@ -140,6 +233,14 @@ class S3ArtifactBlobStore:
         object_prefix: str = "",
         client: Any | None = None,
     ) -> None:
+        """
+        __init__: Function description.
+        :param bucket:
+        :param object_prefix:
+        :param client:
+        :returns:
+        """
+
         if not bucket:
             raise ValidationError("bucket name must be provided")
         self._bucket = bucket
@@ -168,6 +269,12 @@ class S3ArtifactBlobStore:
         self._s3 = client
 
     def _object_key(self, artifact_id: str) -> str:
+        """
+        _object_key: Function description.
+        :param artifact_id:
+        :returns:
+        """
+
         prefix = f"{self._object_prefix}/" if self._object_prefix else ""
         return f"{prefix}{artifact_id}"
 
@@ -178,6 +285,14 @@ class S3ArtifactBlobStore:
         *,
         content_type: str | None = None,
     ) -> StoredArtifact:
+        """
+        store_file: Function description.
+        :param artifact_id:
+        :param file_path:
+        :param content_type:
+        :returns:
+        """
+
         key = self._object_key(artifact_id)
         extra_args = {}
         if content_type:
@@ -191,6 +306,10 @@ class S3ArtifactBlobStore:
                     ExtraArgs=extra_args or None,
                 )
         except Exception as exc:  # noqa: BLE001
+            if _looks_like_transient_cloud_failure(exc):
+                raise BlobStoreUnavailableError(
+                    f"S3 temporarily unavailable: {exc}"
+                ) from exc
             raise BlobStoreError(f"S3 upload failed: {exc}") from exc
 
         bytes_written = file_path.stat().st_size
@@ -208,6 +327,14 @@ class S3ArtifactBlobStore:
         *,
         content_type: str | None = "application/gzip",
     ) -> StoredArtifact:
+        """
+        store_directory: Function description.
+        :param artifact_id:
+        :param directory:
+        :param content_type:
+        :returns:
+        """
+
         key = self._object_key(artifact_id)
         writer = _S3MultipartUploadWriter(
             self._s3,
@@ -222,6 +349,10 @@ class S3ArtifactBlobStore:
                     tar.add(directory, arcname=".")
         except Exception as exc:  # noqa: BLE001
             writer.abort()
+            if _looks_like_transient_cloud_failure(exc):
+                raise BlobStoreUnavailableError(
+                    f"S3 temporarily unavailable: {exc}"
+                ) from exc
             raise BlobStoreError(f"S3 upload failed: {exc}") from exc
         return StoredArtifact(
             artifact_id=artifact_id,
@@ -233,10 +364,21 @@ class S3ArtifactBlobStore:
     def generate_download_url(
         self, artifact_id: str, *, expires_in: int = 900
     ) -> DownloadLink:
+        """
+        generate_download_url: Function description.
+        :param artifact_id:
+        :param expires_in:
+        :returns:
+        """
+
         key = self._object_key(artifact_id)
         try:
             self._s3.head_object(Bucket=self._bucket, Key=key)
         except Exception as exc:  # noqa: BLE001
+            if _looks_like_transient_cloud_failure(exc):
+                raise BlobStoreUnavailableError(
+                    f"S3 temporarily unavailable: {exc}"
+                ) from exc
             raise BlobNotFoundError(
                 f"Artifact '{artifact_id}' binary does not exist"
             ) from exc
@@ -248,6 +390,10 @@ class S3ArtifactBlobStore:
                 ExpiresIn=expires_in,
             )
         except Exception as exc:  # noqa: BLE001
+            if _looks_like_transient_cloud_failure(exc):
+                raise BlobStoreUnavailableError(
+                    f"S3 temporarily unavailable: {exc}"
+                ) from exc
             raise BlobStoreError(
                 f"Failed to generate download URL: {exc}"
             ) from exc
@@ -277,8 +423,15 @@ def build_blob_store_from_env() -> ArtifactBlobStore:
 
 
 def _resolve_local_storage_dir() -> Path:
-    storage_dir_raw = os.environ.get("ARTIFACT_STORAGE_DIR") \
-                      or "/tmp/acme-artifacts"
+    """
+    _resolve_local_storage_dir: Function description.
+    :param:
+    :returns:
+    """
+
+    storage_dir_raw = (
+        os.environ.get("ARTIFACT_STORAGE_DIR") or "/tmp/acme-artifacts"
+    )
     storage_dir = Path(storage_dir_raw)
     storage_dir.mkdir(parents=True, exist_ok=True)
     return storage_dir
@@ -296,6 +449,16 @@ class _S3MultipartUploadWriter(io.RawIOBase):
         content_type: str,
         part_size: int = 8 * 1024 * 1024,
     ) -> None:
+        """
+        __init__: Function description.
+        :param s3_client:
+        :param bucket:
+        :param key:
+        :param content_type:
+        :param part_size:
+        :returns:
+        """
+
         super().__init__()
         self._s3 = s3_client
         self._bucket = bucket
@@ -314,15 +477,39 @@ class _S3MultipartUploadWriter(io.RawIOBase):
         self._closed = False
 
     def readable(self) -> bool:
+        """
+        readable: Function description.
+        :param:
+        :returns:
+        """
+
         return False
 
     def writable(self) -> bool:
+        """
+        writable: Function description.
+        :param:
+        :returns:
+        """
+
         return True
 
     def seekable(self) -> bool:
+        """
+        seekable: Function description.
+        :param:
+        :returns:
+        """
+
         return False
 
     def write(self, data: Any) -> int:
+        """
+        write: Function description.
+        :param data:
+        :returns:
+        """
+
         if self._closed:
             raise ValueError("Cannot write to closed upload writer")
         self._buffer.extend(memoryview(data))
@@ -334,6 +521,12 @@ class _S3MultipartUploadWriter(io.RawIOBase):
         return len(data)
 
     def _upload_part(self, data: bytes) -> None:
+        """
+        _upload_part: Function description.
+        :param data:
+        :returns:
+        """
+
         response = self._s3.upload_part(
             Bucket=self._bucket,
             Key=self._key,
@@ -347,6 +540,12 @@ class _S3MultipartUploadWriter(io.RawIOBase):
         self._part_number += 1
 
     def close(self) -> None:
+        """
+        close: Function description.
+        :param:
+        :returns:
+        """
+
         if self._closed:
             return
         try:
@@ -374,6 +573,12 @@ class _S3MultipartUploadWriter(io.RawIOBase):
             self._closed = True
 
     def abort(self) -> None:
+        """
+        abort: Function description.
+        :param:
+        :returns:
+        """
+
         if not self._upload_id:
             return
         try:
@@ -388,7 +593,21 @@ class _S3MultipartUploadWriter(io.RawIOBase):
             self._upload_id = ""
 
     def __enter__(self) -> "_S3MultipartUploadWriter":
+        """
+        __enter__: Function description.
+        :param:
+        :returns:
+        """
+
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
+        """
+        __exit__: Function description.
+        :param exc_type:
+        :param exc:
+        :param tb:
+        :returns:
+        """
+
         self.close()

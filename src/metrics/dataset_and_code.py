@@ -1,4 +1,9 @@
-"""Dataset-and-code availability metric for Hugging Face models."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Dataset-and-code availability metric for Hugging Face models.
+"""
 
 from __future__ import annotations
 
@@ -33,9 +38,31 @@ _CODE_URL_PATTERN = re.compile(
 
 
 class _HFClientProtocol(Protocol):
+    """
+    get_model_info: Function description.
+    :param repo_id:
+    :returns:
+    """
+
+    """
+    _HFClientProtocol: Class description.
+    """
+
     def get_model_info(self, repo_id: str) -> Any: ...
 
+    """
+    get_model_readme: Function description.
+    :param repo_id:
+    :returns:
+    """
+
     def get_model_readme(self, repo_id: str) -> str: ...
+
+    """
+    dataset_exists: Function description.
+    :param dataset_id:
+    :returns:
+    """
 
     def dataset_exists(self, dataset_id: str) -> bool: ...
 
@@ -44,6 +71,12 @@ class DatasetAndCodeMetric(Metric):
     """Score availability of datasets and example code for a model."""
 
     def __init__(self, hf_client: Optional[_HFClientProtocol] = None) -> None:
+        """
+        __init__: Function description.
+        :param hf_client:
+        :returns:
+        """
+
         super().__init__(
             name="Dataset & Code Availability",
             key="dataset_and_code_score",
@@ -51,6 +84,12 @@ class DatasetAndCodeMetric(Metric):
         self._hf_client: _HFClientProtocol = hf_client or HFClient()
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
+        """
+        compute: Function description.
+        :param url_record:
+        :returns:
+        """
+
         hf_url = _extract_hf_url(url_record)
         if fail_stub_active(FAIL):
             fallback_url = hf_url or _DEFAULT_URL
@@ -172,6 +211,13 @@ class DatasetAndCodeMetric(Metric):
     def _dataset_score_from_manifest(
         self, url_record: Dict[str, str], hf_url: Optional[str]
     ) -> tuple[float, Optional[str]]:
+        """
+        _dataset_score_from_manifest: Function description.
+        :param url_record:
+        :param hf_url:
+        :returns:
+        """
+
         ds_url = url_record.get("ds_url")
         if not ds_url or not ds_url.strip():
             _LOGGER.debug("No dataset URL in manifest for %s", hf_url)
@@ -195,6 +241,12 @@ class DatasetAndCodeMetric(Metric):
         return 0.0, None
 
     def _score_dataset_from_hub(self, hf_url: str) -> float:
+        """
+        _score_dataset_from_hub: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         model_info = self._safe_model_info(hf_url)
         if not model_info:
             _LOGGER.debug("Model info unavailable for %s", hf_url)
@@ -212,6 +264,12 @@ class DatasetAndCodeMetric(Metric):
         return 0.0
 
     def _safe_model_info(self, hf_url: str) -> Any:
+        """
+        _safe_model_info: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         try:
             return self._hf_client.get_model_info(hf_url)
         except Exception as exc:
@@ -219,6 +277,12 @@ class DatasetAndCodeMetric(Metric):
             return None
 
     def _safe_readme(self, hf_url: str) -> Optional[str]:
+        """
+        _safe_readme: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         try:
             readme = self._hf_client.get_model_readme(hf_url)
         except Exception as exc:
@@ -227,6 +291,12 @@ class DatasetAndCodeMetric(Metric):
         return readme or None
 
     def _collect_dataset_urls(self, model_info: Any) -> list[str]:
+        """
+        _collect_dataset_urls: Function description.
+        :param model_info:
+        :returns:
+        """
+
         urls: list[str] = []
 
         datasets_attr = getattr(model_info, "datasets", None)
@@ -244,6 +314,12 @@ class DatasetAndCodeMetric(Metric):
         return urls
 
     def _validate_dataset_entries(self, entries: list[str]) -> list[str]:
+        """
+        _validate_dataset_entries: Function description.
+        :param entries:
+        :returns:
+        """
+
         valid_urls: list[str] = []
         for entry in entries:
             if not self._dataset_reference_is_valid(entry):
@@ -254,6 +330,12 @@ class DatasetAndCodeMetric(Metric):
         return valid_urls
 
     def _dataset_reference_is_valid(self, reference: str) -> bool:
+        """
+        _dataset_reference_is_valid: Function description.
+        :param reference:
+        :returns:
+        """
+
         try:
             slug = _to_dataset_slug(reference)
             if not slug:
@@ -272,6 +354,12 @@ class DatasetAndCodeMetric(Metric):
             return False
 
     def _dataset_slug_from_readme(self, text: str) -> Optional[str]:
+        """
+        _dataset_slug_from_readme: Function description.
+        :param text:
+        :returns:
+        """
+
         for candidate in _extract_dataset_candidates_from_readme(text):
             if not self._dataset_reference_is_valid(candidate):
                 continue
@@ -282,20 +370,44 @@ class DatasetAndCodeMetric(Metric):
 
 
 def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:
+    """
+    _extract_hf_url: Function description.
+    :param record:
+    :returns:
+    """
+
     return record.get("hf_url")
 
 
 def _has_explicit_dataset(record: Dict[str, str]) -> bool:
+    """
+    _has_explicit_dataset: Function description.
+    :param record:
+    :returns:
+    """
+
     ds_url = record.get("ds_url")
     return bool(ds_url and ds_url.strip())
 
 
 def _has_explicit_code(record: Dict[str, str]) -> bool:
+    """
+    _has_explicit_code: Function description.
+    :param record:
+    :returns:
+    """
+
     git_url = record.get("git_url")
     return bool(git_url and git_url.strip())
 
 
 def _flatten_dataset_entries(entry: Any) -> list[str]:
+    """
+    _flatten_dataset_entries: Function description.
+    :param entry:
+    :returns:
+    """
+
     if entry is None:
         return []
 
@@ -310,6 +422,12 @@ def _flatten_dataset_entries(entry: Any) -> list[str]:
 
 
 def _extract_dataset_from_readme(text: str) -> Optional[str]:
+    """
+    _extract_dataset_from_readme: Function description.
+    :param text:
+    :returns:
+    """
+
     if not text:
         return None
     match = _DATASET_URL_PATTERN.search(text)
@@ -319,6 +437,12 @@ def _extract_dataset_from_readme(text: str) -> Optional[str]:
 
 
 def _extract_dataset_candidates_from_readme(text: str) -> list[str]:
+    """
+    _extract_dataset_candidates_from_readme: Function description.
+    :param text:
+    :returns:
+    """
+
     candidates: list[str] = []
     front_matter = _extract_front_matter(text)
     if front_matter:
@@ -338,6 +462,12 @@ def _extract_dataset_candidates_from_readme(text: str) -> list[str]:
 
 
 def _extract_front_matter(text: str) -> str | None:
+    """
+    _extract_front_matter: Function description.
+    :param text:
+    :returns:
+    """
+
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         return None
@@ -348,6 +478,12 @@ def _extract_front_matter(text: str) -> str | None:
 
 
 def _extract_datasets_from_front_matter(front_matter: str) -> list[str]:
+    """
+    _extract_datasets_from_front_matter: Function description.
+    :param front_matter:
+    :returns:
+    """
+
     datasets: list[str] = []
     lines = front_matter.splitlines()
     in_section = False
@@ -389,6 +525,12 @@ def _extract_datasets_from_front_matter(front_matter: str) -> list[str]:
 
 
 def _to_dataset_slug(candidate: str) -> Optional[str]:
+    """
+    _to_dataset_slug: Function description.
+    :param candidate:
+    :returns:
+    """
+
     if not candidate:
         return None
 

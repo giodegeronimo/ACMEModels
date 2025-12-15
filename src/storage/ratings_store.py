@@ -1,4 +1,9 @@
-"""Persistent storage helpers for model ratings."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Persistent storage helpers for model ratings.
+"""
 
 from __future__ import annotations
 
@@ -60,6 +65,12 @@ class RatingStoreThrottledError(RatingStoreError):
 
 
 def _build_s3_client() -> Any:
+    """
+    _build_s3_client: Function description.
+    :param:
+    :returns:
+    """
+
     global _S3_CLIENT
     if _S3_CLIENT is not None:
         return _S3_CLIENT
@@ -88,6 +99,13 @@ def _build_s3_client() -> Any:
 
 
 def _env_truthy(key: str, default: str = "0") -> bool:
+    """
+    _env_truthy: Function description.
+    :param key:
+    :param default:
+    :returns:
+    """
+
     raw = os.environ.get(key, default)
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
@@ -127,6 +145,13 @@ def _warm_s3_connection() -> None:
 
 
 def store_rating(artifact_id: str, rating: Dict[str, Any]) -> None:
+    """
+    store_rating: Function description.
+    :param artifact_id:
+    :param rating:
+    :returns:
+    """
+
     sanitized = _sanitize_json_payload(rating)
     if isinstance(rating, dict) and isinstance(sanitized, dict):
         rating.clear()
@@ -322,6 +347,12 @@ def _normalize_rating_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _coerce_score(value: Any) -> float:
+    """
+    _coerce_score: Function description.
+    :param value:
+    :returns:
+    """
+
     if isinstance(value, bool):
         return 1.0 if value else 0.0
     if isinstance(value, (int, float)):
@@ -333,6 +364,12 @@ def _coerce_score(value: Any) -> float:
 
 
 def _coerce_latency(value: Any) -> float:
+    """
+    _coerce_latency: Function description.
+    :param value:
+    :returns:
+    """
+
     if isinstance(value, bool):
         return 0.0
     if isinstance(value, (int, float)):

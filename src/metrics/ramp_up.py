@@ -1,4 +1,9 @@
-"""Ramp-up metric estimating documentation clarity for model adoption."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Ramp-up metric estimating documentation clarity for model adoption.
+"""
 
 from __future__ import annotations
 
@@ -68,12 +73,32 @@ EXTRACTION_USER_TEMPLATE = (
 
 
 class _HFClientProtocol(Protocol):
+    """
+    get_model_info: Function description.
+    :param repo_id:
+    :returns:
+    """
+
+    """
+    _HFClientProtocol: Class description.
+    """
+
     def get_model_info(self, repo_id: str) -> Any: ...
+
+    """
+    get_model_readme: Function description.
+    :param repo_id:
+    :returns:
+    """
 
     def get_model_readme(self, repo_id: str) -> str: ...
 
 
 class _PurdueClientProtocol(Protocol):
+    """
+    _PurdueClientProtocol: Class description.
+    """
+
     def llm(
         self,
         prompt: Optional[str] = None,
@@ -94,11 +119,24 @@ class RampUpMetric(Metric):
         hf_client: Optional[_HFClientProtocol] = None,
         purdue_client: Optional[_PurdueClientProtocol] = None,
     ) -> None:
+        """
+        __init__: Function description.
+        :param hf_client:
+        :param purdue_client:
+        :returns:
+        """
+
         super().__init__(name="Ramp-up Score", key="ramp_up_time")
         self._hf_client: _HFClientProtocol = hf_client or HFClient()
         self._purdue_client: Optional[_PurdueClientProtocol] = purdue_client
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
+        """
+        compute: Function description.
+        :param url_record:
+        :returns:
+        """
+
         hf_url = _extract_hf_url(url_record)
         if fail_stub_active(FAIL):
             fallback_url = hf_url or _DEFAULT_URL
@@ -146,6 +184,12 @@ class RampUpMetric(Metric):
         return final_score
 
     def _score_readme_depth(self, readme_text: str) -> float:
+        """
+        _score_readme_depth: Function description.
+        :param readme_text:
+        :returns:
+        """
+
         if not readme_text:
             _LOGGER.info("README absent or empty; metadata score = 0.0")
             return 0.0
@@ -161,6 +205,12 @@ class RampUpMetric(Metric):
         return fallback
 
     def _score_readme_with_llm(self, readme_text: str) -> Optional[float]:
+        """
+        _score_readme_with_llm: Function description.
+        :param readme_text:
+        :returns:
+        """
+
         client = self._get_purdue_client()
         if client is None:
             return None
@@ -215,6 +265,12 @@ class RampUpMetric(Metric):
         return None
 
     def _fallback_readme_score(self, readme_text: str) -> float:
+        """
+        _fallback_readme_score: Function description.
+        :param readme_text:
+        :returns:
+        """
+
         tokens = _tokenize(readme_text)
         if not tokens:
             return 0.0
@@ -245,6 +301,12 @@ class RampUpMetric(Metric):
         return METADATA_WEIGHT * min(combined, 1.0)
 
     def _score_usage_examples(self, readme_text: str) -> float:
+        """
+        _score_usage_examples: Function description.
+        :param readme_text:
+        :returns:
+        """
+
         if not readme_text:
             _LOGGER.info("No README text; usage example score = 0.0")
             return 0.0
@@ -265,6 +327,12 @@ class RampUpMetric(Metric):
         return score
 
     def _get_purdue_client(self) -> Optional[_PurdueClientProtocol]:
+        """
+        _get_purdue_client: Function description.
+        :param:
+        :returns:
+        """
+
         if self._purdue_client is not None:
             return self._purdue_client
 
@@ -282,6 +350,12 @@ class RampUpMetric(Metric):
         return client
 
     def _score_artifacts(self, model_info: Any) -> float:
+        """
+        _score_artifacts: Function description.
+        :param model_info:
+        :returns:
+        """
+
         if model_info is None:
             _LOGGER.info("Model info unavailable; artifact score = 0.0")
             return 0.0
@@ -315,6 +389,12 @@ class RampUpMetric(Metric):
         return score
 
     def _score_external_links(self, readme_text: str) -> float:
+        """
+        _score_external_links: Function description.
+        :param readme_text:
+        :returns:
+        """
+
         if not readme_text:
             _LOGGER.info("No README text; external link score = 0.0")
             return 0.0
@@ -344,6 +424,12 @@ class RampUpMetric(Metric):
         return score
 
     def _safe_model_info(self, hf_url: Optional[str]) -> Optional[Any]:
+        """
+        _safe_model_info: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         if not hf_url:
             return None
         try:
@@ -353,6 +439,12 @@ class RampUpMetric(Metric):
             return None
 
     def _safe_readme(self, hf_url: Optional[str]) -> Optional[str]:
+        """
+        _safe_readme: Function description.
+        :param hf_url:
+        :returns:
+        """
+
         if not hf_url:
             return ""
         try:
@@ -364,14 +456,32 @@ class RampUpMetric(Metric):
 
 
 def _extract_hf_url(record: Dict[str, str]) -> Optional[str]:
+    """
+    _extract_hf_url: Function description.
+    :param record:
+    :returns:
+    """
+
     return record.get("hf_url")
 
 
 def _tokenize(text: str) -> list[str]:
+    """
+    _tokenize: Function description.
+    :param text:
+    :returns:
+    """
+
     return re.findall(r"[A-Za-z]+", text.lower())
 
 
 def _shannon_entropy(tokens: list[str]) -> float:
+    """
+    _shannon_entropy: Function description.
+    :param tokens:
+    :returns:
+    """
+
     counts: Dict[str, int] = {}
     for token in tokens:
         counts[token] = counts.get(token, 0) + 1

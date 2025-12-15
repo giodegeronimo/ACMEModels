@@ -1,4 +1,9 @@
-"""Minimal web app for web tests without external dependencies."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Minimal web app for web tests without external dependencies.
+"""
 
 from __future__ import annotations
 
@@ -17,29 +22,70 @@ _MODELS = [
 
 
 class Response:
+    """
+    Response: Class description.
+    """
+
     def __init__(
         self,
         body: str | bytes,
         status: int = 200,
         content_type: str = "",
     ):
+        """
+        __init__: Function description.
+        :param body:
+        :param status:
+        :param content_type:
+        :returns:
+        """
+
         self.status_code = status
         self.content_type = content_type
         self.data = body.encode() if isinstance(body, str) else body
 
     def get_data(self, as_text: bool = False):
+        """
+        get_data: Function description.
+        :param as_text:
+        :returns:
+        """
+
         return self.data.decode() if as_text else self.data
 
     def get_json(self) -> Dict[str, Any]:
+        """
+        get_json: Function description.
+        :param:
+        :returns:
+        """
+
         return json_module.loads(self.data.decode() or "{}")
 
 
 class WebApp:
+    """
+    WebApp: Class description.
+    """
+
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+        """
+        __init__: Function description.
+        :param config:
+        :returns:
+        """
+
         self.config = config or {}
 
     # WSGI interface for make_server
     def __call__(self, environ, start_response):
+        """
+        __call__: Function description.
+        :param environ:
+        :param start_response:
+        :returns:
+        """
+
         method = environ.get("REQUEST_METHOD", "GET").upper()
         raw_path = environ.get("PATH_INFO", "/") or "/"
         query_string = environ.get("QUERY_STRING", "")
@@ -60,6 +106,12 @@ class WebApp:
         return [response.data]
 
     def test_client(self):
+        """
+        test_client: Function description.
+        :param:
+        :returns:
+        """
+
         return _TestClient(self)
 
     def _dispatch(
@@ -69,6 +121,15 @@ class WebApp:
         body: bytes = b"",
         headers: Optional[Dict[str, str]] = None,
     ) -> Response:
+        """
+        _dispatch: Function description.
+        :param path:
+        :param method:
+        :param body:
+        :param headers:
+        :returns:
+        """
+
         query = {}
         if "?" in path:
             path, qs = path.split("?", 1)
@@ -162,14 +223,37 @@ class WebApp:
 
 
 class _TestClient:
+    """
+    _TestClient: Class description.
+    """
+
     def __init__(self, app: WebApp) -> None:
+        """
+        __init__: Function description.
+        :param app:
+        :returns:
+        """
+
         self.app = app
 
     def get(self, path: str):
+        """
+        get: Function description.
+        :param path:
+        :returns:
+        """
+
         resp = self.app._dispatch(path, "GET")
         return resp
 
     def post(self, path: str, json: Optional[Dict[str, Any]] = None):
+        """
+        post: Function description.
+        :param path:
+        :param json:
+        :returns:
+        """
+
         payload = json or {}
         body = (json_module.dumps(payload)).encode()
         resp = self.app._dispatch(path, "POST", body=body)
@@ -177,6 +261,13 @@ class _TestClient:
 
 
 def _header_lookup(headers, name: str) -> str:
+    """
+    _header_lookup: Function description.
+    :param headers:
+    :param name:
+    :returns:
+    """
+
     for k, v in headers or []:
         if k.lower() == name.lower():
             return v
@@ -184,6 +275,12 @@ def _header_lookup(headers, name: str) -> str:
 
 
 def _parse_query(raw: str) -> Dict[str, str]:
+    """
+    _parse_query: Function description.
+    :param raw:
+    :returns:
+    """
+
     result: Dict[str, str] = {}
     for part in raw.split("&"):
         if "=" in part:
@@ -193,10 +290,24 @@ def _parse_query(raw: str) -> Dict[str, str]:
 
 
 def _html_response(body: str, status: int = 200) -> Response:
+    """
+    _html_response: Function description.
+    :param body:
+    :param status:
+    :returns:
+    """
+
     return Response(body, status=status, content_type="text/html")
 
 
 def _json_response(payload: Dict[str, Any], status: int = 200) -> Response:
+    """
+    _json_response: Function description.
+    :param payload:
+    :param status:
+    :returns:
+    """
+
     return Response(
         json_module.dumps(payload),
         status=status,
@@ -205,8 +316,21 @@ def _json_response(payload: Dict[str, Any], status: int = 200) -> Response:
 
 
 def _text_response(body: str, status: int = 200) -> Response:
+    """
+    _text_response: Function description.
+    :param body:
+    :param status:
+    :returns:
+    """
+
     return Response(body, status=status, content_type="text/plain")
 
 
 def create_app(config: Optional[Dict[str, Any]] = None) -> WebApp:
+    """
+    create_app: Function description.
+    :param config:
+    :returns:
+    """
+
     return WebApp(config)

@@ -1,4 +1,9 @@
-"""Tests for test parser module."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for test parser module.
+"""
 
 from __future__ import annotations
 
@@ -87,6 +92,12 @@ def test_parse_handles_variations(
 
 
 def test_parse_trims_extra_columns(tmp_path: Path) -> None:
+    """
+    test_parse_trims_extra_columns: Function description.
+    :param tmp_path:
+    :returns:
+    """
+
     url_file = tmp_path / "urls.txt"
     url_file.write_text(
         f"{FULL_GIT},{FULL_DS},{FULL_HF},extra\n",
@@ -102,6 +113,12 @@ def test_parse_trims_extra_columns(tmp_path: Path) -> None:
 
 
 def test_parse_pads_missing_columns(tmp_path: Path) -> None:
+    """
+    test_parse_pads_missing_columns: Function description.
+    :param tmp_path:
+    :returns:
+    """
+
     url_file = tmp_path / "urls.txt"
     url_file.write_text(f"{FULL_GIT}\n", encoding="utf-8")
 
@@ -112,6 +129,12 @@ def test_parse_pads_missing_columns(tmp_path: Path) -> None:
 
 
 def test_parse_collects_multiple_lines(tmp_path: Path) -> None:
+    """
+    test_parse_collects_multiple_lines: Function description.
+    :param tmp_path:
+    :returns:
+    """
+
     content = "\n".join(
         [
             f"{FULL_GIT},{FULL_DS},{FULL_HF}",
@@ -135,6 +158,12 @@ def test_parse_collects_multiple_lines(tmp_path: Path) -> None:
 
 
 def test_parse_preserves_input_order(tmp_path: Path) -> None:
+    """
+    test_parse_preserves_input_order: Function description.
+    :param tmp_path:
+    :returns:
+    """
+
     url_file = tmp_path / "urls.txt"
     lines = [
         ",,https://huggingface.co/pkg/first",
@@ -154,6 +183,12 @@ def test_parse_preserves_input_order(tmp_path: Path) -> None:
 
 
 def test_parse_raises_for_missing_file(tmp_path: Path) -> None:
+    """
+    test_parse_raises_for_missing_file: Function description.
+    :param tmp_path:
+    :returns:
+    """
+
     url_file = tmp_path / "missing.txt"
     parser = Parser(url_file)
 
@@ -162,6 +197,12 @@ def test_parse_raises_for_missing_file(tmp_path: Path) -> None:
 
 
 def test_parse_ignores_empty_lines(tmp_path: Path) -> None:
+    """
+    test_parse_ignores_empty_lines: Function description.
+    :param tmp_path:
+    :returns:
+    """
+
     url_file = tmp_path / "urls.txt"
     url_file.write_text(
         "\n\n,,https://huggingface.co/pkg/model\n\n",
@@ -175,6 +216,12 @@ def test_parse_ignores_empty_lines(tmp_path: Path) -> None:
 
 
 def test_parse_handles_whitespace_only_entries(tmp_path: Path) -> None:
+    """
+    test_parse_handles_whitespace_only_entries: Function description.
+    :param tmp_path:
+    :returns:
+    """
+
     url_file = tmp_path / "urls.txt"
     url_file.write_text(f"  {FULL_GIT}  ,   ,   \n", encoding="utf-8")
 
@@ -185,6 +232,12 @@ def test_parse_handles_whitespace_only_entries(tmp_path: Path) -> None:
 
 
 def test_parse_normalizes_fields(tmp_path: Path) -> None:
+    """
+    test_parse_normalizes_fields: Function description.
+    :param tmp_path:
+    :returns:
+    """
+
     url_file = tmp_path / "urls.txt"
     url_file.write_text(
         ",,https://huggingface.co/pkg/model\n",
@@ -200,6 +253,12 @@ def test_parse_normalizes_fields(tmp_path: Path) -> None:
 
 
 def test_parse_outputs_json_serializable(tmp_path: Path) -> None:
+    """
+    test_parse_outputs_json_serializable: Function description.
+    :param tmp_path:
+    :returns:
+    """
+
     url_file = tmp_path / "urls.txt"
     url_file.write_text(
         f"{FULL_GIT},{FULL_DS},{FULL_HF}\n",

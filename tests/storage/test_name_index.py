@@ -1,8 +1,15 @@
-"""Tests for the artifact name index stores."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for the artifact name index stores.
+"""
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+
+import pytest
 
 from src.models.artifacts import ArtifactMetadata, ArtifactType
 from src.storage.name_index import (DynamoDBNameIndexStore,
@@ -11,6 +18,13 @@ from src.storage.name_index import (DynamoDBNameIndexStore,
 
 
 def _metadata(name: str, artifact_id: str = "artifact-1") -> ArtifactMetadata:
+    """
+    _metadata: Function description.
+    :param name:
+    :param artifact_id:
+    :returns:
+    """
+
     return ArtifactMetadata(name=name, id=artifact_id, type=ArtifactType.MODEL)
 
 
@@ -19,6 +33,14 @@ def _entry(
     artifact_id: str = "artifact-1",
     readme: str | None = None,
 ) -> NameIndexEntry:
+    """
+    _entry: Function description.
+    :param name:
+    :param artifact_id:
+    :param readme:
+    :returns:
+    """
+
     return entry_from_metadata(
         _metadata(name=name, artifact_id=artifact_id),
         readme_excerpt=readme,
@@ -26,6 +48,12 @@ def _entry(
 
 
 def test_in_memory_store_persists_and_scans_entries() -> None:
+    """
+    test_in_memory_store_persists_and_scans_entries: Function description.
+    :param:
+    :returns:
+    """
+
     store = InMemoryNameIndexStore()
     first = _entry("FirstModel", "a1")
     second = _entry("SecondModel", "a2")
@@ -39,6 +67,12 @@ def test_in_memory_store_persists_and_scans_entries() -> None:
 
 
 def test_in_memory_store_supports_deletion_and_pagination() -> None:
+    """
+    test_in_memory_store_supports_deletion_and_pagination: Function description.
+    :param:
+    :returns:
+    """
+
     store = InMemoryNameIndexStore()
     entries = [_entry(f"Model{i}", f"id-{i}") for i in range(3)]
     for entry in entries:
@@ -55,19 +89,47 @@ def test_in_memory_store_supports_deletion_and_pagination() -> None:
 
 
 class _FakeTable:
+    """
+    _FakeTable: Class description.
+    """
+
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self.put_items: List[Dict[str, Any]] = []
         self.delete_keys: List[Dict[str, Any]] = []
         self.scan_calls: List[Dict[str, Any]] = []
         self.scan_responses: List[Dict[str, Any]] = []
 
     def put_item(self, Item: Dict[str, Any]) -> None:  # noqa: N803
+        """
+        put_item: Function description.
+        :param Item:
+        :returns:
+        """
+
         self.put_items.append(Item)
 
     def delete_item(self, Key: Dict[str, Any]) -> None:  # noqa: N803
+        """
+        delete_item: Function description.
+        :param Key:
+        :returns:
+        """
+
         self.delete_keys.append(Key)
 
     def scan(self, **kwargs: Any) -> Dict[str, Any]:
+        """
+        scan: Function description.
+        :param **kwargs:
+        :returns:
+        """
+
         self.scan_calls.append(kwargs)
         if self.scan_responses:
             return self.scan_responses.pop(0)
@@ -75,16 +137,38 @@ class _FakeTable:
 
 
 class _FakeResource:
+    """
+    _FakeResource: Class description.
+    """
+
     def __init__(self, table: _FakeTable) -> None:
+        """
+        __init__: Function description.
+        :param table:
+        :returns:
+        """
+
         self._table = table
         self.requested_table: Optional[str] = None
 
     def Table(self, name: str) -> _FakeTable:  # noqa: N802
+        """
+        Table: Function description.
+        :param name:
+        :returns:
+        """
+
         self.requested_table = name
         return self._table
 
 
 def test_dynamodb_store_writes_expected_items() -> None:
+    """
+    test_dynamodb_store_writes_expected_items: Function description.
+    :param:
+    :returns:
+    """
+
     table = _FakeTable()
     resource = _FakeResource(table)
     store = DynamoDBNameIndexStore("NameIndex", resource=resource)
@@ -112,6 +196,12 @@ def test_dynamodb_store_writes_expected_items() -> None:
 
 
 def test_dynamodb_store_scan_returns_entries() -> None:
+    """
+    test_dynamodb_store_scan_returns_entries: Function description.
+    :param:
+    :returns:
+    """
+
     table = _FakeTable()
     table.scan_responses.append(
         {
@@ -140,3 +230,14 @@ def test_dynamodb_store_scan_returns_entries() -> None:
     assert table.scan_calls == [
         {"ExclusiveStartKey": {"artifact_id": "xyz"}, "Limit": 5}
     ]
+
+
+def test_dynamodb_store_requires_table_name() -> None:
+    """
+    test_dynamodb_store_requires_table_name: Function description.
+    :param:
+    :returns:
+    """
+
+    with pytest.raises(ValueError, match="table_name must be provided"):
+        DynamoDBNameIndexStore("")

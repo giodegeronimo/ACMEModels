@@ -1,6 +1,10 @@
-from __future__ import annotations
+"""
 
-"""Dispatcher that evaluates metrics for URL records."""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+"""
+from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Dict, Iterable, List, Optional, Sequence
@@ -24,22 +28,46 @@ class MetricDispatcher:
     """Evaluate registered metrics for a sequence of URL records."""
 
     def __init__(self, metrics: Optional[Iterable[Metric]] = None) -> None:
+        """
+        __init__: Function description.
+        :param metrics:
+        :returns:
+        """
+
         if metrics is None:
             metrics = default_metrics()
         self._metrics: List[Metric] = list(metrics)
 
     @property
     def metrics(self) -> Sequence[Metric]:
+        """
+        metrics: Function description.
+        :param:
+        :returns:
+        """
+
         return tuple(self._metrics)
 
     def compute(
         self, url_records: Sequence[Dict[str, str]]
     ) -> List[List[MetricResult]]:
+        """
+        compute: Function description.
+        :param url_records:
+        :returns:
+        """
+
         return [self._compute_for_record(record) for record in url_records]
 
     def _compute_for_record(
         self, url_record: Dict[str, str]
     ) -> List[MetricResult]:
+        """
+        _compute_for_record: Function description.
+        :param url_record:
+        :returns:
+        """
+
         with ThreadPoolExecutor(
             max_workers=len(self._metrics) or 1
         ) as executor:
@@ -56,6 +84,13 @@ class MetricDispatcher:
     def _execute_metric(
         self, metric: Metric, url_record: Dict[str, str]
     ) -> MetricResult:
+        """
+        _execute_metric: Function description.
+        :param metric:
+        :param url_record:
+        :returns:
+        """
+
         from time import perf_counter
 
         start = perf_counter()
@@ -76,6 +111,12 @@ class MetricDispatcher:
 
 
 def default_metrics() -> List[Metric]:
+    """
+    default_metrics: Function description.
+    :param:
+    :returns:
+    """
+
     return [
         RampUpMetric(),
         BusFactorMetric(),

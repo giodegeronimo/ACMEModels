@@ -1,4 +1,9 @@
-"""Tests for GET /artifact/model/{id}/rate handler."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for GET /artifact/model/{id}/rate handler.
+"""
 
 from __future__ import annotations
 
@@ -19,12 +24,24 @@ from src.utils import auth
 
 @pytest.fixture(autouse=True)
 def _reset_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    _reset_store: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     handler._METADATA_STORE = cast(
         ArtifactMetadataStore, _FakeMetadataStore()
     )
 
 
 def _event(artifact_id: str = "abc123") -> Dict[str, Any]:
+    """
+    _event: Function description.
+    :param artifact_id:
+    :returns:
+    """
+
     token = auth.issue_token("tester", is_admin=True)
     return {
         "pathParameters": {"id": artifact_id},
@@ -33,6 +50,12 @@ def _event(artifact_id: str = "abc123") -> Dict[str, Any]:
 
 
 def _rating_payload() -> Dict[str, Any]:
+    """
+    _rating_payload: Function description.
+    :param:
+    :returns:
+    """
+
     return {
         "name": "demo",
         "category": "MODEL",
@@ -69,6 +92,12 @@ def _rating_payload() -> Dict[str, Any]:
 
 
 def _store_artifact(artifact_id: str = "abc123") -> None:
+    """
+    _store_artifact: Function description.
+    :param artifact_id:
+    :returns:
+    """
+
     handler._METADATA_STORE.save(  # type: ignore[attr-defined]
         Artifact(
             metadata=ArtifactMetadata(
@@ -82,6 +111,12 @@ def _store_artifact(artifact_id: str = "abc123") -> None:
 
 
 def test_get_rating_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    test_get_rating_success: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     payload = _rating_payload()
     _store_artifact()
 
@@ -100,6 +135,12 @@ def test_get_rating_success(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_missing_rating_computes_on_demand(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_missing_rating_computes_on_demand: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     payload = _rating_payload()
     _store_artifact()
 
@@ -125,9 +166,21 @@ def test_missing_rating_computes_on_demand(
 def test_rating_store_throttled_returns_503(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_rating_store_throttled_returns_503: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     _store_artifact()
 
     def _raise(_artifact_id: str) -> Dict[str, Any] | None:
+        """
+        _raise: Function description.
+        :param _artifact_id:
+        :returns:
+        """
+
         raise RatingStoreThrottledError("slowdown")
 
     monkeypatch.setattr(handler, "load_rating", _raise)
@@ -139,10 +192,22 @@ def test_rating_store_throttled_returns_503(
 def test_rating_computation_failure_returns_stub(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_rating_computation_failure_returns_stub: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     _store_artifact()
     monkeypatch.setattr(handler, "load_rating", lambda artifact_id: None)
 
     def _raise(_url: str) -> Dict[str, Any]:
+        """
+        _raise: Function description.
+        :param _url:
+        :returns:
+        """
+
         raise handler.RatingComputationError("boom")
 
     monkeypatch.setattr(
@@ -161,6 +226,12 @@ def test_rating_computation_failure_returns_stub(
 def test_store_failure_without_cache_raises_503(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_store_failure_without_cache_raises_503: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     payload = _rating_payload()
     _store_artifact()
     monkeypatch.setattr(handler, "load_rating", lambda artifact_id: None)
@@ -171,6 +242,13 @@ def test_store_failure_without_cache_raises_503(
     )
 
     def _store(*_: Any, **__: Any) -> None:
+        """
+        _store: Function description.
+        :param *_:
+        :param **__:
+        :returns:
+        """
+
         raise RatingStoreError("boom")
 
     monkeypatch.setattr(handler, "store_rating", _store)
@@ -180,14 +258,37 @@ def test_store_failure_without_cache_raises_503(
 
 
 class _FakeMetadataStore(ArtifactMetadataStore):
+    """
+    _FakeMetadataStore: Class description.
+    """
+
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self.records: dict[str, Artifact] = {}
 
     def save(self, artifact: Artifact, *, overwrite: bool = False) -> None:
+        """
+        save: Function description.
+        :param artifact:
+        :param overwrite:
+        :returns:
+        """
+
         artifact_id = artifact.metadata.id
         self.records[artifact_id] = artifact
 
     def load(self, artifact_id: str) -> Artifact:
+        """
+        load: Function description.
+        :param artifact_id:
+        :returns:
+        """
+
         try:
             return self.records[artifact_id]
         except KeyError:

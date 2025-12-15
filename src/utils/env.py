@@ -1,4 +1,9 @@
-"""Helpers for loading environment configuration."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Helpers for loading environment configuration.
+"""
 
 from __future__ import annotations
 
@@ -32,6 +37,12 @@ def load_dotenv(dotenv_path: Union[str, Path] = ".env") -> None:
 
 
 def _parse_line(line: str) -> Optional[Tuple[str, str]]:
+    """
+    _parse_line: Function description.
+    :param line:
+    :returns:
+    """
+
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
         return None
@@ -46,6 +57,12 @@ def _parse_line(line: str) -> Optional[Tuple[str, str]]:
 # --- Test and stub controls -------------------------------------------------
 
 def _truthy(value: Optional[str]) -> bool:
+    """
+    _truthy: Function description.
+    :param value:
+    :returns:
+    """
+
     if value is None:
         return False
     lowered = value.strip().lower()
@@ -93,6 +110,12 @@ def validate_runtime_environment() -> None:
     log_path_raw = os.environ.get("LOG_FILE", "").strip()
 
     def _fail(message: str) -> None:
+        """
+        _fail: Function description.
+        :param message:
+        :returns:
+        """
+
         _LOGGER.error("Environment validation failed: %s", message)
         print(f"Environment validation failed: {message}", file=sys.stderr)
         raise SystemExit(1)

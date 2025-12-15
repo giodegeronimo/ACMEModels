@@ -1,4 +1,9 @@
-"""Lambda handler for POST /artifacts listing endpoint."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Lambda handler for POST /artifacts listing endpoint.
+"""
 
 from __future__ import annotations
 
@@ -30,21 +35,48 @@ SCAN_PAGE_SIZE = 100
 
 @dataclass(frozen=True)
 class _ParsedQuery:
+    """
+    Parsed representation of a single query entry in the request body.
+
+    Each query can constrain:
+    - `name`: exact name match, or `*` wildcard.
+    - `types`: optional set of allowed artifact types.
+    """
+
     name: str
     normalized_name: str
     types: tuple[ArtifactType, ...] | None
 
     @property
     def is_wildcard(self) -> bool:
+        """
+        Return True if this query is the `*` wildcard query.
+
+        :returns: True if wildcard, otherwise False.
+        """
+
         return self.name == "*"
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Entry point for POST /artifacts."""
+    """Handle `POST /artifacts` listing queries.
+
+    Request body is a JSON array of query objects. Results are produced by
+    scanning the name index and (when possible) fetching canonical metadata
+    for matched artifacts.
+
+    Pagination is supported via an opaque `offset` query param. If more results
+    are available, the response includes an `offset` header to continue.
+
+    :param event: API Gateway/Lambda proxy event.
+    :param context: Lambda context (unused).
+    :returns: API Gateway/Lambda proxy response dict.
+    """
 
     try:
         _require_auth(event)
         queries = _parse_queries(event)
+        # `offset` is an opaque pagination token encoding the underlying scan key.
         start_key = _parse_offset(event)
         artifacts, next_offset = _collect_matches(queries, start_key)
     except ValueError as error:
@@ -63,6 +95,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     headers = {"Content-Type": "application/json"}
     if next_offset:
+        # Expose the continuation token as a response header so the client can
+        # provide it back as `?offset=...`.
         headers["offset"] = next_offset
     return {
         "statusCode": HTTPStatus.OK.value,
@@ -72,10 +106,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def _require_auth(event: Dict[str, Any]) -> None:
+    """
+    Enforce request authentication for this handler.
+
+    :param event: API Gateway/Lambda proxy event.
+    :raises PermissionError: If authorization is missing/invalid.
+    """
+
     require_auth_token(event, optional=False)
 
 
 def _parse_queries(event: Dict[str, Any]) -> List[_ParsedQuery]:
+    """
+    Parse and validate the JSON request body into query objects.
+
+    :param event: API Gateway/Lambda proxy event.
+    :returns: Parsed queries list.
+    :raises ValueError: If the body is missing or malformed.
+    """
+
     body = event.get("body")
     if body is None:
         raise ValueError("Request body is required")
@@ -109,6 +158,14 @@ def _parse_queries(event: Dict[str, Any]) -> List[_ParsedQuery]:
 
 
 def _parse_single_query(raw: Any) -> _ParsedQuery:
+    """
+    Parse a single query object from the request body.
+
+    :param raw: Raw JSON item from the body array.
+    :returns: Parsed query.
+    :raises ValueError: If the query object is malformed.
+    """
+
     if not isinstance(raw, dict):
         raise ValueError("Each artifact query must be a JSON object")
     name = raw.get("name")
@@ -140,6 +197,14 @@ def _parse_single_query(raw: Any) -> _ParsedQuery:
 
 
 def _decode_base64_body(body: str) -> str:
+    """
+    Decode a base64-encoded request body string.
+
+    :param body: Base64-encoded body.
+    :returns: Decoded UTF-8 string.
+    :raises ValueError: If decoding fails.
+    """
+
     try:
         return base64.b64decode(body).decode("utf-8")
     except (ValueError, UnicodeDecodeError) as exc:
@@ -147,6 +212,17 @@ def _decode_base64_body(body: str) -> str:
 
 
 def _parse_offset(event: Dict[str, Any]) -> Any | None:
+    """
+    Parse the `offset` query parameter into a name-index scan start key.
+
+    The offset token is an opaque base64-encoded JSON blob of the form:
+    `{"start_key": <opaque scan key>}`.
+
+    :param event: API Gateway/Lambda proxy event.
+    :returns: Start key dict to pass to the name-index scan, or None.
+    :raises ValueError: If an offset is present but invalid.
+    """
+
     params = event.get("queryStringParameters") or {}
     raw = params.get("offset")
     if not raw:
@@ -166,6 +242,17 @@ def _collect_matches(
     queries: Sequence[_ParsedQuery],
     start_key: Any | None,
 ) -> tuple[list[Dict[str, Any]], str | None]:
+    """
+    Scan the name index and collect artifacts matching the provided queries.
+
+    Results are de-duplicated by artifact id and capped to `MAX_RESULTS`.
+    When the cap is hit, a continuation token is returned.
+
+    :param queries: Parsed queries to match against index entries.
+    :param start_key: Optional scan start key decoded from the `offset` token.
+    :returns: Tuple of (`results`, `next_offset_token`).
+    """
+
     results: list[Dict[str, Any]] = []
     seen_ids: set[str] = set()
     scan_start = start_key
@@ -179,6 +266,7 @@ def _collect_matches(
             break
 
         for entry in entries:
+            # Apply query matching first, then de-duplicate on artifact id.
             if (
                 _entry_matches(entry, queries)
                 and entry.artifact_id not in seen_ids
@@ -186,6 +274,7 @@ def _collect_matches(
                 seen_ids.add(entry.artifact_id)
                 results.append(_artifact_payload(entry))
                 if len(results) >= MAX_RESULTS:
+                    # Return an offset token that allows the caller to resume scanning.
                     token = _encode_offset_token(_entry_start_key(entry))
                     return results, token
         if not next_start:
@@ -199,6 +288,18 @@ def _entry_matches(
     entry: NameIndexEntry,
     queries: Sequence[_ParsedQuery],
 ) -> bool:
+    """
+    Determine whether a name-index entry matches any of the provided queries.
+
+    Matching rules:
+    - `name` matches are exact (case-insensitive) unless `*` wildcard is used.
+    - If `types` is provided, the entry must be one of those types.
+
+    :param entry: Name index entry.
+    :param queries: Parsed queries.
+    :returns: True if the entry matches, otherwise False.
+    """
+
     for query in queries:
         if query.is_wildcard:
             name_match = True
@@ -213,6 +314,16 @@ def _entry_matches(
 
 
 def _artifact_payload(entry: NameIndexEntry) -> Dict[str, Any]:
+    """
+    Build the public API artifact payload for an index entry.
+
+    Prefers canonical metadata store values, but falls back to the name index
+    if the metadata store is missing/out of date or temporarily unavailable.
+
+    :param entry: Name index entry.
+    :returns: JSON-serializable artifact payload.
+    """
+
     try:
         artifact = _METADATA_STORE.load(entry.artifact_id)
         metadata = artifact.metadata
@@ -230,6 +341,13 @@ def _artifact_payload(entry: NameIndexEntry) -> Dict[str, Any]:
 
 
 def _entry_start_key(entry: NameIndexEntry) -> Dict[str, str]:
+    """
+    Build a stable scan key for continuing after a specific entry.
+
+    :param entry: Name index entry.
+    :returns: Scan start key dict for the underlying name index store.
+    """
+
     return {
         "normalized_name": entry.normalized_name,
         "artifact_id": entry.artifact_id,
@@ -237,11 +355,26 @@ def _entry_start_key(entry: NameIndexEntry) -> Dict[str, str]:
 
 
 def _encode_offset_token(start_key: Any) -> str:
+    """
+    Encode a scan start key into the opaque `offset` token.
+
+    :param start_key: Name index scan start key.
+    :returns: Base64 URL-safe encoded token string.
+    """
+
     payload = json.dumps({"start_key": start_key})
     return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("utf-8")
 
 
 def _error_response(status: HTTPStatus, message: str) -> Dict[str, Any]:
+    """
+    Create a JSON error response payload.
+
+    :param status: HTTP status enum to return.
+    :param message: Error message to return under the `error` key.
+    :returns: API Gateway/Lambda proxy response dict.
+    """
+
     return {
         "statusCode": status.value,
         "headers": {"Content-Type": "application/json"},

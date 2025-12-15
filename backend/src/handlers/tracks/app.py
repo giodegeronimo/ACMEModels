@@ -1,4 +1,9 @@
-"""Lambda handler for GET /tracks."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Lambda handler for GET /tracks.
+"""
 
 from __future__ import annotations
 
@@ -36,6 +41,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def _log_request(event: Dict[str, Any]) -> None:
+    """Helper function.
+
+    :param event:
+    :returns:
+    """
+
     http_ctx = (event.get("requestContext") or {}).get("http", {})
     _LOGGER.info(
         "Tracks request path=%s headers=%s",
@@ -45,6 +56,13 @@ def _log_request(event: Dict[str, Any]) -> None:
 
 
 def _json_response(status: HTTPStatus, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a JSON API Gateway proxy response.
+
+    :param status:
+    :param body:
+    :returns:
+    """
+
     return {
         "statusCode": status.value,
         "headers": {"Content-Type": "application/json"},
@@ -53,4 +71,11 @@ def _json_response(status: HTTPStatus, body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _error_response(status: HTTPStatus, message: str) -> Dict[str, Any]:
+    """Create a JSON error response payload.
+
+    :param status:
+    :param message:
+    :returns:
+    """
+
     return _json_response(status, {"error": message})

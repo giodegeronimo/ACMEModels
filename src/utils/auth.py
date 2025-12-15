@@ -1,4 +1,9 @@
-"""Helpers for handling X-Authorization requirements and tokens."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Helpers for handling X-Authorization requirements and tokens.
+"""
 
 from __future__ import annotations
 
@@ -30,6 +35,10 @@ _DEFAULT_MAX_CALLS = 1000
 
 @dataclass
 class TokenRecord:
+    """
+    TokenRecord: Class description.
+    """
+
     token: str
     username: str
     is_admin: bool
@@ -178,6 +187,12 @@ def require_auth_token(
 
 
 def _extract_header_token(headers: Dict[str, Any]) -> str | None:
+    """
+    _extract_header_token: Function description.
+    :param headers:
+    :returns:
+    """
+
     for key in _HEADER_KEYS:
         value = headers.get(key)
         if value:
@@ -197,15 +212,37 @@ def _reset_token_store(tokens: Iterable[str] | None = None) -> None:
 
 
 def _ddb_client():
+    """
+    _ddb_client: Function description.
+    :param:
+    :returns:
+    """
+
     global _DDB_CLIENT
     if _DDB_CLIENT is None:
-        _DDB_CLIENT = boto3.client("dynamodb") if boto3 is not None else None
+        if boto3 is None:
+            _DDB_CLIENT = None
+        else:
+            try:
+                _DDB_CLIENT = boto3.client("dynamodb")
+            except Exception as exc:  # pragma: no cover - environment dependent
+                _LOGGER.debug("Failed to initialize DynamoDB client: %s", exc)
+                _DDB_CLIENT = None
     return _DDB_CLIENT
 
 
 def _put_token_ddb(record: TokenRecord) -> None:
+    """
+    _put_token_ddb: Function description.
+    :param record:
+    :returns:
+    """
+
+    if _DDB_TABLE is None:
+        _TOKENS[record.token] = record
+        return
     client = _ddb_client()
-    if client is None or _DDB_TABLE is None:
+    if client is None:
         _TOKENS[record.token] = record
         return
     expires_at = int(record.issued_at + _get_expiry_seconds())
@@ -224,8 +261,16 @@ def _put_token_ddb(record: TokenRecord) -> None:
 
 
 def _get_token_ddb(token: str) -> TokenRecord | None:
+    """
+    _get_token_ddb: Function description.
+    :param token:
+    :returns:
+    """
+
+    if _DDB_TABLE is None:
+        return _TOKENS.get(token)
     client = _ddb_client()
-    if client is None or _DDB_TABLE is None:
+    if client is None:
         return _TOKENS.get(token)
     resp = client.get_item(
         TableName=_DDB_TABLE,
@@ -249,8 +294,21 @@ def _get_token_ddb(token: str) -> TokenRecord | None:
 
 
 def _increment_usage_ddb(token: str, *, max_uses: int, max_age: int) -> None:
+    """
+    _increment_usage_ddb: Function description.
+    :param token:
+    :param max_uses:
+    :param max_age:
+    :returns:
+    """
+
+    if _DDB_TABLE is None:
+        record = _TOKENS.get(token)
+        if record:
+            record.usage_count += 1
+        return
     client = _ddb_client()
-    if client is None or _DDB_TABLE is None:
+    if client is None:
         record = _TOKENS.get(token)
         if record:
             record.usage_count += 1
@@ -286,8 +344,13 @@ def _validate_and_increment_usage_ddb(
 ) -> TokenRecord | None:
     """Validate token constraints and increment usage in a single DDB call."""
 
+    if _DDB_TABLE is None:
+        record = _TOKENS.get(token)
+        if record:
+            record.usage_count += 1
+        return record
     client = _ddb_client()
-    if client is None or _DDB_TABLE is None:
+    if client is None:
         record = _TOKENS.get(token)
         if record:
             record.usage_count += 1
@@ -332,6 +395,12 @@ def _validate_and_increment_usage_ddb(
 
 
 def _get_expiry_seconds() -> int:
+    """
+    _get_expiry_seconds: Function description.
+    :param:
+    :returns:
+    """
+
     raw = os.getenv("AUTH_EXPIRY_SECONDS")
     if raw is None:
         return _DEFAULT_EXPIRY_SECONDS
@@ -346,6 +415,12 @@ def _get_expiry_seconds() -> int:
 
 
 def _get_max_calls() -> int:
+    """
+    _get_max_calls: Function description.
+    :param:
+    :returns:
+    """
+
     raw = os.getenv("AUTH_MAX_CALLS")
     if raw is None:
         return _DEFAULT_MAX_CALLS

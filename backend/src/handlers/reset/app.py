@@ -1,4 +1,9 @@
-"""Lambda handler for DELETE /reset."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Lambda handler for DELETE /reset.
+"""
 
 from __future__ import annotations
 
@@ -46,10 +51,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def _require_auth(event: Dict[str, Any]) -> None:
+    """Enforce request authentication for this handler.
+
+    :param event:
+    :returns:
+    """
+
     require_auth_token(event, optional=False)
 
 
 def _reset_storage() -> None:
+    """Helper function.
+    :returns:
+    """
+
     if os.environ.get("AWS_SAM_LOCAL"):
         _reset_local()
         return
@@ -75,6 +90,10 @@ def _reset_storage() -> None:
 
 
 def _reset_local() -> None:
+    """Helper function.
+    :returns:
+    """
+
     artifact_dir = _local_artifact_dir()
     metadata_dir = _local_metadata_dir()
     for directory in (artifact_dir, metadata_dir):
@@ -84,6 +103,10 @@ def _reset_local() -> None:
 
 
 def _local_artifact_dir() -> Path:
+    """Helper function.
+    :returns:
+    """
+
     from src.storage.blob_store import \
         _resolve_local_storage_dir  # type: ignore[attr-defined]
 
@@ -91,6 +114,10 @@ def _local_artifact_dir() -> Path:
 
 
 def _local_metadata_dir() -> Path:
+    """Helper function.
+    :returns:
+    """
+
     from src.storage.metadata_store import DEFAULT_METADATA_DIR
 
     base = Path(os.environ.get("ARTIFACT_METADATA_DIR", DEFAULT_METADATA_DIR))
@@ -99,6 +126,10 @@ def _local_metadata_dir() -> Path:
 
 
 def _s3_prefixes() -> list[str]:
+    """Helper function.
+    :returns:
+    """
+
     artifact_prefix = os.environ.get("ARTIFACT_STORAGE_PREFIX", "").strip("/")
     metadata_prefix = os.environ.get(
         "ARTIFACT_METADATA_PREFIX", "metadata"
@@ -112,6 +143,13 @@ def _s3_prefixes() -> list[str]:
 
 
 def _clear_s3_bucket(bucket: str, prefixes: list[str]) -> None:
+    """Helper function.
+
+    :param bucket:
+    :param prefixes:
+    :returns:
+    """
+
     if boto3 is None:
         raise RuntimeError("boto3 is required to reset the registry in AWS")
     region = (
@@ -125,6 +163,12 @@ def _clear_s3_bucket(bucket: str, prefixes: list[str]) -> None:
     to_delete: list[dict[str, str]] = []
 
     def _flush_batch(batch: list[dict[str, str]]) -> None:
+        """Helper function.
+
+        :param batch:
+        :returns:
+        """
+
         if not batch:
             return
         s3.delete_objects(Bucket=bucket, Delete={"Objects": batch})
@@ -140,6 +184,12 @@ def _clear_s3_bucket(bucket: str, prefixes: list[str]) -> None:
 
 
 def _clear_name_index_table(table_name: str) -> None:
+    """Helper function.
+
+    :param table_name:
+    :returns:
+    """
+
     if boto3 is None:
         raise RuntimeError("boto3 is required to reset the registry in AWS")
     region = (
@@ -174,6 +224,13 @@ def _clear_name_index_table(table_name: str) -> None:
 def _json_response(
     status: HTTPStatus, body: Dict[str, Any]
 ) -> Dict[str, Any]:
+    """Create a JSON API Gateway proxy response.
+
+    :param status:
+    :param body:
+    :returns:
+    """
+
     return {
         "statusCode": status.value,
         "headers": {"Content-Type": "application/json"},

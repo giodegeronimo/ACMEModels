@@ -1,4 +1,9 @@
-"""Lambda handler for GET /artifact/model/{id}/rate."""
+"""ACMEModels Repository
+
+Introductory remarks: This module implements the Lambda handler for
+`GET /artifact/model/{id}/rate`, including caching and on-demand rating
+computation.
+"""
 
 from __future__ import annotations
 
@@ -90,6 +95,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def _load_rating(artifact_id: str) -> Dict[str, Any] | None:
+    """Load a cached rating payload from the rating store."""
     try:
         _LOGGER.info(
             "Attempting to load rating for artifact_id=%s", artifact_id
@@ -114,6 +120,7 @@ def _load_rating(artifact_id: str) -> Dict[str, Any] | None:
 
 
 def _compute_and_store_rating(artifact: Artifact) -> Dict[str, Any]:
+    """Compute a model rating and persist it, falling back to a stub on failure."""
     artifact_id = artifact.metadata.id
     source_url = artifact.data.url
     start = time.perf_counter()
@@ -196,6 +203,7 @@ def _compute_model_rating(source_url: str) -> Dict[str, Any]:
 
 
 def _run_rating_pipeline_with_timeout(source_url: str) -> Dict[str, Any]:
+    """Compute a rating payload in a background worker with a hard timeout."""
     timeout = max(_COMPUTE_TIMEOUT_SECONDS, 1)
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(_compute_model_rating, source_url)
@@ -209,6 +217,7 @@ def _run_rating_pipeline_with_timeout(source_url: str) -> Dict[str, Any]:
 
 
 def _validate_rating_payload(rating: Dict[str, Any]) -> None:
+    """Validate that the rating payload contains all required numeric fields."""
     missing = [
         field for field in _REQUIRED_RATING_FIELDS if field not in rating
     ]
@@ -237,6 +246,7 @@ def _validate_rating_payload(rating: Dict[str, Any]) -> None:
 
 
 def _parse_artifact_id(event: Dict[str, Any]) -> str:
+    """Parse and validate the `{id}` path parameter from an API Gateway event."""
     artifact_id = (event.get("pathParameters") or {}).get("id")
     if not artifact_id:
         raise ValueError("Path parameter 'id' is required")
@@ -244,10 +254,12 @@ def _parse_artifact_id(event: Dict[str, Any]) -> str:
 
 
 def _require_auth(event: Dict[str, Any]) -> None:
+    """Enforce authentication for this endpoint."""
     require_auth_token(event, optional=False)
 
 
 def _json_response(status: HTTPStatus, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Build an API Gateway proxy integration JSON response."""
     return {
         "statusCode": status.value,
         "headers": {"Content-Type": "application/json"},
@@ -256,6 +268,7 @@ def _json_response(status: HTTPStatus, body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _error_response(status: HTTPStatus, message: str) -> Dict[str, Any]:
+    """Return a JSON error response with the provided status code."""
     return _json_response(status, {"error": message})
 
 

@@ -1,4 +1,9 @@
-"""Tests for the PUT /artifacts/{artifact_type}/{id} handler."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for the PUT /artifacts/{artifact_type}/{id} handler.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,13 @@ from src.utils import auth
 
 @pytest.fixture(autouse=True)
 def _reset_handler(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """
+    _reset_handler: Function description.
+    :param monkeypatch:
+    :param tmp_path:
+    :returns:
+    """
+
     store = _FakeMetadataStore()
     handler._METADATA_STORE = cast(ArtifactMetadataStore, store)
     handler._BLOB_STORE = _FakeBlobStore()
@@ -29,6 +41,12 @@ def _reset_handler(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     (bundle_dir / "file.txt").write_text("new content", encoding="utf-8")
 
     def _fake_prepare(url: str) -> ArtifactBundle:
+        """
+        _fake_prepare: Function description.
+        :param url:
+        :returns:
+        """
+
         return ArtifactBundle(
             kind="directory",
             path=bundle_dir,
@@ -51,6 +69,12 @@ def _reset_handler(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 
 def _event(body: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    _event: Function description.
+    :param body:
+    :returns:
+    """
+
     token = auth.issue_token("tester", is_admin=True)
     return {
         "pathParameters": {"artifact_type": "model", "id": "artifact123"},
@@ -60,6 +84,12 @@ def _event(body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def test_update_artifact_success() -> None:
+    """
+    test_update_artifact_success: Function description.
+    :param:
+    :returns:
+    """
+
     payload = {
         "metadata": {
             "name": "whisper-tiny",
@@ -77,6 +107,12 @@ def test_update_artifact_success() -> None:
 
 
 def test_update_rejects_name_mismatch() -> None:
+    """
+    test_update_rejects_name_mismatch: Function description.
+    :param:
+    :returns:
+    """
+
     payload = {
         "metadata": {
             "name": "different",
@@ -92,6 +128,12 @@ def test_update_rejects_name_mismatch() -> None:
 
 
 def test_update_missing_artifact_returns_404() -> None:
+    """
+    test_update_missing_artifact_returns_404: Function description.
+    :param:
+    :returns:
+    """
+
     handler._METADATA_STORE = cast(
         ArtifactMetadataStore, _FakeMetadataStore()
     )
@@ -110,6 +152,12 @@ def test_update_missing_artifact_returns_404() -> None:
 
 
 def test_update_metadata_id_mismatch() -> None:
+    """
+    test_update_metadata_id_mismatch: Function description.
+    :param:
+    :returns:
+    """
+
     payload = {
         "metadata": {
             "name": "whisper-tiny",
@@ -125,7 +173,17 @@ def test_update_metadata_id_mismatch() -> None:
 
 
 class _FakeBlobStore:
+    """
+    _FakeBlobStore: Class description.
+    """
+
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self.saved: list[tuple[str, Path]] = []
 
     def store_file(
@@ -135,6 +193,14 @@ class _FakeBlobStore:
         *,
         content_type: str | None = None,
     ) -> StoredArtifact:
+        """
+        store_file: Function description.
+        :param artifact_id:
+        :param file_path:
+        :param content_type:
+        :returns:
+        """
+
         self.saved.append((artifact_id, file_path))
         return StoredArtifact(
             artifact_id=artifact_id,
@@ -150,6 +216,14 @@ class _FakeBlobStore:
         *,
         content_type: str | None = None,
     ) -> StoredArtifact:
+        """
+        store_directory: Function description.
+        :param artifact_id:
+        :param directory:
+        :param content_type:
+        :returns:
+        """
+
         return self.store_file(
             artifact_id,
             directory,
@@ -162,20 +236,50 @@ class _FakeBlobStore:
         *,
         expires_in: int = 900,
     ):
+        """
+        generate_download_url: Function description.
+        :param artifact_id:
+        :param expires_in:
+        :returns:
+        """
+
         raise NotImplementedError
 
 
 class _FakeMetadataStore(ArtifactMetadataStore):
+    """
+    _FakeMetadataStore: Class description.
+    """
+
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self.records: dict[str, Artifact] = {}
 
     def save(self, artifact: Artifact, *, overwrite: bool = False) -> None:
+        """
+        save: Function description.
+        :param artifact:
+        :param overwrite:
+        :returns:
+        """
+
         artifact_id = artifact.metadata.id
         if not overwrite and artifact_id in self.records:
             raise ValidationError(f"Artifact '{artifact_id}' already exists")
         self.records[artifact_id] = artifact
 
     def load(self, artifact_id: str) -> Artifact:
+        """
+        load: Function description.
+        :param artifact_id:
+        :returns:
+        """
+
         try:
             return self.records[artifact_id]
         except KeyError as exc:

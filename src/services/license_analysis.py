@@ -1,4 +1,9 @@
-"""Helpers for license analysis (extracted for LicenseMetric)."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Helpers for license analysis (extracted for LicenseMetric).
+"""
 
 from __future__ import annotations
 
@@ -20,12 +25,22 @@ _LICENSE_PATTERNS: Dict[str, re.Pattern[str]] = {
 
 @dataclass
 class _LicensePolicy:
+    """
+    _LicensePolicy: Class description.
+    """
+
     compatible: Dict[str, str]
     caution: Dict[str, str]
     incompatible: Dict[str, str]
     all_slugs: set[str]
 
     def class_of(self, slug: str) -> str:
+        """
+        class_of: Function description.
+        :param slug:
+        :returns:
+        """
+
         key = slug.lower()
         if key in self.compatible:
             return "compatible"
@@ -62,6 +77,12 @@ def collect_hf_license_candidates(
 
 
 def normalize_license_candidates(candidates: Sequence[str]) -> List[str]:
+    """
+    normalize_license_candidates: Function description.
+    :param candidates:
+    :returns:
+    """
+
     normalized: List[str] = []
     for item in candidates:
         slug = _normalize_slug(item)
@@ -73,6 +94,13 @@ def normalize_license_candidates(candidates: Sequence[str]) -> List[str]:
 def evaluate_classification(
     candidates: Sequence[str], policy: _LicensePolicy
 ) -> str:
+    """
+    evaluate_classification: Function description.
+    :param candidates:
+    :param policy:
+    :returns:
+    """
+
     if not candidates:
         return "unknown"
     classes = {policy.class_of(slug) for slug in candidates}
@@ -91,6 +119,12 @@ def evaluate_classification(
 
 
 def load_license_policy() -> _LicensePolicy:
+    """
+    load_license_policy: Function description.
+    :param:
+    :returns:
+    """
+
     base = Path(__file__).resolve().parents[1].with_name("data")
     try:
         compatible = _load_json_list(base / "licenses_compatible_spdx.json")
@@ -126,6 +160,12 @@ def load_license_policy() -> _LicensePolicy:
 
 
 def _split_license_field(field: Any) -> List[str]:
+    """
+    _split_license_field: Function description.
+    :param field:
+    :returns:
+    """
+
     results: List[str] = []
     if not field:
         return results
@@ -139,6 +179,12 @@ def _split_license_field(field: Any) -> List[str]:
 
 
 def _extract_license_section(text: str) -> str:
+    """
+    _extract_license_section: Function description.
+    :param text:
+    :returns:
+    """
+
     heading = re.search(
         r"^#{1,6}\s+license\b.*$", text, re.IGNORECASE | re.MULTILINE
     )
@@ -153,6 +199,12 @@ def _extract_license_section(text: str) -> str:
 
 
 def _find_licenses_in_text(text: str) -> List[str]:
+    """
+    _find_licenses_in_text: Function description.
+    :param text:
+    :returns:
+    """
+
     if not text:
         return []
     found: List[str] = []
@@ -166,6 +218,12 @@ def _find_licenses_in_text(text: str) -> List[str]:
 
 
 def _normalize_slug(value: str) -> str | None:
+    """
+    _normalize_slug: Function description.
+    :param value:
+    :returns:
+    """
+
     s = value.strip().lower()
     if not s:
         return None
@@ -219,6 +277,13 @@ def _normalize_slug(value: str) -> str | None:
 
 
 def _safe_model_info(hf_client: Any, hf_url: str) -> Any | None:
+    """
+    _safe_model_info: Function description.
+    :param hf_client:
+    :param hf_url:
+    :returns:
+    """
+
     try:
         return hf_client.get_model_info(hf_url)
     except Exception:
@@ -226,6 +291,13 @@ def _safe_model_info(hf_client: Any, hf_url: str) -> Any | None:
 
 
 def _safe_readme(hf_client: Any, hf_url: str) -> str:
+    """
+    _safe_readme: Function description.
+    :param hf_client:
+    :param hf_url:
+    :returns:
+    """
+
     try:
         return hf_client.get_model_readme(hf_url)
     except Exception:
@@ -233,6 +305,12 @@ def _safe_readme(hf_client: Any, hf_url: str) -> str:
 
 
 def _load_json_list(path: Path) -> List[str]:
+    """
+    _load_json_list: Function description.
+    :param path:
+    :returns:
+    """
+
     with path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
     if not isinstance(data, list):

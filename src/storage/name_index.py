@@ -1,4 +1,9 @@
-"""Secondary index for artifact names to support search operations."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Secondary index for artifact names to support search operations.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,12 @@ class NameIndexEntry:
 
     @property
     def normalized_name(self) -> str:
+        """
+        normalized_name: Function description.
+        :param:
+        :returns:
+        """
+
         return self.name.casefold()
 
 
@@ -45,11 +56,23 @@ class InMemoryNameIndexStore(NameIndexStore):
     """Simple store used for tests and local runs."""
 
     def __init__(self) -> None:
+        """
+        __init__: Function description.
+        :param:
+        :returns:
+        """
+
         self._entries: dict[str, NameIndexEntry] = {}
         self._order: list[str] = []
         self._positions: dict[str, int] = {}
 
     def save(self, entry: NameIndexEntry) -> None:
+        """
+        save: Function description.
+        :param entry:
+        :returns:
+        """
+
         replaced = entry.artifact_id in self._entries
         self._entries[entry.artifact_id] = entry
         if not replaced:
@@ -57,6 +80,12 @@ class InMemoryNameIndexStore(NameIndexStore):
             self._order.append(entry.artifact_id)
 
     def delete(self, entry: NameIndexEntry) -> None:
+        """
+        delete: Function description.
+        :param entry:
+        :returns:
+        """
+
         self._entries.pop(entry.artifact_id, None)
 
     def scan(
@@ -65,6 +94,13 @@ class InMemoryNameIndexStore(NameIndexStore):
         start_key: Any | None = None,
         limit: int | None = None,
     ) -> Tuple[List[NameIndexEntry], Any | None]:
+        """
+        scan: Function description.
+        :param start_key:
+        :param limit:
+        :returns:
+        """
+
         start_index = -1
         if start_key is not None:
             candidate = start_key
@@ -100,6 +136,13 @@ class DynamoDBNameIndexStore(NameIndexStore):
         *,
         resource: Any | None = None,
     ) -> None:
+        """
+        __init__: Function description.
+        :param table_name:
+        :param resource:
+        :returns:
+        """
+
         if not table_name:
             raise ValueError("table_name must be provided")
         if resource is None:
@@ -109,6 +152,12 @@ class DynamoDBNameIndexStore(NameIndexStore):
         self._table = resource.Table(table_name)
 
     def save(self, entry: NameIndexEntry) -> None:
+        """
+        save: Function description.
+        :param entry:
+        :returns:
+        """
+
         item = {
             "normalized_name": entry.normalized_name,
             "artifact_id": entry.artifact_id,
@@ -120,6 +169,12 @@ class DynamoDBNameIndexStore(NameIndexStore):
         self._table.put_item(Item=item)
 
     def delete(self, entry: NameIndexEntry) -> None:
+        """
+        delete: Function description.
+        :param entry:
+        :returns:
+        """
+
         key = {
             "normalized_name": entry.normalized_name,
             "artifact_id": entry.artifact_id,
@@ -132,6 +187,13 @@ class DynamoDBNameIndexStore(NameIndexStore):
         start_key: Any | None = None,
         limit: int | None = None,
     ) -> Tuple[List[NameIndexEntry], Any | None]:
+        """
+        scan: Function description.
+        :param start_key:
+        :param limit:
+        :returns:
+        """
+
         params: dict[str, Any] = {}
         if start_key is not None:
             params["ExclusiveStartKey"] = start_key
@@ -152,6 +214,12 @@ class DynamoDBNameIndexStore(NameIndexStore):
 
 
 def build_name_index_store_from_env() -> NameIndexStore:
+    """
+    build_name_index_store_from_env: Function description.
+    :param:
+    :returns:
+    """
+
     table_name = os.getenv("ARTIFACT_NAME_INDEX_TABLE")
     if table_name:
         return DynamoDBNameIndexStore(table_name)
@@ -163,6 +231,13 @@ def entry_from_metadata(
     *,
     readme_excerpt: str | None = None,
 ) -> NameIndexEntry:
+    """
+    entry_from_metadata: Function description.
+    :param metadata:
+    :param readme_excerpt:
+    :returns:
+    """
+
     return NameIndexEntry(
         artifact_id=metadata.id,
         name=metadata.name,

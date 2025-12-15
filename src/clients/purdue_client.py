@@ -1,4 +1,9 @@
-"""Client for Purdue Gen AI Studio APIs with rate limiting."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Client for Purdue Gen AI Studio APIs with rate limiting.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +26,10 @@ ENV_TOKEN_KEY = "GEN_AI_STUDIO_API_KEY"
 
 
 class _SessionWithPost(Protocol):
+    """
+    _SessionWithPost: Class description.
+    """
+
     def post(
         self,
         url: str,
@@ -41,6 +50,15 @@ class PurdueClient(BaseClient[Dict[str, Any]]):
         session: Optional[_SessionWithPost] = None,
         base_url: str = DEFAULT_BASE_URL,
     ) -> None:
+        """
+        __init__: Function description.
+        :param rate_limiter:
+        :param logger:
+        :param session:
+        :param base_url:
+        :returns:
+        """
+
         load_dotenv()
 
         limiter = rate_limiter or RateLimiter(
@@ -93,6 +111,12 @@ class PurdueClient(BaseClient[Dict[str, Any]]):
         payload.update(extra)
 
         def _operation() -> Dict[str, Any]:
+            """
+            _operation: Function description.
+            :param:
+            :returns:
+            """
+
             headers = self._build_headers(json_content=True)
             response = self._session.post(
                 url,
@@ -151,6 +175,12 @@ class PurdueClient(BaseClient[Dict[str, Any]]):
         return content
 
     def _build_headers(self, json_content: bool = False) -> Dict[str, str]:
+        """
+        _build_headers: Function description.
+        :param json_content:
+        :returns:
+        """
+
         headers = {
             "Authorization": f"Bearer {self._api_token}",
             "Accept": "application/json",

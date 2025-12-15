@@ -1,4 +1,9 @@
-"""Artifact cost calculation utilities."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Artifact cost calculation utilities.
+"""
 
 from __future__ import annotations
 

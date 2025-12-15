@@ -1,3 +1,9 @@
+"""
+
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+"""
 
 
 from __future__ import annotations
@@ -22,10 +28,22 @@ class CLIApp:
     """
 
     def __init__(self, url_file: Path) -> None:
+        """
+        __init__: Function description.
+        :param url_file:
+        :returns:
+        """
+
         self._url_file = url_file
 
     def run(self) -> int:
         # Parse manifest first so errors surface quickly.
+        """
+        run: Function description.
+        :param:
+        :returns:
+        """
+
         parser = Parser(self._url_file)
         parsed_urls = parser.parse()
         dispatcher = MetricDispatcher()
@@ -47,6 +65,12 @@ class CLIApp:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
+    """
+    build_arg_parser: Function description.
+    :param:
+    :returns:
+    """
+
     argument_parser = argparse.ArgumentParser(
         description=(
             "ACME Models CLI: Parse URL manifests "
@@ -62,6 +86,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    """
+    main: Function description.
+    :param argv:
+    :returns:
+    """
+
     configure_logging()
     argument_parser = build_arg_parser()
     parsed_args = argument_parser.parse_args(argv)

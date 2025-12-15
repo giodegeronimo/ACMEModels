@@ -1,6 +1,10 @@
-from __future__ import annotations
+"""
 
-"""Git service client with rate limiting support."""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+"""
+from __future__ import annotations
 
 import logging
 import os
@@ -16,6 +20,10 @@ DEFAULT_PERIOD_SECONDS = 1.0
 
 
 class _SessionWithGet(Protocol):
+    """
+    _SessionWithGet: Class description.
+    """
+
     def get(
         self,
         url: str,
@@ -42,6 +50,14 @@ class GitClient(BaseClient[Any]):
         logger: Optional[logging.Logger] = None,
         session: Optional[_SessionWithGet] = None,
     ) -> None:
+        """
+        __init__: Function description.
+        :param rate_limiter:
+        :param logger:
+        :param session:
+        :returns:
+        """
+
         limiter = rate_limiter or RateLimiter(
             max_calls=DEFAULT_MAX_CALLS,
             period_seconds=DEFAULT_PERIOD_SECONDS,
@@ -114,6 +130,13 @@ class GitClient(BaseClient[Any]):
     def _fetch_github_repo(
         self, repo_url: str, *, headers: Optional[dict[str, str]] = None
     ) -> dict[str, Any]:
+        """
+        _fetch_github_repo: Function description.
+        :param repo_url:
+        :param headers:
+        :returns:
+        """
+
         parts = repo_url.removeprefix("https://github.com/").split("/")
         if len(parts) < 2:
             raise ValueError(f"Invalid GitHub repository URL: {repo_url}")
@@ -136,6 +159,14 @@ class GitClient(BaseClient[Any]):
         *,
         headers: Optional[dict[str, str]] = None,
     ) -> list[str]:
+        """
+        _fetch_github_tree: Function description.
+        :param repo_url:
+        :param branch:
+        :param headers:
+        :returns:
+        """
+
         parts = repo_url.removeprefix("https://github.com/").split("/")
         if len(parts) < 2:
             raise ValueError(f"Invalid GitHub repository URL: {repo_url}")
@@ -175,6 +206,14 @@ class GitClient(BaseClient[Any]):
         *,
         headers: Optional[dict[str, str]] = None,
     ) -> list[dict[str, Any]]:
+        """
+        _fetch_github_contributors: Function description.
+        :param repo_url:
+        :param per_page:
+        :param headers:
+        :returns:
+        """
+
         parts = repo_url.removeprefix("https://github.com/").split("/")
         if len(parts) < 2:
             raise ValueError(f"Invalid GitHub repository URL: {repo_url}")
@@ -414,6 +453,12 @@ class GitClient(BaseClient[Any]):
         return prs[0]
 
     def _auth_headers(self) -> dict[str, str]:
+        """
+        _auth_headers: Function description.
+        :param:
+        :returns:
+        """
+
         token = os.getenv("GITHUB_TOKEN")
         if token:
             return {"Authorization": f"token {token}"}

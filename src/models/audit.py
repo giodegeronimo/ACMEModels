@@ -1,4 +1,9 @@
-"""Audit trail domain models."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Audit trail domain models.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,12 @@ class ArtifactAuditAction(str, Enum):
 
 
 def _ensure_utc(dt: datetime) -> datetime:
+    """
+    _ensure_utc: Function description.
+    :param dt:
+    :returns:
+    """
+
     if dt.tzinfo is None:
         raise ValueError(
             "Audit timestamps must include timezone information (UTC)"
@@ -37,6 +48,12 @@ class User:
     is_admin: bool
 
     def __post_init__(self) -> None:
+        """
+        __post_init__: Function description.
+        :param:
+        :returns:
+        """
+
         if not self.name:
             raise ValueError("User name cannot be empty")
 
@@ -51,4 +68,10 @@ class ArtifactAuditEntry:
     action: ArtifactAuditAction
 
     def __post_init__(self) -> None:
+        """
+        __post_init__: Function description.
+        :param:
+        :returns:
+        """
+
         object.__setattr__(self, "date", _ensure_utc(self.date))

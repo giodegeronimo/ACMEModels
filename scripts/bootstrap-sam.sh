@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+#
+# ACMEModels Repository
+# Introductory remarks: This script is part of ACMEModels.
+#
+
 
 set -euo pipefail
 

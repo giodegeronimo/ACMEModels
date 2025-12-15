@@ -1,3 +1,9 @@
+"""
+
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+"""
 from __future__ import annotations
 
 import logging
@@ -104,6 +110,12 @@ class ReviewednessMetric(Metric):
     """
 
     def __init__(self, git_client: Optional[GitClient] = None) -> None:
+        """
+        __init__: Function description.
+        :param git_client:
+        :returns:
+        """
+
         super().__init__(name="Reviewedness", key="reviewedness")
         self._git: GitClient = git_client or GitClient()
         # Cache for commit -> PR lookups to minimize API calls
@@ -451,6 +463,12 @@ def _iter_github_pr_reviews(
 
 
 def _login_of(user_obj: Optional[Dict[str, Any]]) -> Optional[str]:
+    """
+    _login_of: Function description.
+    :param user_obj:
+    :returns:
+    """
+
     if not isinstance(user_obj, dict):
         return None
     login = user_obj.get("login")
@@ -460,6 +478,12 @@ def _login_of(user_obj: Optional[Dict[str, Any]]) -> Optional[str]:
 
 
 def _is_human(user_obj: Optional[Dict[str, Any]]) -> bool:
+    """
+    _is_human: Function description.
+    :param user_obj:
+    :returns:
+    """
+
     if not isinstance(user_obj, dict):
         return False
     utype = user_obj.get("type")
@@ -474,6 +498,12 @@ def _is_human(user_obj: Optional[Dict[str, Any]]) -> bool:
 
 
 def _parse_ts(value: Optional[str]) -> Optional[datetime]:
+    """
+    _parse_ts: Function description.
+    :param value:
+    :returns:
+    """
+
     if not value or not isinstance(value, str):
         return None
     s = value.strip()
@@ -493,6 +523,14 @@ def _has_valid_approval(
     pr_author: Optional[str],
     merged_at: datetime,
 ) -> bool:
+    """
+    _has_valid_approval: Function description.
+    :param reviews:
+    :param pr_author:
+    :param merged_at:
+    :returns:
+    """
+
     approved_by: set[str] = set()
     dismissed_by: set[str] = set()
 

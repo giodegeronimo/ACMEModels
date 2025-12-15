@@ -1,4 +1,9 @@
-"""Tests for test ramp up metric module."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Tests for test ramp up metric module.
+"""
 
 from __future__ import annotations
 
@@ -12,44 +17,86 @@ from src.metrics.ramp_up import RampUpMetric
 
 @dataclass
 class _FakeSibling:
+    """
+    _FakeSibling: Class description.
+    """
+
     rfilename: str
 
 
 @dataclass
 class _FakeModelInfo:
+    """
+    _FakeModelInfo: Class description.
+    """
+
     siblings: list[_FakeSibling]
     pipeline_tag: Optional[str] = None
     library_name: Optional[str] = None
 
 
 class _FakeHFClient:
+    """
+    _FakeHFClient: Class description.
+    """
+
     def __init__(
         self,
         *,
         model_info: Optional[_FakeModelInfo] = None,
         readme: Optional[str] = None,
     ) -> None:
+        """
+        __init__: Function description.
+        :param model_info:
+        :param readme:
+        :returns:
+        """
+
         self._model_info = model_info
         self._readme = readme
 
     def get_model_info(self, repo_id: str) -> Any:
+        """
+        get_model_info: Function description.
+        :param repo_id:
+        :returns:
+        """
+
         if self._model_info is None:
             raise RuntimeError("model info missing")
         return self._model_info
 
     def get_model_readme(self, repo_id: str) -> str:
+        """
+        get_model_readme: Function description.
+        :param repo_id:
+        :returns:
+        """
+
         if self._readme is None:
             raise RuntimeError("readme missing")
         return self._readme
 
 
 class _FakePurdueClient:
+    """
+    _FakePurdueClient: Class description.
+    """
+
     def __init__(
         self,
         responses: Optional[List[str]] = None,
         *,
         fail: bool = False,
     ) -> None:
+        """
+        __init__: Function description.
+        :param responses:
+        :param fail:
+        :returns:
+        """
+
         self._responses = responses or []
         self._fail = fail
         self.calls: List[str] = []
@@ -64,6 +111,17 @@ class _FakePurdueClient:
         temperature: float = 0.0,
         **extra: Any,
     ) -> str:
+        """
+        llm: Function description.
+        :param prompt:
+        :param messages:
+        :param model:
+        :param stream:
+        :param temperature:
+        :param **extra:
+        :returns:
+        """
+
         if messages is not None:
             self.calls.append(messages[-1]["content"])
         else:
@@ -76,6 +134,12 @@ class _FakePurdueClient:
 
 
 def test_ramp_up_full_score_is_clamped() -> None:
+    """
+    test_ramp_up_full_score_is_clamped: Function description.
+    :param:
+    :returns:
+    """
+
     readme = (
         "# Model Title\n"
         "## Quickstart\n"
@@ -124,6 +188,12 @@ def test_ramp_up_full_score_is_clamped() -> None:
 
 
 def test_ramp_up_no_readme_yields_zero() -> None:
+    """
+    test_ramp_up_no_readme_yields_zero: Function description.
+    :param:
+    :returns:
+    """
+
     metric = RampUpMetric(
         hf_client=_FakeHFClient(readme=""),
         purdue_client=_FakePurdueClient(fail=True),
@@ -136,6 +206,12 @@ def test_ramp_up_no_readme_yields_zero() -> None:
 
 
 def test_ramp_up_partial_scores_accumulate() -> None:
+    """
+    test_ramp_up_partial_scores_accumulate: Function description.
+    :param:
+    :returns:
+    """
+
     readme = (
         "Short card\n"
         "## Usage\n"
@@ -162,7 +238,19 @@ def test_ramp_up_partial_scores_accumulate() -> None:
 def test_ramp_up_handles_missing_purdue(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    test_ramp_up_handles_missing_purdue: Function description.
+    :param monkeypatch:
+    :returns:
+    """
+
     def fail_client() -> None:
+        """
+        fail_client: Function description.
+        :param:
+        :returns:
+        """
+
         raise RuntimeError("GEN_AI_STUDIO_API_KEY missing")
 
     monkeypatch.setattr(

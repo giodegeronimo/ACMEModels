@@ -1,3 +1,9 @@
+"""
+
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+"""
 from __future__ import annotations
 
 import logging
@@ -49,10 +55,22 @@ class TreeScoreMetric(Metric):
     """
 
     def __init__(self, hf_client: Optional[HFClient] = None) -> None:
+        """
+        __init__: Function description.
+        :param hf_client:
+        :returns:
+        """
+
         super().__init__(name="Tree Score", key="tree_score")
         self._hf: HFClient = hf_client or HFClient()
 
     def compute(self, url_record: Dict[str, str]) -> MetricOutput:
+        """
+        compute: Function description.
+        :param url_record:
+        :returns:
+        """
+
         if fail_stub_active(FAIL):
             time.sleep(0.05)
             url = _extract_hf_url(url_record) or _DEFAULT_URL
@@ -148,6 +166,13 @@ class TreeScoreMetric(Metric):
         hf_url: Optional[str],
         reason: str,
     ) -> float:
+        """
+        _fallback_to_model_score: Function description.
+        :param hf_url:
+        :param reason:
+        :returns:
+        """
+
         _LOGGER.info(
             "%s; falling back to target model net score",
             reason,
@@ -177,6 +202,12 @@ class TreeScoreMetric(Metric):
 
 
 def _extract_hf_url(record: Mapping[str, Any]) -> Optional[str]:
+    """
+    _extract_hf_url: Function description.
+    :param record:
+    :returns:
+    """
+
     value = record.get("hf_url")
     return str(value) if isinstance(value, str) else None
 
@@ -224,6 +255,12 @@ def _discover_parents(hf: HFClient, hf_url: str) -> list[str]:
 
 
 def _extract_parents_from_mapping(mapping: Mapping[str, Any]) -> list[str]:
+    """
+    _extract_parents_from_mapping: Function description.
+    :param mapping:
+    :returns:
+    """
+
     results: list[str] = []
     params = ("base_model",
               "base_model_id",
@@ -242,6 +279,12 @@ def _extract_parents_from_mapping(mapping: Mapping[str, Any]) -> list[str]:
 
 
 def _extract_parents_from_object(obj: Any) -> list[str]:
+    """
+    _extract_parents_from_object: Function description.
+    :param obj:
+    :returns:
+    """
+
     results: list[str] = []
     for attr in ("base_model", "parent_model", "parents", "parent_models"):
         if hasattr(obj, attr):
@@ -272,6 +315,12 @@ _HF_LINK = re.compile(
 
 
 def _extract_parents_from_readme(text: str) -> list[str]:
+    """
+    _extract_parents_from_readme: Function description.
+    :param text:
+    :returns:
+    """
+
     results: list[str] = []
     for pattern in (_PARENT_HINT, _FINE_TUNED_FROM):
         for m in pattern.finditer(text):
@@ -282,6 +331,12 @@ def _extract_parents_from_readme(text: str) -> list[str]:
 
 
 def _to_repo_slug(value: str) -> Optional[str]:
+    """
+    _to_repo_slug: Function description.
+    :param value:
+    :returns:
+    """
+
     s = (value or "").strip().strip("/")
     if not s:
         return None
@@ -315,6 +370,13 @@ def _collect_ancestors_with_depth(
     depths: Dict[str, int] = {}
 
     def _dfs(slug: str, depth: int) -> None:
+        """
+        _dfs: Function description.
+        :param slug:
+        :param depth:
+        :returns:
+        """
+
         if slug in visited:
             _LOGGER.debug("Already visited %s; skipping", slug)
             return

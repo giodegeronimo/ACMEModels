@@ -1,4 +1,9 @@
-"""Base class for metrics used in the ACME Models CLI."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Base class for metrics used in the ACME Models CLI.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,13 @@ class Metric(ABC):
     key: str
 
     def __init__(self, *, name: str, key: str) -> None:
+        """
+        __init__: Function description.
+        :param name:
+        :param key:
+        :returns:
+        """
+
         self.name = name
         self.key = key
 
@@ -28,5 +40,11 @@ class Metric(ABC):
         """Produce a metric value for the given URL record."""
 
     def __repr__(self) -> str:
+        """
+        __repr__: Function description.
+        :param:
+        :returns:
+        """
+
         class_name = self.__class__.__name__
         return f"{class_name}(name={self.name!r}, key={self.key!r})"

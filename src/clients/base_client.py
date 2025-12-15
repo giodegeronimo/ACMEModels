@@ -1,4 +1,9 @@
-"""Base class for rate-limited service clients."""
+"""
+ACMEModels Repository
+Introductory remarks: This module is part of the ACMEModels codebase.
+
+Base class for rate-limited service clients.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,13 @@ class BaseClient(Generic[T]):
         *,
         logger: Optional[logging.Logger] = None,
     ) -> None:
+        """
+        __init__: Function description.
+        :param rate_limiter:
+        :param logger:
+        :returns:
+        """
+
         self._rate_limiter = rate_limiter
         self._logger = logger or logging.getLogger(self.__class__.__name__)
 
